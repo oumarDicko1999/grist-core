@@ -1,6 +1,7 @@
-import { assert } from "chai";
 import { readFileSync } from "fs";
 import { resolve } from "path";
+
+import { assert } from "chai";
 
 const SERVER_SEAMS = [
   {
@@ -26,6 +27,17 @@ const SERVER_SEAMS = [
       "denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, \"use assistant\")",
       "requireIkaDocUserActionsForRequest(this._ikadocRuntimeSessionRegistry)",
       "this._app.get(\"/api/docs/:docId/download\", canView, requireIkaDocBrowserExport",
+      "this._app.post(\"/api/docs/:docId/uploads\", canView, requireIkaDocAttachmentUse",
+      "this._app.get(\"/api/docs/:docId/attachments\", canView, requireIkaDocAttachmentUse",
+      "this._app.post(\"/api/docs/:docId/attachments/transferAll\", isOwner, requireIkaDocAttachmentUse",
+      "this._app.get(\"/api/docs/:docId/attachments/transferStatus\", canView, requireIkaDocAttachmentUse",
+      "this._app.get(\"/api/docs/:docId/attachments/store\", canView, requireIkaDocAttachmentUse",
+      "this._app.post(\"/api/docs/:docId/attachments/store\", isOwner, requireIkaDocAttachmentUse",
+      "this._app.get(\"/api/docs/:docId/attachments/stores\", isOwner, requireIkaDocAttachmentUse",
+      "this._app.get(\"/api/docs/:docId/attachments/:attId\", canView, requireIkaDocAttachmentUse",
+      "this._app.post(\"/api/docs/:docId/attachments/updateUsed\", canEdit, requireIkaDocAttachmentUse",
+      "this._app.post(\"/api/docs/:docId/attachments/removeUnused\", isOwner, requireIkaDocAttachmentUse",
+      "this._app.post(\"/api/docs/:docId/attachments/verifyFiles\", isOwner, requireIkaDocAttachmentUse",
       "this._app.post(\"/api/docs/:docId/fork\", canView, denyIkaDocFork",
     ],
   },

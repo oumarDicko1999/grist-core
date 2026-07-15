@@ -36,6 +36,7 @@ import { Document } from "app/gen-server/entity/Document";
 import { Workspace } from "app/gen-server/entity/Workspace";
 import { HomeDBManager, makeDocAuthResult } from "app/gen-server/lib/homedb/HomeDBManager";
 import { QueryResult } from "app/gen-server/lib/homedb/Interfaces";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import * as Types from "app/plugin/DocApiTypes";
 import DocApiTypesTI from "app/plugin/DocApiTypes-ti";
 import { CellFormatType } from "app/plugin/GristAPI";
@@ -43,7 +44,6 @@ import GristApiTI from "app/plugin/GristAPI-ti";
 import GristDataTI from "app/plugin/GristData-ti";
 import { OpOptions } from "app/plugin/TableOperations";
 import { TableOperationsImpl, TableOperationsPlatform } from "app/plugin/TableOperationsImpl";
-import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { ActiveDoc, getRealTableId } from "app/server/lib/ActiveDoc";
 import { getDocPoolIdFromDocInfo } from "app/server/lib/AttachmentStore";
 import {
@@ -416,9 +416,10 @@ export class DocWorkerApi {
     // Doc-scoped upload: registers an upload in globalUploadSet on the doc-owning worker.
     // The resulting uploadId is then consumable on this same worker.
     // DocApiProxy ensures requests land on the right worker, even when a load balancer sends it to a different node.
-    this._app.post("/api/docs/:docId/uploads", canView, withDoc(async (activeDoc, req, res) => {
-      res.json(await handleUpload(req, res));
-    }));
+    this._app.post("/api/docs/:docId/uploads", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        res.json(await handleUpload(req, res));
+      }));
 
     // Select the fields from an attachment record that we want to return to the user,
     // and convert the timeUploaded from a number to an ISO string.
@@ -429,28 +430,31 @@ export class DocWorkerApi {
     }
 
     // Returns cleaned metadata for all attachments in /records format.
-    this._app.get("/api/docs/:docId/attachments", canView, withDoc(async (activeDoc, req, res) => {
-      const rawRecords = await getTableRecords(activeDoc, req, { optTableId: "_grist_Attachments" });
-      const records = rawRecords.map(r => ({
-        id: r.id,
-        fields: cleanAttachmentRecord(r.fields as MetaRowRecord<"_grist_Attachments">),
+    this._app.get("/api/docs/:docId/attachments", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const rawRecords = await getTableRecords(activeDoc, req, { optTableId: "_grist_Attachments" });
+        const records = rawRecords.map(r => ({
+          id: r.id,
+          fields: cleanAttachmentRecord(r.fields as MetaRowRecord<"_grist_Attachments">),
+        }));
+        res.json({ records });
       }));
-      res.json({ records });
-    }));
 
     // Starts transferring all attachments to the named store, if it exists.
-    this._app.post("/api/docs/:docId/attachments/transferAll", isOwner, withDoc(async (activeDoc, req, res) => {
-      await activeDoc.startTransferringAllAttachmentsToDefaultStore();
-      // Respond with the current status to allow for immediate UI updates.
-      res.json(await activeDoc.attachmentTransferStatus());
-    }));
+    this._app.post("/api/docs/:docId/attachments/transferAll", isOwner, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        await activeDoc.startTransferringAllAttachmentsToDefaultStore();
+        // Respond with the current status to allow for immediate UI updates.
+        res.json(await activeDoc.attachmentTransferStatus());
+      }));
 
     // Returns the status of any current / pending attachment transfers
-    this._app.get("/api/docs/:docId/attachments/transferStatus", canView, withDoc(async (activeDoc, req, res) => {
-      res.json(await activeDoc.attachmentTransferStatus());
-    }));
+    this._app.get("/api/docs/:docId/attachments/transferStatus", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        res.json(await activeDoc.attachmentTransferStatus());
+      }));
 
-    this._app.get("/api/docs/:docId/attachments/store", canView,
+    this._app.get("/api/docs/:docId/attachments/store", canView, requireIkaDocAttachmentUse,
       withDoc(async (activeDoc, req, res) => {
         const storeId = await activeDoc.getAttachmentStore();
         res.json({
@@ -459,7 +463,8 @@ export class DocWorkerApi {
       }),
     );
 
-    this._app.post("/api/docs/:docId/attachments/store", isOwner, validate(SetAttachmentStorePost),
+    this._app.post("/api/docs/:docId/attachments/store", isOwner, requireIkaDocAttachmentUse,
+      validate(SetAttachmentStorePost),
       withDoc(async (activeDoc, req, res) => {
         const body = req.body as Types.SetAttachmentStorePost;
         if (body.type === "internal") {
@@ -481,7 +486,7 @@ export class DocWorkerApi {
       }),
     );
 
-    this._app.get("/api/docs/:docId/attachments/stores", isOwner,
+    this._app.get("/api/docs/:docId/attachments/stores", isOwner, requireIkaDocAttachmentUse,
       withDoc(async (activeDoc, req, res) => {
         const configs = this._attachmentStoreProvider.listAllConfigs();
         const labels: Types.AttachmentStoreDesc[] = configs.map(c => ({ label: c.label }));
@@ -563,12 +568,13 @@ export class DocWorkerApi {
       }));
 
     // Returns cleaned metadata for a given attachment ID (i.e. a rowId in _grist_Attachments table).
-    this._app.get("/api/docs/:docId/attachments/:attId", canView, withDoc(async (activeDoc, req, res) => {
-      const attId = integerParam(req.params.attId, "attId");
-      const options = getExtraAttachmentOptions(req);
-      const attRecord = await activeDoc.getAttachmentMetadata(docSessionFromRequest(req), attId, options);
-      res.json(cleanAttachmentRecord(attRecord));
-    }));
+    this._app.get("/api/docs/:docId/attachments/:attId", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const attId = integerParam(req.params.attId, "attId");
+        const options = getExtraAttachmentOptions(req);
+        const attRecord = await activeDoc.getAttachmentMetadata(docSessionFromRequest(req), attId, options);
+        res.json(cleanAttachmentRecord(attRecord));
+      }));
 
     // Responds with attachment contents, with suitable Content-Type and Content-Disposition.
     this._app.get("/api/docs/:docId/attachments/:attId/download", canView, requireIkaDocAttachmentUse,
@@ -591,23 +597,26 @@ export class DocWorkerApi {
       }));
 
     // Mostly for testing
-    this._app.post("/api/docs/:docId/attachments/updateUsed", canEdit, withDoc(async (activeDoc, req, res) => {
-      await activeDoc.updateUsedAttachmentsIfNeeded();
-      res.json(null);
-    }));
-    this._app.post("/api/docs/:docId/attachments/removeUnused", isOwner, withDoc(async (activeDoc, req, res) => {
-      const expiredOnly = isAffirmative(req.query.expiredonly);
-      const verifyFiles = isAffirmative(req.query.verifyfiles);
-      await activeDoc.removeUnusedAttachments(expiredOnly);
-      if (verifyFiles) {
+    this._app.post("/api/docs/:docId/attachments/updateUsed", canEdit, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        await activeDoc.updateUsedAttachmentsIfNeeded();
+        res.json(null);
+      }));
+    this._app.post("/api/docs/:docId/attachments/removeUnused", isOwner, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const expiredOnly = isAffirmative(req.query.expiredonly);
+        const verifyFiles = isAffirmative(req.query.verifyfiles);
+        await activeDoc.removeUnusedAttachments(expiredOnly);
+        if (verifyFiles) {
+          await verifyAttachmentFiles(activeDoc);
+        }
+        res.json(null);
+      }));
+    this._app.post("/api/docs/:docId/attachments/verifyFiles", isOwner, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
         await verifyAttachmentFiles(activeDoc);
-      }
-      res.json(null);
-    }));
-    this._app.post("/api/docs/:docId/attachments/verifyFiles", isOwner, withDoc(async (activeDoc, req, res) => {
-      await verifyAttachmentFiles(activeDoc);
-      res.json(null);
-    }));
+        res.json(null);
+      }));
 
     async function verifyAttachmentFiles(activeDoc: ActiveDoc) {
       assert.deepStrictEqual(
