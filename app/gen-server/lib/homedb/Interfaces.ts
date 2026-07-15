@@ -117,6 +117,8 @@ export interface DocAuthResult {
 // the full HomeDBManager, but this makes it easier to know which of its methods matter.
 export interface HomeDBAuth {
   getAnonymousUserId(): number;
+  // IkaDoc runtime seam: previewer metadata lookup is constrained again by runtime credential docAuth.
+  getPreviewerUserId(): number;
   getSupportUserId(): number;
   getAnonymousUser(): User;
   getUser(userId: number, options?: { includePrefs?: boolean }): Promise<User | undefined>;

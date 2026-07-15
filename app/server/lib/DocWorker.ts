@@ -6,13 +6,15 @@
 import { isAffirmative } from "app/common/gutil";
 import { HomeDBManager } from "app/gen-server/lib/homedb/HomeDBManager";
 import { assertAccess, getOrSetDocAuth, RequestWithLogin } from "app/server/lib/Authorizer";
-import { Client } from "app/server/lib/Client";
 import { Comm } from "app/server/lib/Comm";
 import { DocApiUsageTracker } from "app/server/lib/DocApiUsageTracker";
 import { DocSession, docSessionFromRequest } from "app/server/lib/DocSession";
 import { filterDocumentInPlace } from "app/server/lib/filterUtils";
 import { GristServer } from "app/server/lib/GristServer";
 import { IDocStorageManager } from "app/server/lib/IDocStorageManager";
+import { activeDocMethod } from "app/server/lib/IkaDocActiveDocMethod";
+import { IkaDocRuntimeSessionValidator } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
   getDocId, getExtraAttachmentOptions, integerParam,
@@ -30,14 +32,20 @@ export interface AttachOptions {
   comm: Comm;                             // Comm object for methods called via websocket
   gristServer: GristServer;
   tracker?: DocApiUsageTracker;           // Shared API usage tracker for rate-limiting
+  ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  ikadocRuntimeSessionValidator?: IkaDocRuntimeSessionValidator;
 }
 
 export class DocWorker {
   private _comm: Comm;
   private _tracker?: DocApiUsageTracker;
+  private _ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  private _ikadocRuntimeSessionValidator?: IkaDocRuntimeSessionValidator;
   constructor(private _dbManager: HomeDBManager, options: AttachOptions) {
     this._comm = options.comm;
     this._tracker = options.tracker;
+    this._ikadocRuntimeSessionRegistry = options.ikadocRuntimeSessionRegistry;
+    this._ikadocRuntimeSessionValidator = options.ikadocRuntimeSessionValidator;
   }
 
   public async getAttachment(req: express.Request, res: express.Response): Promise<void> {
@@ -120,35 +128,73 @@ export class DocWorker {
   public registerCommCore(): void {
     const comm = this._comm;
     const tracker = this._tracker;
-    const method = activeDocMethod.bind(null, tracker);
+    const method = activeDocMethod.bind(
+      null,
+      tracker,
+      this._ikadocRuntimeSessionRegistry,
+      this._ikadocRuntimeSessionValidator,
+    );
     comm.registerMethods({
       closeDoc: method(null, "closeDoc"),
       fetchTable: method("viewers", "fetchTable"),
       fetchPythonCode: method("viewers", "fetchPythonCode"),
       useQuerySet: method("viewers", "useQuerySet"),
       disposeQuerySet: method("viewers", "disposeQuerySet"),
-      applyUserActions: method("editors", "applyUserActions"),
-      applyUserActionsById: method("editors", "applyUserActionsById"),
+      applyUserActions: method("editors", "applyUserActions", {
+        capability: "canEditCells",
+        operation: "apply document edits",
+      }),
+      applyUserActionsById: method("editors", "applyUserActionsById", {
+        capability: "canEditCells",
+        operation: "apply document edits by id",
+      }),
       findColFromValues: method("viewers", "findColFromValues"),
       getFormulaError: method("viewers", "getFormulaError"),
-      importFiles: method("editors", "importFiles"),
-      finishImportFiles: method("editors", "finishImportFiles"),
-      cancelImportFiles: method("editors", "cancelImportFiles"),
-      generateImportDiff: method("editors", "generateImportDiff"),
-      addAttachments: method("editors", "addAttachments"),
+      importFiles: method("editors", "importFiles", {
+        capability: "canImportLocalFiles",
+        operation: "import files",
+      }),
+      finishImportFiles: method("editors", "finishImportFiles", {
+        capability: "canImportLocalFiles",
+        operation: "finish file import",
+      }),
+      cancelImportFiles: method("editors", "cancelImportFiles", {
+        capability: "canImportLocalFiles",
+        operation: "cancel file import",
+      }),
+      generateImportDiff: method("editors", "generateImportDiff", {
+        capability: "canImportLocalFiles",
+        operation: "generate import diff",
+      }),
+      addAttachments: method("editors", "addAttachments", {
+        capability: "canUseAttachments",
+        operation: "add attachments",
+      }),
       startBundleUserActions: method("editors", "startBundleUserActions"),
       stopBundleUserActions: method("editors", "stopBundleUserActions"),
       autocomplete: method("viewers", "autocomplete"),
-      fetchURL: method("viewers", "fetchURL"),
+      fetchURL: method("viewers", "fetchURL", {
+        capability: "canUseExternalData",
+        operation: "fetch external URL",
+      }),
       getActionSummaries: method("viewers", "getActionSummaries"),
       reloadDoc: method("editors", "reloadDoc"),
-      fork: method("viewers", "fork"),
+      fork: method("viewers", "fork", { operation: "fork document" }),
       checkAclFormula: method("viewers", "checkAclFormula"),
       getAclResources: method("viewers", "getAclResources"),
       waitForInitialization: method("viewers", "waitForInitialization"),
-      getUsersForViewAs: method("viewers", "getUsersForViewAs"),
-      getAccessToken: method("viewers", "getAccessToken"),
-      getShare: method("owners", "getShare"),
+      getUsersForViewAs: method("viewers", "getUsersForViewAs", {
+        capability: "canManageAccess",
+        operation: "list users for access simulation",
+      }),
+      getAccessToken: method("viewers", "getAccessToken", {
+        capability: "canManageAccess",
+        operation: "create access token",
+      }),
+      getShare: method("owners", "getShare", {
+        capability: "canShare",
+        operation: "read share link",
+      }),
       startTiming: method("owners", "startTiming"),
       stopTiming: method("owners", "stopTiming"),
       getAssistantState: method("owners", "getAssistantState"),
@@ -160,13 +206,24 @@ export class DocWorker {
 
   // Register methods related to plugins.
   public registerCommPlugin(): void {
-    const method = activeDocMethod.bind(null, this._tracker);
+    const method = activeDocMethod.bind(
+      null,
+      this._tracker,
+      this._ikadocRuntimeSessionRegistry,
+      this._ikadocRuntimeSessionValidator,
+    );
     this._comm.registerMethods({
-      forwardPluginRpc: method("editors", "forwardPluginRpc"),
+      forwardPluginRpc: method("editors", "forwardPluginRpc", {
+        capability: "canUsePlugins",
+        operation: "use plugin RPC",
+      }),
       // TODO: consider not providing reloadPlugins on hosted grist, since it affects the
       // plugin manager shared across docs on a given doc worker, and seems useful only in
       // standalone case.
-      reloadPlugins: method("editors", "reloadPlugins"),
+      reloadPlugins: method("editors", "reloadPlugins", {
+        capability: "canUsePlugins",
+        operation: "reload plugins",
+      }),
     });
   }
 
@@ -208,42 +265,4 @@ export class DocWorker {
     const client = this._comm.getClient(clientId);
     return client.getDocSession(docFD);
   }
-}
-
-/**
- * Translates calls from the browser client into calls of the form
- * `activeDoc.method(docSession, ...args)`.
- *
- * When a tracker is provided and the client authenticated via API key,
- * enforces the same parallel and daily usage limits as the REST API.
- */
-function activeDocMethod(tracker: DocApiUsageTracker | undefined,
-  role: "viewers" | "editors" | "owners" | null, methodName: string) {
-  return async (client: Client, docFD: number, ...args: any[]): Promise<any> => {
-    const docSession = client.getDocSession(docFD);
-    const activeDoc = docSession.activeDoc;
-    if (role) { await docSession.authorizer.assertAccess(role); }
-    // Include a basic log record for each ActiveDoc method call.
-    log.rawDebug("activeDocMethod", activeDoc.getLogMeta(docSession, methodName));
-
-    if (tracker && client.authSession.isApiKeyAuth) {
-      let dailyMax: number | undefined;
-      if (role) {
-        // assertAccess was already called above, so getCachedAuth() is available.
-        const cachedDoc = docSession.authorizer.getCachedAuth().cachedDoc;
-        dailyMax = cachedDoc?.workspace?.org?.billingAccount
-          ?.getEffectiveFeatures()?.baseMaxApiUnitsPerDocumentPerDay;
-      }
-      // acquire + method call are in the same try so release runs even if acquire throws
-      // (acquire increments the parallel counter before checking limits).
-      try {
-        tracker.acquire(activeDoc.docName, dailyMax);
-        return await (activeDoc as any)[methodName](docSession, ...args);
-      } finally {
-        tracker.release(activeDoc.docName);
-      }
-    }
-
-    return (activeDoc as any)[methodName](docSession, ...args);
-  };
 }

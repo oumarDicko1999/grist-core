@@ -11,6 +11,7 @@ import { TELEMETRY_TEMPLATE_SIGNUP_COOKIE_NAME } from "app/common/Telemetry";
 import { Document as APIDocument, PublicDocWorkerUrlInfo } from "app/common/UserAPI";
 import { Document } from "app/gen-server/entity/Document";
 import { HomeDBManager } from "app/gen-server/lib/homedb/HomeDBManager";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { assertAccess, getTransitiveHeaders, getUserId, isAnonymousUser,
   RequestWithLogin } from "app/server/lib/Authorizer";
 import { DocStatus, IDocWorkerMap } from "app/server/lib/DocWorkerMap";
@@ -20,6 +21,9 @@ import {
 import { expressWrap } from "app/server/lib/expressWrap";
 import { DocTemplate, GristServer } from "app/server/lib/GristServer";
 import { getCookieDomain } from "app/server/lib/gristSessions";
+import { attachIkaDocEditorEndpoint } from "app/server/lib/IkaDocEditorEndpoint";
+import { denyIkaDocRuntimeOperation } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import { addOrgToPathIfNeeded, pruneAPIResult, trustOrigin } from "app/server/lib/requestUtils";
 import { ISendAppPageOptions } from "app/server/lib/sendAppPage";
@@ -38,17 +42,24 @@ export interface AttachOptions {
   dbManager: HomeDBManager;
   plugins: LocalPlugin[];
   gristServer: GristServer;
+  ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient;
+  ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
 }
 
 export function attachAppEndpoint(options: AttachOptions): void {
   const { app, middleware, docMiddleware, formMiddleware, docWorkerMap,
-    forceLogin, sendAppPage, dbManager, plugins, gristServer } = options;
+    forceLogin, sendAppPage, dbManager, plugins, gristServer, ikadocEditorAdmissionClient,
+    ikadocRuntimeSessionRegistry } = options;
+  const denyIkaDocHomeSurface = denyIkaDocRuntimeOperation(
+    ikadocRuntimeSessionRegistry,
+    "browse Grist home, template, or workspace pages",
+  );
   // Per-workspace URLs open the same old Home page, and it's up to the client to notice and
   // render the right workspace.
-  app.get(["/", "/ws/:wsId", "/p/:page"], ...middleware, expressWrap(async (req, res) =>
+  app.get(["/", "/ws/:wsId", "/p/:page"], denyIkaDocHomeSurface, ...middleware, expressWrap(async (req, res) =>
     sendAppPage(req, res, { path: "app.html", status: 200, config: { plugins }, googleTagManager: "anon" })));
 
-  app.get("/apiconsole", expressWrap(async (req, res) =>
+  app.get("/apiconsole", denyIkaDocHomeSurface, expressWrap(async (req, res) =>
     sendAppPage(req, res, { path: "apiconsole.html", status: 200, config: {} })));
 
   app.get("/api/worker/:docId([^/]+)/?*", expressWrap(async (req, res) => {
@@ -67,6 +78,15 @@ export function attachAppEndpoint(options: AttachOptions): void {
       };
     return res.json(info);
   }));
+
+  attachIkaDocEditorEndpoint({
+    app,
+    middleware: [],
+    getDocTemplate: () => gristServer.getDocTemplate(),
+    sendAppPage,
+    admissionClient: ikadocEditorAdmissionClient,
+    runtimeSessionRegistry: ikadocRuntimeSessionRegistry,
+  });
 
   // Handler for serving the document landing pages.  Expects the following parameters:
   //   urlId, slug (optional), remainder

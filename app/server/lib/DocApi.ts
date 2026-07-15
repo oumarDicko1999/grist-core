@@ -43,6 +43,7 @@ import GristApiTI from "app/plugin/GristAPI-ti";
 import GristDataTI from "app/plugin/GristData-ti";
 import { OpOptions } from "app/plugin/TableOperations";
 import { TableOperationsImpl, TableOperationsPlatform } from "app/plugin/TableOperationsImpl";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { ActiveDoc, getRealTableId } from "app/server/lib/ActiveDoc";
 import { getDocPoolIdFromDocInfo } from "app/server/lib/AttachmentStore";
 import {
@@ -87,6 +88,14 @@ import { GristServer } from "app/server/lib/GristServer";
 import { getAnonPlaygroundEnabled } from "app/server/lib/gristSettings";
 import { HashUtil } from "app/server/lib/HashUtil";
 import { makeForkIds } from "app/server/lib/idUtils";
+import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
+import {
+  assertIkaDocUserActionsAllowedForDocument,
+  denyIkaDocRuntimeOperation,
+  requireIkaDocCapability,
+  requireIkaDocUserActionsForRequest,
+} from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
   getDocId,
@@ -146,7 +155,10 @@ export class DocWorkerApi {
   constructor(private _app: Application, private _docWorker: DocWorker,
     private _docWorkerMap: IDocWorkerMap, private _docManager: DocManager,
     private _dbManager: HomeDBManager, private _attachmentStoreProvider: IAttachmentStoreProvider,
-    private _grist: GristServer, tracker?: DocApiUsageTracker) {
+    private _grist: GristServer, tracker: DocApiUsageTracker | undefined,
+    private _ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry,
+    private _ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient,
+    private _ikadocForwardAuthSecret?: string) {
     this._tracker = tracker ?? new DocApiUsageTracker({
       getRedisClient: () => this._docWorkerMap.getRedisClient(),
     });
@@ -169,6 +181,19 @@ export class DocWorkerApi {
     // Add middleware that permits OAuth tokens on some endpoints (when OAuth support is present).
     this._grist.getOAuthValidator()?.addDocApiMiddleware(this._app);
 
+    // Runtime sessions are an IkaDoc-only editor transport credential. The global /api
+    // middleware runs before Grist user resolution, so Grist auth can replace it; install
+    // the same credential again at the DocApi seam before document REST authorization.
+    this._app.use(
+      "/api/docs/:docId",
+      createIkaDocRuntimeAuthMiddleware(
+        this._dbManager,
+        this._ikadocRuntimeSessionRegistry,
+        this._ikadocEditorAdmissionClient,
+        this._ikadocForwardAuthSecret,
+      ),
+    );
+
     // Some endpoints require the admin
     const requireInstallAdmin = this._grist.getInstallAdmin().getMiddlewareRequireAdmin();
 
@@ -184,13 +209,73 @@ export class DocWorkerApi {
     const decodeGoogleToken = expressWrap(googleAuthTokenMiddleware.bind(null));
 
     const throttled = this._tracker.throttle.bind(this._tracker);
+    const requireIkaDocCellEdit = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canEditCells",
+      "apply document edits",
+    );
+    const requireIkaDocAttachmentUse = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canUseAttachments",
+      "use document attachments",
+    );
+    const requireIkaDocRuntimeExport = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canExportFromBrowser",
+      "export or download document data",
+    );
+    const requireIkaDocBrowserExport: RequestHandler = (req, res, next) => {
+      if ((req as RequestWithLogin).isApiKeyAuth) {
+        return next();
+      }
+      return requireIkaDocRuntimeExport(req, res, next);
+    };
+    const requireIkaDocHistoryView = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canViewHistory",
+      "view document history",
+    );
+    const requireIkaDocAccessManagement = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canManageAccess",
+      "manage document access",
+    );
+    const requireIkaDocExternalData = requireIkaDocCapability(
+      this._ikadocRuntimeSessionRegistry,
+      "canUseExternalData",
+      "manage webhook or trigger egress",
+    );
+    const denyIkaDocFork = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "fork document");
+    const denyIkaDocCopy = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "copy document");
+    const denyIkaDocExternalSend = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry,
+      "send document data to external services",
+    );
+    const denyIkaDocAdminMutation = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry,
+      "perform document administration",
+    );
+    const denyIkaDocHistoryMutation = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry,
+      "modify document history",
+    );
+    const denyIkaDocProposal = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use proposals");
+    const denyIkaDocAssistant = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use assistant");
+    const denyIkaDocDocumentCreation = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry,
+      "create or import Grist documents",
+    );
+    const requireIkaDocUserActions = requireIkaDocUserActionsForRequest(this._ikadocRuntimeSessionRegistry);
+    const assertIkaDocUserActions = (docId: string, actions: UserAction[]) =>
+      assertIkaDocUserActionsAllowedForDocument(this._ikadocRuntimeSessionRegistry, docId, actions);
 
     const withDoc = (callback: WithDocHandler) => throttled(this._requireActiveDoc(callback));
     // Apply user actions to a document.
-    this._app.post("/api/docs/:docId/apply", canEdit, withDoc(async (activeDoc, req, res) => {
-      const parseStrings = !isAffirmative(req.query.noparse);
-      res.json(await activeDoc.applyUserActions(docSessionFromRequest(req), req.body, { parseStrings }));
-    }));
+    this._app.post("/api/docs/:docId/apply", canEdit, requireIkaDocCellEdit, requireIkaDocUserActions,
+      withDoc(async (activeDoc, req, res) => {
+        const parseStrings = !isAffirmative(req.query.noparse);
+        res.json(await activeDoc.applyUserActions(docSessionFromRequest(req), req.body, { parseStrings }));
+      }));
 
     async function readTable(
       req: RequestWithLogin,
@@ -322,10 +407,11 @@ export class DocWorkerApi {
 
     // The upload should be a multipart post with an 'upload' field containing one or more files.
     // Returns the list of rowIds for the rows created in the _grist_Attachments table.
-    this._app.post("/api/docs/:docId/attachments", canEdit, withDoc(async (activeDoc, req, res) => {
-      const uploadResult = await handleUpload(req, res);
-      res.json(await activeDoc.addAttachments(docSessionFromRequest(req), uploadResult.uploadId));
-    }));
+    this._app.post("/api/docs/:docId/attachments", canEdit, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const uploadResult = await handleUpload(req, res);
+        res.json(await activeDoc.addAttachments(docSessionFromRequest(req), uploadResult.uploadId));
+      }));
 
     // Doc-scoped upload: registers an upload in globalUploadSet on the doc-owning worker.
     // The resulting uploadId is then consumable on this same worker.
@@ -404,26 +490,27 @@ export class DocWorkerApi {
     );
 
     // Responds with an archive of all attachment contents, with suitable Content-Type and Content-Disposition.
-    this._app.get("/api/docs/:docId/attachments/archive", canView, withDoc(async (activeDoc, req, res) => {
-      const archiveFormatStr = optStringParam(req.query.format, "format", {
-        allowed: CreatableArchiveFormats.values,
-        allowEmpty: true,
-      });
+    this._app.get("/api/docs/:docId/attachments/archive", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const archiveFormatStr = optStringParam(req.query.format, "format", {
+          allowed: CreatableArchiveFormats.values,
+          allowEmpty: true,
+        });
 
-      const archiveFormat = CreatableArchiveFormats.parse(archiveFormatStr) || "zip";
-      const archive = await activeDoc.getAttachmentsArchive(docSessionFromRequest(req), archiveFormat);
-      const docName = await this._getDownloadFilename(req, "Attachments", activeDoc.doc);
-      res.status(200)
-        .type(archive.mimeType)
+        const archiveFormat = CreatableArchiveFormats.parse(archiveFormatStr) || "zip";
+        const archive = await activeDoc.getAttachmentsArchive(docSessionFromRequest(req), archiveFormat);
+        const docName = await this._getDownloadFilename(req, "Attachments", activeDoc.doc);
+        res.status(200)
+          .type(archive.mimeType)
         // Construct a content-disposition header of the form 'attachment; filename="NAME"'
-        .set("Content-Disposition",
-          contentDisposition(`${docName}.${archive.fileExtension}`, { type: "attachment" }))
+          .set("Content-Disposition",
+            contentDisposition(`${docName}.${archive.fileExtension}`, { type: "attachment" }))
         // Avoid storing because this could be huge.
-        .set("Cache-Control", "no-store");
+          .set("Cache-Control", "no-store");
 
-      try {
-        await archive.packInto(res, { endDestStream: false });
-      } catch (err) {
+        try {
+          await archive.packInto(res, { endDestStream: false });
+        } catch (err) {
         // This only behaves sensibly if the 'download' attribute is on the <a> tag.
         // Otherwise you get a poor user experience, such as:
         // - No data written to the stream: open a new tab with a 500 error.
@@ -431,48 +518,49 @@ export class DocWorkerApi {
         // - Return some data without res.destroy(): download shows as successful, despite being corrupt.
         // Sending headers then resetting the connection shows as 'Download failed', regardless of the
         // 'download' attribute being set.
-        res.destroy(err);
-        const meta = {
-          docId: activeDoc.doc?.id,
-          archiveFormat,
-          altSessionId: req.altSessionId,
-        };
-        if (err?.code === "ERR_STREAM_PREMATURE_CLOSE") {
-          log.rawWarn("Client closed archive download stream before completion", meta);
-        } else {
-          log.rawError(`Error while packing attachment archive: ${err.stack ?? err.message}`, meta);
+          res.destroy(err);
+          const meta = {
+            docId: activeDoc.doc?.id,
+            archiveFormat,
+            altSessionId: req.altSessionId,
+          };
+          if (err?.code === "ERR_STREAM_PREMATURE_CLOSE") {
+            log.rawWarn("Client closed archive download stream before completion", meta);
+          } else {
+            log.rawError(`Error while packing attachment archive: ${err.stack ?? err.message}`, meta);
+          }
         }
-      }
-      res.end();
-    }));
+        res.end();
+      }));
 
-    this._app.post("/api/docs/:docId/attachments/archive", isOwner, withDoc(async (activeDoc, req, res) => {
-      let archivePromise: Promise<ArchiveUploadResult> | undefined;
+    this._app.post("/api/docs/:docId/attachments/archive", isOwner, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        let archivePromise: Promise<ArchiveUploadResult> | undefined;
 
-      await parseMultipartFormRequest(
-        req,
-        async (file) => {
-          if (archivePromise || !file.name.endsWith(".tar") || file.contentType !== "application/x-tar") { return; }
-          archivePromise = activeDoc.addMissingFilesFromArchive(docSessionFromRequest(req), file.stream);
-          await archivePromise;
-        },
-      );
+        await parseMultipartFormRequest(
+          req,
+          async (file) => {
+            if (archivePromise || !file.name.endsWith(".tar") || file.contentType !== "application/x-tar") { return; }
+            archivePromise = activeDoc.addMissingFilesFromArchive(docSessionFromRequest(req), file.stream);
+            await archivePromise;
+          },
+        );
 
-      if (!archivePromise) {
-        throw new ApiError("No .tar file found in request", 400);
-      }
-
-      // parseMultipartFormRequest ignores handler errors.
-      // Await this here to ensure errors are thrown.
-      try {
-        res.json(await archivePromise);
-      } catch (err) {
-        if (err instanceof Error && err.message === "Unexpected end of data") {
-          throw new Error("File is not a valid .tar");
+        if (!archivePromise) {
+          throw new ApiError("No .tar file found in request", 400);
         }
-        throw err;
-      }
-    }));
+
+        // parseMultipartFormRequest ignores handler errors.
+        // Await this here to ensure errors are thrown.
+        try {
+          res.json(await archivePromise);
+        } catch (err) {
+          if (err instanceof Error && err.message === "Unexpected end of data") {
+            throw new Error("File is not a valid .tar");
+          }
+          throw err;
+        }
+      }));
 
     // Returns cleaned metadata for a given attachment ID (i.e. a rowId in _grist_Attachments table).
     this._app.get("/api/docs/:docId/attachments/:attId", canView, withDoc(async (activeDoc, req, res) => {
@@ -483,23 +571,24 @@ export class DocWorkerApi {
     }));
 
     // Responds with attachment contents, with suitable Content-Type and Content-Disposition.
-    this._app.get("/api/docs/:docId/attachments/:attId/download", canView, withDoc(async (activeDoc, req, res) => {
-      const attId = integerParam(req.params.attId, "attId");
-      const options = getExtraAttachmentOptions(req);
-      // getAttachmentData below will throw if user does not have access to attachment.
-      const attRecord = activeDoc.getAttachmentMetadataWithoutAccessControl(attId);
-      const fileIdent = attRecord.fileIdent as string;
-      const ext = path.extname(fileIdent);
-      const origName = attRecord.fileName as string;
-      const fileName = ext ? path.basename(origName, path.extname(origName)) + ext : origName;
-      const fileData = await activeDoc.getAttachmentData(docSessionFromRequest(req), attRecord, options);
-      res.status(200)
-        .type(ext)
+    this._app.get("/api/docs/:docId/attachments/:attId/download", canView, requireIkaDocAttachmentUse,
+      withDoc(async (activeDoc, req, res) => {
+        const attId = integerParam(req.params.attId, "attId");
+        const options = getExtraAttachmentOptions(req);
+        // getAttachmentData below will throw if user does not have access to attachment.
+        const attRecord = activeDoc.getAttachmentMetadataWithoutAccessControl(attId);
+        const fileIdent = attRecord.fileIdent as string;
+        const ext = path.extname(fileIdent);
+        const origName = attRecord.fileName as string;
+        const fileName = ext ? path.basename(origName, path.extname(origName)) + ext : origName;
+        const fileData = await activeDoc.getAttachmentData(docSessionFromRequest(req), attRecord, options);
+        res.status(200)
+          .type(ext)
         // Construct a content-disposition header of the form 'attachment; filename="NAME"'
-        .set("Content-Disposition", contentDisposition(fileName, { type: "attachment" }))
-        .set("Cache-Control", "private, max-age=3600")
-        .send(fileData);
-    }));
+          .set("Content-Disposition", contentDisposition(fileName, { type: "attachment" }))
+          .set("Cache-Control", "private, max-age=3600")
+          .send(fileData);
+      }));
 
     // Mostly for testing
     this._app.post("/api/docs/:docId/attachments/updateUsed", canEdit, withDoc(async (activeDoc, req, res) => {
@@ -533,7 +622,7 @@ export class DocWorkerApi {
       withDoc(async (activeDoc, req, res) => {
         const colValues = req.body as BulkColValues;
         const count = colValues[Object.keys(colValues)[0]].length;
-        const op = await getTableOperations(req, activeDoc);
+        const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const ids = await op.addRecords(count, colValues);
         res.json(ids);
       }),
@@ -562,7 +651,7 @@ export class DocWorkerApi {
           }
         }
         validateCore(RecordsPost, req, body);
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const records = await ops.create(body.records);
         if (req.query.utm_source === "grist-forms") {
           activeDoc.logTelemetryEvent(docSessionFromRequest(req), "submittedForm");
@@ -603,6 +692,7 @@ export class DocWorkerApi {
           // Maybe there should be a query param to control this?
           ["AddVisibleColumn", tableId, colId, fields || {}],
         );
+        assertIkaDocUserActions(activeDoc.docName, actions);
         const { retValues } = await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -620,6 +710,7 @@ export class DocWorkerApi {
           const colInfos = columns.map(({ fields, id: colId }) => ({ ...fields, id: colId }));
           return ["AddTable", id, colInfos];
         });
+        assertIkaDocUserActions(activeDoc.docName, actions);
         const { retValues } = await activeDoc.applyUserActions(docSessionFromRequest(req), actions);
         const tables = retValues.map(({ table_id }) => ({ id: table_id }));
         res.json({ tables });
@@ -628,7 +719,7 @@ export class DocWorkerApi {
 
     this._app.post("/api/docs/:docId/tables/:tableId/data/delete", canEdit, withDoc(async (activeDoc, req, res) => {
       const rowIds = req.body;
-      const op = await getTableOperations(req, activeDoc);
+      const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
       await op.destroy(rowIds);
       res.json(null);
     }));
@@ -636,7 +727,7 @@ export class DocWorkerApi {
     // Download full document
     // TODO: look at download behavior if ActiveDoc is shutdown during call (cannot
     // use withDoc wrapper)
-    this._app.get("/api/docs/:docId/download", canView, throttled(async (req, res) => {
+    this._app.get("/api/docs/:docId/download", canView, requireIkaDocBrowserExport, throttled(async (req, res) => {
       // Support a dryRun flag to check if user has the right to download the
       // full document.
       const dryRun = isAffirmative(req.query.dryrun || req.query.dryRun);
@@ -677,13 +768,13 @@ export class DocWorkerApi {
     }));
 
     // Fork the specified document.
-    this._app.post("/api/docs/:docId/fork", canView, withDoc(async (activeDoc, req, res) => {
+    this._app.post("/api/docs/:docId/fork", canView, denyIkaDocFork, withDoc(async (activeDoc, req, res) => {
       const result = await activeDoc.fork(docSessionFromRequest(req));
       res.json(result);
     }));
 
     // Initiate a fork.  Used internally to implement ActiveDoc.fork.  Only usable via a Permit.
-    this._app.post("/api/docs/:docId/create-fork", canEdit, throttled(async (req, res) => {
+    this._app.post("/api/docs/:docId/create-fork", canEdit, denyIkaDocFork, throttled(async (req, res) => {
       const docId = stringParam(req.params.docId, "docId");
       const srcDocId = stringParam(req.body.srcDocId, "srcDocId");
       if (srcDocId !== req.specialPermit?.otherDocId) { throw new Error("access denied"); }
@@ -706,7 +797,7 @@ export class DocWorkerApi {
         const rowIds = columnValues.id;
         // sandbox expects no id column
         delete columnValues.id;
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await ops.updateRecords(columnValues, rowIds);
         res.json(null);
       }),
@@ -716,7 +807,7 @@ export class DocWorkerApi {
     this._app.patch("/api/docs/:docId/tables/:tableId/records", canEdit, validate(RecordsPatch),
       withDoc(async (activeDoc, req, res) => {
         const body = req.body as Types.RecordsPatch;
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await ops.update(body.records);
         res.json(null);
       }),
@@ -726,7 +817,7 @@ export class DocWorkerApi {
     this._app.post("/api/docs/:docId/tables/:tableId/records/delete", canEdit,
       withDoc(async (activeDoc, req, res) => {
         const rowIds = req.body;
-        const op = await getTableOperations(req, activeDoc);
+        const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await op.destroy(rowIds);
         res.json(null);
       }),
@@ -750,7 +841,12 @@ export class DocWorkerApi {
           }
           return { ...col, id };
         });
-        const ops = await getTableOperations(req, activeDoc, "_grist_Tables_column");
+        const ops = await getTableOperations(
+          req,
+          activeDoc,
+          "_grist_Tables_column",
+          this._ikadocRuntimeSessionRegistry,
+        );
         await ops.update(columns);
         res.json(null);
       }),
@@ -768,7 +864,7 @@ export class DocWorkerApi {
           }
           return { ...table, id };
         });
-        const ops = await getTableOperations(req, activeDoc, "_grist_Tables");
+        const ops = await getTableOperations(req, activeDoc, "_grist_Tables", this._ikadocRuntimeSessionRegistry);
         await ops.update(tables);
         res.json(null);
       }),
@@ -777,7 +873,7 @@ export class DocWorkerApi {
     // Add or update records given in records format
     this._app.put("/api/docs/:docId/tables/:tableId/records", canEdit, validate(RecordsPut),
       withDoc(async (activeDoc, req, res) => {
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const body = req.body as Types.RecordsPut;
         const options = {
           add: !isAffirmative(req.query.noadd),
@@ -832,6 +928,7 @@ export class DocWorkerApi {
           ...(!isAffirmative(req.query.noadd) ? addActions : []),
           ...(isAffirmative(req.query.replaceall) ? [await getRemoveAction()] : []),
         ];
+        assertIkaDocUserActions(activeDoc.docName, actions);
         await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -844,6 +941,7 @@ export class DocWorkerApi {
         const { colId } = req.params;
         const tableId = await getRealTableId(req.params.tableId, { activeDoc, req });
         const actions = [["RemoveColumn", tableId, colId]];
+        assertIkaDocUserActions(activeDoc.docName, actions);
         await handleSandboxError(tableId, [colId],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -853,7 +951,7 @@ export class DocWorkerApi {
 
     // Reload a document forcibly (in fact this closes the doc, it will be automatically
     // reopened on use).
-    this._app.post("/api/docs/:docId/force-reload", canEdit, async (req, res) => {
+    this._app.post("/api/docs/:docId/force-reload", canEdit, denyIkaDocAdminMutation, async (req, res) => {
       const mreq = req as RequestWithLogin;
       const activeDoc = await this._getActiveDoc(mreq);
       const document = activeDoc.doc || { id: activeDoc.docName };
@@ -862,7 +960,7 @@ export class DocWorkerApi {
       res.json(null);
     });
 
-    this._app.post("/api/docs/:docId/recover", canEdit, throttled(async (req, res) => {
+    this._app.post("/api/docs/:docId/recover", canEdit, denyIkaDocAdminMutation, throttled(async (req, res) => {
       const recoveryModeRaw = req.body.recoveryMode;
       const recoveryMode = (typeof recoveryModeRaw === "boolean") ? recoveryModeRaw : undefined;
       if (!await this._isOwner(req)) { throw new Error("Only owners can control recovery mode"); }
@@ -875,78 +973,85 @@ export class DocWorkerApi {
 
     // DELETE /api/docs/:docId
     // Delete the specified doc.
-    this._app.delete("/api/docs/:docId", canEditMaybeRemovedOrDisabled, throttled(async (req, res) => {
-      const { data } = await this._removeDoc(req, res, true);
-      if (data) { this._logDeleteDocumentEvents(req, data); }
-    }));
+    this._app.delete("/api/docs/:docId", canEditMaybeRemovedOrDisabled, denyIkaDocAdminMutation,
+      throttled(async (req, res) => {
+        const { data } = await this._removeDoc(req, res, true);
+        if (data) { this._logDeleteDocumentEvents(req, data); }
+      }));
 
     // POST /api/docs/:docId/remove
     // Soft-delete the specified doc.  If query parameter "permanent" is set,
     // delete permanently.
-    this._app.post("/api/docs/:docId/remove", canEditMaybeRemovedOrDisabled, throttled(async (req, res) => {
-      const permanent = isParameterOn(req.query.permanent);
-      const { data } = await this._removeDoc(req, res, permanent);
-      if (data) {
-        if (permanent) {
-          this._logDeleteDocumentEvents(req, data);
-        } else {
-          this._logRemoveDocumentEvents(req, data);
+    this._app.post("/api/docs/:docId/remove", canEditMaybeRemovedOrDisabled, denyIkaDocAdminMutation,
+      throttled(async (req, res) => {
+        const permanent = isParameterOn(req.query.permanent);
+        const { data } = await this._removeDoc(req, res, permanent);
+        if (data) {
+          if (permanent) {
+            this._logDeleteDocumentEvents(req, data);
+          } else {
+            this._logRemoveDocumentEvents(req, data);
+          }
         }
-      }
-    }));
+      }));
 
     // POST /api/docs/:docId/disable
     // Disables doc (removes all non-admin access except listing or deleting the doc)
-    this._app.post("/api/docs/:docId/disable", requireInstallAdmin, expressWrap(async (req, res) => {
-      await this._toggleDisabledStatus(req, res, "disable");
-    }));
+    this._app.post("/api/docs/:docId/disable", requireInstallAdmin, denyIkaDocAdminMutation,
+      expressWrap(async (req, res) => {
+        await this._toggleDisabledStatus(req, res, "disable");
+      }));
 
     // POST /api/docs/:docId/enable
     // Enables the specified doc if it was previously disabled
-    this._app.post("/api/docs/:docId/enable", requireInstallAdmin, expressWrap(async (req, res) => {
-      await this._toggleDisabledStatus(req, res, "enable");
-    }));
+    this._app.post("/api/docs/:docId/enable", requireInstallAdmin, denyIkaDocAdminMutation,
+      expressWrap(async (req, res) => {
+        await this._toggleDisabledStatus(req, res, "enable");
+      }));
 
-    this._app.get("/api/docs/:docId/snapshots", canView, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      const { snapshots } = await activeDoc.getSnapshots(docSession, isAffirmative(req.query.raw));
-      res.json({ snapshots });
-    }));
+    this._app.get("/api/docs/:docId/snapshots", canView, requireIkaDocHistoryView,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        const { snapshots } = await activeDoc.getSnapshots(docSession, isAffirmative(req.query.raw));
+        res.json({ snapshots });
+      }));
 
-    this._app.get("/api/docs/:docId/usersForViewAs", isOwner, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      res.json(await activeDoc.getUsersForViewAs(docSession));
-    }));
+    this._app.get("/api/docs/:docId/usersForViewAs", isOwner, requireIkaDocAccessManagement,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        res.json(await activeDoc.getUsersForViewAs(docSession));
+      }));
 
-    this._app.post("/api/docs/:docId/snapshots/remove", isOwner, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      const snapshotIds = req.body.snapshotIds as string[];
-      if (snapshotIds) {
-        await activeDoc.removeSnapshots(docSession, snapshotIds);
-        res.json({ snapshotIds });
-        return;
-      }
-      if (req.body.select === "unlisted") {
+    this._app.post("/api/docs/:docId/snapshots/remove", isOwner, denyIkaDocHistoryMutation,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        const snapshotIds = req.body.snapshotIds as string[];
+        if (snapshotIds) {
+          await activeDoc.removeSnapshots(docSession, snapshotIds);
+          res.json({ snapshotIds });
+          return;
+        }
+        if (req.body.select === "unlisted") {
         // Remove any snapshots not listed in inventory.  Ideally, there should be no
         // snapshots, and this undocumented feature is just for fixing up problems.
-        const full = (await activeDoc.getSnapshots(docSession, true)).snapshots.map(s => s.snapshotId);
-        const listed = new Set((await activeDoc.getSnapshots(docSession)).snapshots.map(s => s.snapshotId));
-        const unlisted = full.filter(snapshotId => !listed.has(snapshotId));
-        await activeDoc.removeSnapshots(docSession, unlisted);
-        res.json({ snapshotIds: unlisted });
-        return;
-      }
-      if (req.body.select === "past") {
+          const full = (await activeDoc.getSnapshots(docSession, true)).snapshots.map(s => s.snapshotId);
+          const listed = new Set((await activeDoc.getSnapshots(docSession)).snapshots.map(s => s.snapshotId));
+          const unlisted = full.filter(snapshotId => !listed.has(snapshotId));
+          await activeDoc.removeSnapshots(docSession, unlisted);
+          res.json({ snapshotIds: unlisted });
+          return;
+        }
+        if (req.body.select === "past") {
         // Remove all but the latest snapshot.  Useful for sanitizing history if something
         // bad snuck into previous snapshots and they are not valuable to preserve.
-        const past = (await activeDoc.getSnapshots(docSession, true)).snapshots.map(s => s.snapshotId);
-        past.shift();  // remove current version.
-        await activeDoc.removeSnapshots(docSession, past);
-        res.json({ snapshotIds: past });
-        return;
-      }
-      throw new Error("please specify snapshotIds to remove");
-    }));
+          const past = (await activeDoc.getSnapshots(docSession, true)).snapshots.map(s => s.snapshotId);
+          past.shift();  // remove current version.
+          await activeDoc.removeSnapshots(docSession, past);
+          res.json({ snapshotIds: past });
+          return;
+        }
+        throw new Error("please specify snapshotIds to remove");
+      }));
 
     this._app.post("/api/docs/:docId/flush", canEdit, throttled(async (req, res) => {
       const activeDocPromise = this._getActiveDocIfAvailable(req);
@@ -968,7 +1073,7 @@ export class DocWorkerApi {
     // Optionally accepts a `group` query param for updating the document's group prior
     // to (possible) reassignment. A blank string unsets the current group, if any.
     // (Requires a special permit.)
-    this._app.post("/api/docs/:docId/assign", canEdit, throttled(async (req, res) => {
+    this._app.post("/api/docs/:docId/assign", canEdit, denyIkaDocAdminMutation, throttled(async (req, res) => {
       const docId = getDocId(req);
       const group = optStringParam(req.query.group, "group");
       if (group !== undefined && req.specialPermit?.action === "assign-doc") {
@@ -997,7 +1102,7 @@ export class DocWorkerApi {
 
     // This endpoint cannot use withDoc since it is expected behavior for the ActiveDoc it
     // starts with to become muted.
-    this._app.post("/api/docs/:docId/replace", canEdit, throttled(async (req, res) => {
+    this._app.post("/api/docs/:docId/replace", canEdit, denyIkaDocAdminMutation, throttled(async (req, res) => {
       const docSession = docSessionFromRequest(req);
       const activeDoc = await this._getActiveDoc(req);
       const options: DocReplacementOptions = {};
@@ -1063,67 +1168,70 @@ export class DocWorkerApi {
       res.json(null);
     }));
 
-    this._app.get("/api/docs/:docId/states", canView, withDoc(async (activeDoc, req, res) => {
+    this._app.get("/api/docs/:docId/states", canView, requireIkaDocHistoryView, withDoc(async (activeDoc, req, res) => {
       const docSession = docSessionFromRequest(req);
       res.json(await this._getStates(docSession, activeDoc));
     }));
 
-    this._app.post("/api/docs/:docId/states/remove", isOwner, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      const keep = integerParam(req.body.keep, "keep");
-      await activeDoc.deleteActions(docSession, keep);
-      this._logTruncateDocumentHistoryEvents(activeDoc, req, { keep });
-      res.json(null);
-    }));
+    this._app.post("/api/docs/:docId/states/remove", isOwner, denyIkaDocHistoryMutation,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        const keep = integerParam(req.body.keep, "keep");
+        await activeDoc.deleteActions(docSession, keep);
+        this._logTruncateDocumentHistoryEvents(activeDoc, req, { keep });
+        res.json(null);
+      }));
 
-    this._app.get("/api/docs/:docId/compare/:docId2", canView, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      if (!await activeDoc.canCopyEverything(docSession)) {
-        throw new ApiError("insufficient access", 403);
-      }
-      const showDetails = isAffirmative(req.query.detail);
-      const maxRows = optIntegerParam(req.query.maxRows, "maxRows", {
-        nullable: true,
-        isValid: n => n > 0,
-      });
-      const docId2 = req.params.docId2;
-      const comp = await this._compareDoc(req, activeDoc, {
-        showDetails,
-        docId2,
-        maxRows,
-      });
-      res.json(comp);
-    }));
+    this._app.get("/api/docs/:docId/compare/:docId2", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        if (!await activeDoc.canCopyEverything(docSession)) {
+          throw new ApiError("insufficient access", 403);
+        }
+        const showDetails = isAffirmative(req.query.detail);
+        const maxRows = optIntegerParam(req.query.maxRows, "maxRows", {
+          nullable: true,
+          isValid: n => n > 0,
+        });
+        const docId2 = req.params.docId2;
+        const comp = await this._compareDoc(req, activeDoc, {
+          showDetails,
+          docId2,
+          maxRows,
+        });
+        res.json(comp);
+      }));
 
     // Give details about what changed between two versions of a document.
-    this._app.get("/api/docs/:docId/compare", canView, withDoc(async (activeDoc, req, res) => {
-      const docSession = docSessionFromRequest(req);
-      if (!await activeDoc.canCopyEverything(docSession)) {
-        throw new ApiError("insufficient access", 403);
-      }
-      // This could be a relatively slow operation if actions are large.
-      const leftHash = stringParam(req.query.left || "HEAD", "left");
-      const rightHash = stringParam(req.query.right || "HEAD", "right");
-      const maxRows = optIntegerParam(req.query.maxRows, "maxRows", {
-        nullable: true,
-        isValid: n => n > 0,
-      });
-      const { states } = await this._getStates(docSession, activeDoc);
-      res.json(
-        await getChanges(docSession, activeDoc, {
-          states,
-          leftHash,
-          rightHash,
-          maxRows,
-        }),
-      );
-    }));
+    this._app.get("/api/docs/:docId/compare", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const docSession = docSessionFromRequest(req);
+        if (!await activeDoc.canCopyEverything(docSession)) {
+          throw new ApiError("insufficient access", 403);
+        }
+        // This could be a relatively slow operation if actions are large.
+        const leftHash = stringParam(req.query.left || "HEAD", "left");
+        const rightHash = stringParam(req.query.right || "HEAD", "right");
+        const maxRows = optIntegerParam(req.query.maxRows, "maxRows", {
+          nullable: true,
+          isValid: n => n > 0,
+        });
+        const { states } = await this._getStates(docSession, activeDoc);
+        res.json(
+          await getChanges(docSession, activeDoc, {
+            states,
+            leftHash,
+            rightHash,
+            maxRows,
+          }),
+        );
+      }));
 
     /**
      * Take the content of the document, relative to a trunk, and make
      * it a proposal to the trunk document.
      */
-    this._app.post("/api/docs/:docId/propose", canEdit, withDoc(async (activeDoc, req, res) => {
+    this._app.post("/api/docs/:docId/propose", canEdit, denyIkaDocProposal, withDoc(async (activeDoc, req, res) => {
       const urlId = activeDoc.docName;
       const parts = parseUrlId(urlId || "");
       const retracted = Boolean(req.body.retracted);
@@ -1157,7 +1265,7 @@ export class DocWorkerApi {
      * where the document is the source are listed. Otherwise
      * proposals where the document is the desination are listed.
      */
-    this._app.get("/api/docs/:docId/proposals", canView, withDoc(async (activeDoc, req, res) => {
+    this._app.get("/api/docs/:docId/proposals", canView, denyIkaDocProposal, withDoc(async (activeDoc, req, res) => {
       const docSession = docSessionFromRequest(req);
       if (!await activeDoc.canCopyEverything(docSession)) {
         throw new ApiError("access denied", 400);
@@ -1187,17 +1295,18 @@ export class DocWorkerApi {
       });
     }));
 
-    this._app.post("/api/docs/:docId/proposals/:proposalId/apply", canEdit, withDoc(async (activeDoc, req, res) => {
-      const proposalId = integerParam(req.params.proposalId, "proposalId");
-      const docSession = docSessionFromRequest(req);
-      const changes = await activeDoc.applyProposal(docSession, proposalId);
-      await sendReply(req, res, { data: { proposalId, changes }, status: 200 });
-    }));
+    this._app.post("/api/docs/:docId/proposals/:proposalId/apply", canEdit, denyIkaDocProposal,
+      withDoc(async (activeDoc, req, res) => {
+        const proposalId = integerParam(req.params.proposalId, "proposalId");
+        const docSession = docSessionFromRequest(req);
+        const changes = await activeDoc.applyProposal(docSession, proposalId);
+        await sendReply(req, res, { data: { proposalId, changes }, status: 200 });
+      }));
 
     // Do an import targeted at a specific workspace. Although the URL fits ApiServer, this
     // endpoint is handled only by DocWorker, so is handled here.
     // This endpoint either uploads a new file to import, or accepts an existing uploadId.
-    this._app.post("/api/workspaces/:wid/import", expressWrap(async (req, res) => {
+    this._app.post("/api/workspaces/:wid/import", denyIkaDocDocumentCreation, expressWrap(async (req, res) => {
       const mreq = req as RequestWithLogin;
       const userId = getUserId(req);
       const wsId = integerParam(req.params.wid, "wid");
@@ -1230,61 +1339,67 @@ export class DocWorkerApi {
       res.json(result);
     }));
 
-    this._app.get("/api/docs/:docId/download/table-schema", canView, withDoc(async (activeDoc, req, res) => {
-      const doc = await this._dbManager.getDoc(req);
-      const options = await this._getDownloadOptions(req, doc);
-      const tableSchema = await collectTableSchemaInFrictionlessFormat(activeDoc, req, options);
-      const apiPath = await this._grist.getResourceUrl(doc, { purpose: "api" });
-      const query = new URLSearchParams(req.query as { [key: string]: string });
-      const tableSchemaPath = `${apiPath}/download/csv?${query.toString()}`;
-      res.send({
-        format: "csv",
-        mediatype: "text/csv",
-        encoding: "utf-8",
-        path: tableSchemaPath,
-        dialect: {
-          delimiter: ",",
-          doubleQuote: true,
-        },
-        ...tableSchema,
-      });
-    }));
+    this._app.get("/api/docs/:docId/download/table-schema", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const doc = await this._dbManager.getDoc(req);
+        const options = await this._getDownloadOptions(req, doc);
+        const tableSchema = await collectTableSchemaInFrictionlessFormat(activeDoc, req, options);
+        const apiPath = await this._grist.getResourceUrl(doc, { purpose: "api" });
+        const query = new URLSearchParams(req.query as { [key: string]: string });
+        const tableSchemaPath = `${apiPath}/download/csv?${query.toString()}`;
+        res.send({
+          format: "csv",
+          mediatype: "text/csv",
+          encoding: "utf-8",
+          path: tableSchemaPath,
+          dialect: {
+            delimiter: ",",
+            doubleQuote: true,
+          },
+          ...tableSchema,
+        });
+      }));
 
-    this._app.get("/api/docs/:docId/download/csv", canView, withDoc(async (activeDoc, req, res) => {
-      const options = await this._getDownloadOptions(req);
+    this._app.get("/api/docs/:docId/download/csv", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const options = await this._getDownloadOptions(req);
 
-      await downloadDSV(activeDoc, req, res, { ...options, delimiter: "," });
-    }));
+        await downloadDSV(activeDoc, req, res, { ...options, delimiter: "," });
+      }));
 
-    this._app.get("/api/docs/:docId/download/tsv", canView, withDoc(async (activeDoc, req, res) => {
-      const options = await this._getDownloadOptions(req);
+    this._app.get("/api/docs/:docId/download/tsv", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const options = await this._getDownloadOptions(req);
 
-      await downloadDSV(activeDoc, req, res, { ...options, delimiter: "\t" });
-    }));
+        await downloadDSV(activeDoc, req, res, { ...options, delimiter: "\t" });
+      }));
 
-    this._app.get("/api/docs/:docId/download/dsv", canView, withDoc(async (activeDoc, req, res) => {
-      const options = await this._getDownloadOptions(req);
+    this._app.get("/api/docs/:docId/download/dsv", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const options = await this._getDownloadOptions(req);
 
-      await downloadDSV(activeDoc, req, res, { ...options, delimiter: "💩" });
-    }));
+        await downloadDSV(activeDoc, req, res, { ...options, delimiter: "💩" });
+      }));
 
-    this._app.get("/api/docs/:docId/download/xlsx", canView, withDoc(async (activeDoc, req, res) => {
-      const options: DownloadOptions = (!_.isEmpty(req.query) && !_.isEqual(Object.keys(req.query), ["title"])) ?
-        await this._getDownloadOptions(req) :
-        {
-          filename: await this._getDownloadFilename(req),
-          header: "label",
-        };
-      await downloadXLSX(activeDoc, req, res, options);
-    }));
+    this._app.get("/api/docs/:docId/download/xlsx", canView, requireIkaDocBrowserExport,
+      withDoc(async (activeDoc, req, res) => {
+        const options: DownloadOptions = (!_.isEmpty(req.query) && !_.isEqual(Object.keys(req.query), ["title"])) ?
+          await this._getDownloadOptions(req) :
+          {
+            filename: await this._getDownloadFilename(req),
+            header: "label",
+          };
+        await downloadXLSX(activeDoc, req, res, options);
+      }));
 
-    this._app.get("/api/docs/:docId/send-to-drive", canView, decodeGoogleToken, withDoc(exportToDrive));
+    this._app.get("/api/docs/:docId/send-to-drive", canView, denyIkaDocExternalSend, decodeGoogleToken,
+      withDoc(exportToDrive));
 
     /**
      * Send a request to the assistant to get completions. Increases the
      * usage of the assistant for the billing account in case of success.
      */
-    this._app.post("/api/docs/:docId/assistant", canView, withDoc(async (activeDoc, req, res) => {
+    this._app.post("/api/docs/:docId/assistant", canView, denyIkaDocAssistant, withDoc(async (activeDoc, req, res) => {
       const docSession = docSessionFromRequest(req);
       const request = req.body;
       res.json(await activeDoc.getAssistance(docSession, request));
@@ -1308,7 +1423,7 @@ export class DocWorkerApi {
      *
      * TODO: unify this with the other document creation and import endpoints.
      */
-    this._app.post("/api/docs", checkAnonymousCreation, expressWrap(async (req, res) => {
+    this._app.post("/api/docs", denyIkaDocDocumentCreation, checkAnonymousCreation, expressWrap(async (req, res) => {
       const mreq = req as RequestWithLogin;
       const userId = getUserId(req);
 
@@ -1364,7 +1479,7 @@ export class DocWorkerApi {
       return res.status(200).json(docId);
     }));
 
-    this._app.post("/api/docs/:docId/copy", canView, expressWrap(async (req, res) => {
+    this._app.post("/api/docs/:docId/copy", canView, denyIkaDocCopy, expressWrap(async (req, res) => {
       const userId = getUserId(req);
 
       const parameters: { [key: string]: any } = req.body;
@@ -1568,6 +1683,7 @@ export class DocWorkerApi {
       middlewares: {
         isOwner,
         canEdit,
+        requireIkaDocExternalData,
       },
     });
   }
@@ -2244,17 +2360,21 @@ export class DocWorkerApi {
 
 export function addDocApiRoutes(
   app: Application, docWorker: DocWorker, docWorkerMap: IDocWorkerMap, docManager: DocManager, dbManager: HomeDBManager,
-  attachmentStoreProvider: IAttachmentStoreProvider, grist: GristServer, tracker?: DocApiUsageTracker,
+  attachmentStoreProvider: IAttachmentStoreProvider, grist: GristServer, tracker: DocApiUsageTracker | undefined,
+  ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry,
+  ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient,
+  ikadocForwardAuthSecret?: string,
 ) {
   const api = new DocWorkerApi(app, docWorker, docWorkerMap, docManager, dbManager, attachmentStoreProvider,
-    grist, tracker);
+    grist, tracker, ikadocRuntimeSessionRegistry, ikadocEditorAdmissionClient, ikadocForwardAuthSecret);
   api.addEndpoints();
 }
 
 async function getTableOperations(
   req: RequestWithLogin,
   activeDoc: ActiveDoc,
-  tableId?: string): Promise<TableOperationsImpl> {
+  tableId: string | undefined,
+  ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry): Promise<TableOperationsImpl> {
   const options: OpOptions = {
     parseStrings: !isAffirmative(req.query.noparse),
   };
@@ -2263,6 +2383,11 @@ async function getTableOperations(
     ...getErrorPlatform(realTableId),
     applyUserActions(actions, opts) {
       if (!activeDoc) { throw new Error("no document"); }
+      assertIkaDocUserActionsAllowedForDocument(
+        ikadocRuntimeSessionRegistry,
+        activeDoc.docName,
+        actions,
+      );
       return activeDoc.applyUserActions(
         docSessionFromRequest(req),
         actions,

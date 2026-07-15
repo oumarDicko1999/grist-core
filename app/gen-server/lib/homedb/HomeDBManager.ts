@@ -110,6 +110,7 @@ import { getScope } from "app/server/lib/requestUtils";
 import { expectedResetDate } from "app/server/lib/serverUtils";
 
 import { Request } from "express";
+import type { RequestWithLogin } from "app/server/lib/Authorizer";
 import { flatten, pick, size } from "lodash";
 import moment from "moment";
 import {
@@ -1135,6 +1136,20 @@ export class HomeDBManager implements HomeDBAuth {
   // Calls getDocImpl() and returns the Document from that, caching a fresh DocAuthResult along
   // the way. Note that we only cache the access level, not Document itself.
   public async getDoc(reqOrScope: Request | Scope, transaction?: EntityManager): Promise<Document> {
+    if ("params" in reqOrScope) {
+      // IkaDoc runtime seam: allow admitted runtime credentials to resolve only their exact document.
+      const mreq = reqOrScope as RequestWithLogin;
+      const urlId = getScope(reqOrScope).urlId;
+      if (mreq.authSession?.credential && urlId) {
+        const docAuth = await mreq.authSession.credential.docAuth(mreq, this, urlId);
+        if (docAuth.error) {
+          throw docAuth.error;
+        }
+        if (docAuth.cachedDoc) {
+          return docAuth.cachedDoc;
+        }
+      }
+    }
     const scope = "params" in reqOrScope ? getScope(reqOrScope) : reqOrScope;
     const key = getDocAuthKeyFromScope(scope);
     const promise = this.getDocImpl(key, transaction);

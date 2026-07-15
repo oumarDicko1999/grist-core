@@ -2,7 +2,7 @@ import { OpenDocMode } from "app/common/DocListAPI";
 // import {Document} from 'app/gen-server/entity/Document';
 import { Role } from "app/common/roles";
 import { DocAuthKey, DocAuthResult, HomeDBDocAuth } from "app/gen-server/lib/homedb/Interfaces";
-import { assertAccess } from "app/server/lib/Authorizer";
+import { assertAccess, RequestWithLogin } from "app/server/lib/Authorizer";
 import { AuthSession } from "app/server/lib/AuthSession";
 
 /**
@@ -52,7 +52,15 @@ export class DocAuthorizerImpl implements DocAuthorizer {
   }
 
   public async assertAccess(role: "viewers" | "editors" | "owners"): Promise<void> {
-    const docAuth = await this._options.dbManager.getDocAuthCached(this._key);
+    const credential = this._options.authSession.credential;
+    // IkaDoc runtime seam: websocket authorization must use the same runtime credential as REST.
+    const docAuth = credential ?
+      await credential.docAuth(
+        { org: this._options.authSession.org } as RequestWithLogin,
+        this._options.dbManager,
+        this._key.urlId,
+      ) :
+      await this._options.dbManager.getDocAuthCached(this._key);
     this._docAuth = docAuth;
     assertAccess(role, docAuth, { openMode: this.openMode });
   }

@@ -45,6 +45,9 @@ import { Hosts, RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristLoginMiddleware, GristServer } from "app/server/lib/GristServer";
 import { GristServerSocket } from "app/server/lib/GristServerSocket";
 import { GristSocketServer } from "app/server/lib/GristSocketServer";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
+import { createIkaDocRuntimeAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import { IPermitStore } from "app/server/lib/Permit";
 import { trustOrigin } from "app/server/lib/requestUtils";
@@ -59,15 +62,18 @@ import * as https from "https";
 import { i18n } from "i18next";
 
 export interface CommOptions {
-  sessions: Sessions;                   // A collection of all sessions for this instance of Grist
-  dbManager?: HomeDBAuth;                // HomeDBManager, just the part needed for auth.
-  settings?: { [key: string]: unknown };  // The config object containing instance settings including features.
-  hosts?: Hosts;  // If set, we use hosts.getOrgInfo(req) to extract an organization from a (possibly versioned) url.
+  sessions: Sessions; // A collection of all sessions for this instance of Grist
+  dbManager?: HomeDBAuth; // HomeDBManager, just the part needed for auth.
+  settings?: { [key: string]: unknown }; // The config object containing instance settings including features.
+  hosts?: Hosts; // If set, we use hosts.getOrgInfo(req) to extract an organization from a (possibly versioned) url.
   loginMiddleware?: GristLoginMiddleware; // If set, use custom getProfile method if available
-  httpsServer?: https.Server;   // An optional HTTPS server to listen on too.
-  i18Instance?: i18n;           // The i18next instance to use for translations.
-  gristServer?: GristServer;            // The GristServer instance, needed for resolveIdentity.
-  permitStore?: IPermitStore;            // Permit store, needed for resolveIdentity.
+  httpsServer?: https.Server; // An optional HTTPS server to listen on too.
+  i18Instance?: i18n; // The i18next instance to use for translations.
+  gristServer?: GristServer; // The GristServer instance, needed for resolveIdentity.
+  permitStore?: IPermitStore; // Permit store, needed for resolveIdentity.
+  ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient;
+  ikadocForwardAuthSecret?: string;
 }
 
 /**
@@ -86,9 +92,9 @@ export class Comm extends EventEmitter {
   public readonly sessions: Sessions = this._options.sessions;
   private _wss: GristSocketServer[] | null = null;
 
-  private _clients = new Map<string, Client>();   // Maps clientIds to Client objects.
+  private _clients = new Map<string, Client>(); // Maps clientIds to Client objects.
 
-  private _methods = new Map<string, ClientMethod>();  // Maps method names to their implementation.
+  private _methods = new Map<string, ClientMethod>(); // Maps method names to their implementation.
 
   // For testing, we need a way to override the server version reported.
   // For upgrading, we use this to set the server version for a defunct server
@@ -96,7 +102,10 @@ export class Comm extends EventEmitter {
   // for a valid server.
   private _serverVersion: string | null = null;
 
-  constructor(private _server: http.Server, private _options: CommOptions) {
+  constructor(
+    private _server: http.Server,
+    private _options: CommOptions,
+  ) {
     super();
     this._wss = this._startServer();
   }
@@ -106,7 +115,9 @@ export class Comm extends EventEmitter {
    * @param {Object[String:Function]} Mapping of method name to their implementations. All methods
    *      receive the client as the first argument, and the arguments from the request.
    */
-  public registerMethods(serverMethods: { [name: string]: ClientMethod }): void {
+  public registerMethods(serverMethods: {
+    [name: string]: ClientMethod;
+  }): void {
     // Wrap methods to translate return values and exceptions to promises.
     for (const methodName in serverMethods) {
       this._methods.set(methodName, serverMethods[methodName]);
@@ -118,7 +129,9 @@ export class Comm extends EventEmitter {
    */
   public getClient(clientId: string): Client {
     const client = this._clients.get(clientId);
-    if (!client) { throw new Error("Unrecognized clientId"); }
+    if (!client) {
+      throw new Error("Unrecognized clientId");
+    }
     return client;
   }
 
@@ -138,7 +151,7 @@ export class Comm extends EventEmitter {
   public async testServerShutdown() {
     if (this._wss) {
       for (const wssi of this._wss) {
-        await fromCallback(cb => wssi.close(cb));
+        await fromCallback((cb) => wssi.close(cb));
       }
       this._wss = null;
     }
@@ -181,11 +194,17 @@ export class Comm extends EventEmitter {
   /**
    * Processes a new websocket connection, and associates the websocket and a Client object.
    */
-  private async _onWebSocketConnection(websocket: GristServerSocket, req: http.IncomingMessage) {
+  private async _onWebSocketConnection(
+    websocket: GristServerSocket,
+    req: http.IncomingMessage,
+  ) {
     const params = new URL(req.url!, `ws://${req.headers.host}`).searchParams;
     const existingClientId = params.get("clientId");
-    const browserSettings = safeJsonParse(params.get("browserSettings") || "", {});
-    const newClient = (params.get("newClient") !== "0");  // Treat omitted as new, for the sake of tests.
+    const browserSettings = safeJsonParse(
+      params.get("browserSettings") || "",
+      {},
+    );
+    const newClient = params.get("newClient") !== "0"; // Treat omitted as new, for the sake of tests.
     const lastSeqIdStr = params.get("lastSeqId");
     const lastSeqId = lastSeqIdStr ? parseInt(lastSeqIdStr) : null;
     const counter = params.get("counter");
@@ -193,7 +212,25 @@ export class Comm extends EventEmitter {
 
     const dbManager = this._options.dbManager;
     let authSession: AuthSession;
-    if (!dbManager || !this._options.gristServer || !this._options.permitStore) {
+    const org = (req as RequestWithOrg).org || "";
+    const ikadocAuthSession =
+      dbManager && this._options.ikadocRuntimeSessionRegistry
+        ? await createIkaDocRuntimeAuthSession(
+            dbManager,
+            this._options.ikadocRuntimeSessionRegistry,
+            req,
+            org,
+            this._options.ikadocEditorAdmissionClient,
+            this._options.ikadocForwardAuthSecret,
+          )
+        : undefined;
+    if (ikadocAuthSession) {
+      authSession = ikadocAuthSession;
+    } else if (
+      !dbManager ||
+      !this._options.gristServer ||
+      !this._options.permitStore
+    ) {
       authSession = AuthSession.unauthenticated();
     } else {
       let scopedSession: ScopedSession | undefined;
@@ -204,7 +241,10 @@ export class Comm extends EventEmitter {
         getSessionProfile: async () => {
           const sessionId = this.sessions.getSessionIdFromRequest(req);
           scopedSession = this.sessions.getOrCreateSession(
-            sessionId!, (req as RequestWithOrg).org, userSelector);
+            sessionId!,
+            (req as RequestWithOrg).org,
+            userSelector,
+          );
           // Use scopedSession directly — overrideProfile is passed separately
           // to resolveIdentity and checked there, so we don't call
           // _getSessionProfile here (which would check it a second time).
@@ -217,10 +257,15 @@ export class Comm extends EventEmitter {
         throw new ApiError("User is disabled", 403);
       }
 
-      const org = (req as RequestWithOrg).org || "";
       const fullUser = dbManager.makeFullUser(identity.user);
       const altSessionId = scopedSession?.getAltSessionId();
-      authSession = AuthSession.fromUser(fullUser, org, altSessionId, identity.credential, identity.hasApiKey);
+      authSession = AuthSession.fromUser(
+        fullUser,
+        org,
+        altSessionId,
+        identity.credential,
+        identity.hasApiKey,
+      );
     }
 
     // Associate an ID with each websocket, reusing the supplied one if it's valid and for the same user.
@@ -228,13 +273,28 @@ export class Comm extends EventEmitter {
     let reuseClient = true;
     if (!client?.canAcceptConnection(authSession)) {
       reuseClient = false;
-      client = new Client(this, this._methods, localeFromRequest(req), this._options.i18Instance);
+      client = new Client(
+        this,
+        this._methods,
+        localeFromRequest(req),
+        this._options.i18Instance,
+      );
       this._clients.set(client.clientId, client);
     }
 
-    log.rawInfo("Comm: Got Websocket connection", { ...client.getLogMeta(), urlPath: req.url, reuseClient });
+    log.rawInfo("Comm: Got Websocket connection", {
+      ...client.getLogMeta(),
+      urlPath: req.url,
+      reuseClient,
+    });
 
-    client.setConnection({ websocket, req, counter, browserSettings, authSession });
+    client.setConnection({
+      websocket,
+      req,
+      counter,
+      browserSettings,
+      authSession,
+    });
 
     await client.sendConnectMessage(newClient, reuseClient, lastSeqId, {
       serverVersion: this._serverVersion || version.gitcommit,
@@ -244,7 +304,9 @@ export class Comm extends EventEmitter {
 
   private _startServer() {
     const servers = [this._server];
-    if (this._options.httpsServer) { servers.push(this._options.httpsServer); }
+    if (this._options.httpsServer) {
+      servers.push(this._options.httpsServer);
+    }
     const wss = [];
     for (const server of servers) {
       const wssi = new GristSocketServer(server, {
@@ -272,8 +334,12 @@ export class Comm extends EventEmitter {
         try {
           await this._onWebSocketConnection(websocket, req);
         } catch (e) {
-          log.error("Comm connection for %s threw exception: %s", req.url, e.message);
-          websocket.terminate();  // close() is inadequate when ws routed via loadbalancer
+          log.error(
+            "Comm connection for %s threw exception: %s",
+            req.url,
+            e.message,
+          );
+          websocket.terminate(); // close() is inadequate when ws routed via loadbalancer
         }
       };
       wss.push(wssi);
