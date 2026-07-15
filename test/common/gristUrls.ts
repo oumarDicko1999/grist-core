@@ -1,7 +1,9 @@
 import { commonUrls as defaultCommonUrls,
-  decodeUrl, getCommonUrls,
+  decodeUrl, encodeUrl, getCommonUrls,
   getHostType, getSlugIfNeeded, IGristUrlState, parseFirstUrlPart,
+  parseIkaDocRuntimeConfigFromLoadConfig,
 } from "app/common/gristUrls";
+import { DENIED_IKADOC_CAPABILITIES } from "app/ikadoc/IkaDocCapabilities";
 import * as testUtils from "test/server/testUtils";
 
 import { assert } from "chai";
@@ -27,6 +29,34 @@ describe("gristUrls", function() {
 
       assert.deepEqual(actualValue, expectedValue);
     }
+  }
+
+  function ikadocRuntimeConfig() {
+    return {
+      timestampMs: Date.now(),
+      homeUrl: null,
+      ikadoc: {
+        enabled: true as const,
+        sessionId: "session-1",
+        collectionCode: "records",
+        user: {
+          userId: "user-1",
+          username: "alice",
+          displayName: "Alice",
+          email: "alice@example.test",
+        },
+        sourceType: "document-file" as const,
+        mode: "editor" as const,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        documentId: "doc-1",
+        documentUrlId: "doc-url-1",
+        workerUrl: "/ikadoc/sessions/session-1/worker",
+        statusUrl: "/ikadoc/sessions/session-1/status",
+        validationUrl: "/ikadoc/editor/session-validation",
+        discardUrl: "/ikadoc/sessions/session-1/discard",
+        locale: "en",
+      },
+    };
   }
 
   describe("encodeUrl", function() {
@@ -71,6 +101,65 @@ describe("gristUrls", function() {
         "http://public.getgrist.com/api/docs",
         { api: true },
       );
+    });
+  });
+
+  describe("parseIkaDocRuntimeConfigFromLoadConfig", function() {
+    it("loads the admitted document from IkaDoc editor routes", function() {
+      const actual = decodeUrl(
+        ikadocRuntimeConfig(),
+        new URL("https://records.owarelin.localhost/grist/editor/session-1"),
+      );
+
+      assert.deepEqual(actual, { doc: "doc-url-1" });
+    });
+
+    it("opens IkaDoc viewer sessions in Grist view mode", function() {
+      const editorConfig = ikadocRuntimeConfig();
+      const viewerConfig = {
+        ...editorConfig,
+        ikadoc: {
+          ...editorConfig.ikadoc,
+          mode: "viewer" as const,
+        },
+      };
+
+      const actual = decodeUrl(
+        viewerConfig,
+        new URL("https://records.owarelin.localhost/grist/editor/session-1"),
+      );
+
+      assert.deepEqual(actual, { doc: "doc-url-1", mode: "view" });
+    });
+
+    it("preserves IkaDoc editor page selection while decoding routes", function() {
+      const actual = decodeUrl(
+        ikadocRuntimeConfig(),
+        new URL("https://records.owarelin.localhost/grist/editor/session-1/p/2"),
+      );
+
+      assert.deepEqual(actual, { doc: "doc-url-1", docPage: 2 });
+    });
+
+    it("keeps IkaDoc editor page navigation under the editor route", function() {
+      const actual = encodeUrl(
+        ikadocRuntimeConfig(),
+        { doc: "doc-url-1", docPage: 2 },
+        new URL("https://records.owarelin.localhost/grist/editor/session-1"),
+      );
+
+      assert.equal(actual, "https://records.owarelin.localhost/grist/editor/session-1/p/2");
+    });
+
+    it("parses the optional IkaDoc runtime section from gristConfig", function() {
+      const result = parseIkaDocRuntimeConfigFromLoadConfig(ikadocRuntimeConfig());
+
+      assert.equal(result.kind, "enabled");
+      if (result.kind !== "enabled") {
+        return;
+      }
+
+      assert.deepEqual(result.config.capabilities, DENIED_IKADOC_CAPABILITIES);
     });
   });
 
