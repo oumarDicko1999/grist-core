@@ -30,6 +30,94 @@ type SpecialDocPage = typeof SpecialDocPage.type;
 export type IDocPage = number | SpecialDocPage;
 
 export type ViewDocPage = number | "data";
+
+export interface IkaDocRuntimeConfigWire {
+  enabled: true;
+  sessionId: string;
+  user: IkaDocRuntimeUser;
+  collectionCode: string;
+  sourceType: "document-file" | "search-workspace" | "report-workspace" | "migration-workspace";
+  sourceSummary?: string;
+  mode: "viewer" | "editor";
+  expiresAt: string;
+  documentId: string;
+  documentUrlId: string;
+  workerUrl: string;
+  statusUrl: string;
+  validationUrl: string;
+  saveUrl?: string;
+  discardUrl: string;
+  blockedCapabilityUrl?: string;
+  refreshUrl?: string;
+  proposalUrl?: string;
+  capabilities?: Partial<IkaDocRuntimeCapabilities>;
+  locale: string;
+  theme?: string;
+  appearance?: "light" | "dark";
+}
+
+export interface IkaDocRuntimeUser {
+  userId: string;
+  username: string;
+  displayName: string;
+  email?: string | null;
+}
+
+export interface IkaDocRuntimeCapabilities {
+  canEditCells: boolean;
+  canEditStructure: boolean;
+  canUseFormulas: boolean;
+  canCreateCharts: boolean;
+  canViewHistory: boolean;
+  canRefreshSource: boolean;
+  canSaveToIkaDoc: boolean;
+  canDiscard: boolean;
+  canUseComments: boolean;
+  canUseAttachments: boolean;
+  canUseExternalData: boolean;
+  canImportLocalFiles: boolean;
+  canUseCustomWidgets: boolean;
+  canInviteCollaborators: boolean;
+  canExportFromBrowser: boolean;
+  canShare: boolean;
+  canFork: boolean;
+  canPublish: boolean;
+  canManageAccess: boolean;
+  canUsePlugins: boolean;
+}
+
+export interface IkaDocRuntimeConfig extends Omit<IkaDocRuntimeConfigWire, "appearance" | "capabilities"> {
+  appearance: "light" | "dark";
+  capabilities: IkaDocRuntimeCapabilities;
+}
+
+const DENIED_IKADOC_RUNTIME_CAPABILITIES: IkaDocRuntimeCapabilities = {
+  canEditCells: false,
+  canEditStructure: false,
+  canUseFormulas: false,
+  canCreateCharts: false,
+  canViewHistory: false,
+  canRefreshSource: false,
+  canSaveToIkaDoc: false,
+  canDiscard: false,
+  canUseComments: false,
+  canUseAttachments: false,
+  canUseExternalData: false,
+  canImportLocalFiles: false,
+  canUseCustomWidgets: false,
+  canInviteCollaborators: false,
+  canExportFromBrowser: false,
+  canShare: false,
+  canFork: false,
+  canPublish: false,
+  canManageAccess: false,
+  canUsePlugins: false,
+};
+
+export type IkaDocRuntimeConfigParseResult =
+  { kind: "disabled" } |
+  { kind: "invalid"; reason: "not-an-object" | "invalid-enabled-flag" | "missing-required-string" | "invalid-user" } |
+  { kind: "enabled"; config: IkaDocRuntimeConfig };
 /**
  * ViewDocPage is a page that shows table data (either normal or raw data view).
  */
@@ -357,6 +445,26 @@ export function encodeUrl(gristConfig: Partial<GristLoadConfig>,
     tweaks?: UrlTweaks,
   } = {}): string {
   const url = new URL(baseLocation.href);
+  const ikadocRuntime = parseIkaDocRuntimeConfigFromLoadConfig(gristConfig);
+  if (ikadocRuntime.kind === "enabled" && state.doc && !state.api && !state.ws) {
+    const parts = ["/grist/editor/", encodeURIComponent(ikadocRuntime.config.sessionId)];
+    if (state.docPage) {
+      parts.push(`/p/${state.docPage}`);
+      if (state.docSubPage != null) {
+        parts.push(`/${state.docSubPage}`);
+      }
+    }
+    url.pathname = parts.join("");
+    url.search = encodeQueryParams(pickBy(state.params, (_v, k) => k !== "linkParameters") as { [key: string]: string });
+    url.hash = state.hash?.anchor ? state.hash.anchor : "";
+    options.tweaks?.postEncode?.({
+      url,
+      parts,
+      state,
+      baseLocation,
+    });
+    return url.href;
+  }
   const parts = ["/"];
 
   if (state.org) {
@@ -482,6 +590,22 @@ export function encodeUrl(gristConfig: Partial<GristLoadConfig>,
 export function decodeUrl(gristConfig: Partial<GristLoadConfig>, location: Location | URL, options?: {
   tweaks?: UrlTweaks,
 }): IGristUrlState {
+  const ikadocRuntime = parseIkaDocRuntimeConfigFromLoadConfig(gristConfig);
+  if (ikadocRuntime.kind === "enabled") {
+    location = new URL(location.href);
+    const parts = location.pathname.slice(1).split("/");
+    const state: IGristUrlState = { doc: ikadocRuntime.config.documentUrlId };
+    const pageIndex = parts.indexOf("p");
+    if (pageIndex >= 0 && parts[pageIndex + 1]) {
+      state.docPage = parseDocPage(decodeURIComponent(parts[pageIndex + 1]));
+      const subPage = parseSubPage(state.docPage, parts);
+      if (subPage != null) { state.docSubPage = subPage; }
+    }
+    if (ikadocRuntime.config.mode === "viewer") {
+      state.mode = "view";
+    }
+    return state;
+  }
   location = new URL(location.href);  // Make sure location is a URL.
   options?.tweaks?.preDecode?.({ url: location });
   const parts = location.pathname.slice(1).split("/");
@@ -956,6 +1080,9 @@ export interface GristLoadConfig {
   // Pre-fetched call to getWorker for the doc being loaded.
   getWorker?: { [id: string]: string | null };
 
+  // IkaDoc runtime config. Present only when Grist is loaded as an IkaDoc spreadsheet runtime.
+  ikadoc?: IkaDocRuntimeConfigWire;
+
   // The timestamp when this gristConfig was generated.
   timestampMs: number;
 
@@ -1069,6 +1196,66 @@ export interface AdminPageConfig extends GristLoadConfig {
    * guarded by the boot key, until an operator brings the server live.
    */
   inService?: boolean;
+}
+
+export function parseIkaDocRuntimeConfigFromLoadConfig(
+  config: Partial<GristLoadConfig>,
+): IkaDocRuntimeConfigParseResult {
+  const runtimeConfig = config.ikadoc;
+  if (runtimeConfig === undefined) {
+    return { kind: "disabled" };
+  }
+  if (!runtimeConfig || typeof runtimeConfig !== "object" || Array.isArray(runtimeConfig)) {
+    return { kind: "invalid", reason: "not-an-object" };
+  }
+  if (runtimeConfig.enabled !== true) {
+    return { kind: "invalid", reason: "invalid-enabled-flag" };
+  }
+  const requiredStrings = [
+    runtimeConfig.sessionId,
+    runtimeConfig.collectionCode,
+    runtimeConfig.sourceType,
+    runtimeConfig.mode,
+    runtimeConfig.expiresAt,
+    runtimeConfig.documentId,
+    runtimeConfig.documentUrlId,
+    runtimeConfig.workerUrl,
+    runtimeConfig.statusUrl,
+    runtimeConfig.validationUrl,
+    runtimeConfig.discardUrl,
+    runtimeConfig.locale,
+  ];
+  if (requiredStrings.some(value => typeof value !== "string" || value.length === 0)) {
+    return { kind: "invalid", reason: "missing-required-string" };
+  }
+  if (!isIkaDocRuntimeUser(runtimeConfig.user)) {
+    return { kind: "invalid", reason: "invalid-user" };
+  }
+  return {
+    kind: "enabled",
+    config: {
+      ...runtimeConfig,
+      appearance: runtimeConfig.appearance === "dark" ? "dark" : "light",
+      capabilities: {
+        ...DENIED_IKADOC_RUNTIME_CAPABILITIES,
+        ...runtimeConfig.capabilities,
+      },
+    },
+  };
+}
+
+function isIkaDocRuntimeUser(input: unknown): input is IkaDocRuntimeUser {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return false;
+  }
+  const raw = input as Record<string, unknown>;
+  return typeof raw.userId === "string" &&
+    raw.userId.length > 0 &&
+    typeof raw.username === "string" &&
+    raw.username.length > 0 &&
+    typeof raw.displayName === "string" &&
+    raw.displayName.length > 0 &&
+    (raw.email === null || raw.email === undefined || typeof raw.email === "string");
 }
 
 export const Features = StringUnion(

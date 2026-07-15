@@ -2,6 +2,7 @@
   "extends": "../../buildtools/tsconfig-base.json",
   "references": [
     { "path": "../common" },
+    { "path": "../ikadoc" },
   ],
   "include": [
     "**/*",
