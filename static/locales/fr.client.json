@@ -3206,5 +3206,25 @@
         "not configured": "non configuré",
         "review": "revue",
         "unfiltered": "non filtré"
+    },
+    "IkaDocEditorControls": {
+        "Build proposal": "Preparer une proposition",
+        "Building IkaDoc proposal": "Preparation de la proposition IkaDoc",
+        "Checking IkaDoc session": "Verification de la session IkaDoc",
+        "Discard": "Abandonner",
+        "Discard this IkaDoc spreadsheet session?": "Abandonner cette session de feuille de calcul IkaDoc ?",
+        "Discarding IkaDoc session": "Abandon de la session IkaDoc",
+        "IkaDoc proposal requested": "Proposition IkaDoc demandee",
+        "IkaDoc request failed": "La requete IkaDoc a echoue",
+        "IkaDoc session discarded": "Session IkaDoc abandonnee",
+        "IkaDoc source refreshed": "Source IkaDoc actualisee",
+        "No changes to save": "Aucun changement a enregistrer",
+        "Refresh": "Actualiser",
+        "Refreshing IkaDoc source": "Actualisation de la source IkaDoc",
+        "Save": "Enregistrer",
+        "Saved to IkaDoc": "Enregistre dans IkaDoc",
+        "Saving to IkaDoc": "Enregistrement dans IkaDoc",
+        "{{sourceSummary}}IkaDoc session ready": "{{sourceSummary}}Session IkaDoc prete",
+        "{{sourceSummary}}IkaDoc session: {{status}}": "{{sourceSummary}}Session IkaDoc : {{status}}"
     }
 }

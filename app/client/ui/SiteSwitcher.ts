@@ -18,6 +18,9 @@ const testId = makeTestId("test-site-switcher-");
  * Adds a menu divider and a site switcher, if there is need for one.
  */
 export function maybeAddSiteSwitcherSection(appModel: AppModel) {
+  if (getGristConfig().ikadoc) {
+    return null;
+  }
   const orgs = appModel.topAppModel.orgs;
   return dom.maybe(use => use(orgs).length > 0 && !getSingleOrg() && isFeatureEnabled("multiSite"), () => [
     menuDivider(),

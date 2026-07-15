@@ -30,6 +30,7 @@ import {
 } from "app/client/ui2018/menus";
 import { buildUrlId, isFeatureEnabled, parseUrlId } from "app/common/gristUrls";
 import * as roles from "app/common/roles";
+import { getGristConfig } from "app/common/urlUtils";
 import { Document } from "app/common/UserAPI";
 
 import { dom, DomContents, styled } from "grainjs";
@@ -47,6 +48,9 @@ export function buildOriginalUrlId(urlId: string, isSnapshot: boolean): string {
  * different modes (normal, pre-fork, fork, snapshot).
  */
 export function buildShareMenuButton(pageModel: DocPageModel): DomContents {
+  if (getGristConfig().ikadoc) {
+    return null;
+  }
   // The menu needs pageModel.currentDoc to render the button. It further needs pageModel.gristDoc
   // to render its contents, but we handle by merely skipping such content if gristDoc is not yet
   // available (a user quick enough to open the menu in this state would have to re-open it).

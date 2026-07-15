@@ -16,6 +16,7 @@ import { reportError, TopAppModel, TopAppModelImpl } from "app/client/models/App
 import { DocPageModel } from "app/client/models/DocPageModel";
 import { setUpErrorHandling } from "app/client/models/errors";
 import { createAppUI } from "app/client/ui/AppUI";
+import { attachIkaDocThemeBridge } from "app/client/ui/IkaDocThemeBridge";
 import { openAccessibilityModal } from "app/client/ui/OpenAccessibilityModal";
 import { addViewportTag } from "app/client/ui/viewport";
 import { attachCssRootVars } from "app/client/ui2018/cssVars";
@@ -23,8 +24,10 @@ import { attachTheme } from "app/client/ui2018/theme";
 import { BaseAPI } from "app/common/BaseAPI";
 import { CommDocError } from "app/common/CommTypes";
 import { DisposableWithEvents } from "app/common/DisposableWithEvents";
-import { fetchFromHome } from "app/common/urlUtils";
+import { parseIkaDocRuntimeConfigFromLoadConfig } from "app/common/gristUrls";
+import { fetchFromHome, getGristConfig } from "app/common/urlUtils";
 import { ISupportedFeatures } from "app/common/UserConfig";
+import { attachOwarelinRuntimeEventBridge } from "app/ikadoc/OwarelinRuntimeEvents";
 
 import { dom } from "grainjs";
 import * as ko from "knockout";
@@ -218,6 +221,11 @@ export class AppImpl extends DisposableWithEvents implements App {
     // Add the cssRootVars class to enable the variables in cssVars.
     attachCssRootVars(this.topAppModel.productFlavor);
     attachTheme();
+    attachIkaDocThemeBridge();
+    const ikadocRuntimeConfig = parseIkaDocRuntimeConfigFromLoadConfig(getGristConfig());
+    if (ikadocRuntimeConfig.kind === "enabled") {
+      attachOwarelinRuntimeEventBridge(ikadocRuntimeConfig.config);
+    }
     addViewportTag();
     this.autoDispose(createAppUI(this.topAppModel, this));
   }

@@ -3200,5 +3200,25 @@
         "not configured": "not configured",
         "review": "review",
         "unfiltered": "unfiltered"
+    },
+    "IkaDocEditorControls": {
+        "Build proposal": "Build proposal",
+        "Building IkaDoc proposal": "Building IkaDoc proposal",
+        "Checking IkaDoc session": "Checking IkaDoc session",
+        "Discard": "Discard",
+        "Discard this IkaDoc spreadsheet session?": "Discard this IkaDoc spreadsheet session?",
+        "Discarding IkaDoc session": "Discarding IkaDoc session",
+        "IkaDoc proposal requested": "IkaDoc proposal requested",
+        "IkaDoc request failed": "IkaDoc request failed",
+        "IkaDoc session discarded": "IkaDoc session discarded",
+        "IkaDoc source refreshed": "IkaDoc source refreshed",
+        "No changes to save": "No changes to save",
+        "Refresh": "Refresh",
+        "Refreshing IkaDoc source": "Refreshing IkaDoc source",
+        "Save": "Save",
+        "Saved to IkaDoc": "Saved to IkaDoc",
+        "Saving to IkaDoc": "Saving to IkaDoc",
+        "{{sourceSummary}}IkaDoc session ready": "{{sourceSummary}}IkaDoc session ready",
+        "{{sourceSummary}}IkaDoc session: {{status}}": "{{sourceSummary}}IkaDoc session: {{status}}"
     }
 }

@@ -136,15 +136,16 @@ export class AppHeader extends Disposable {
         testId("org"),
       );
     } else {
+      const isIkaDocRuntime = Boolean(getGristConfig().ikadoc);
       return cssOrg(
         dom.cls("_cssOrg"),
         cssOrgName(dom.text(this._appLogoOrgName), testId("orgname")),
         productPill(this._currentOrg),
-        dom.maybe(this._appLogoOrgName, () => [
+        isIkaDocRuntime ? null : dom.maybe(this._appLogoOrgName, () => [
           cssSpacer(),
           cssDropdownIcon("Dropdown"),
         ]),
-        menu(() => [
+        isIkaDocRuntime ? null : menu(() => [
           menuSubHeader(
             this._appModel.isPersonal ?
               t("Personal Site") + (this._appModel.isLegacySite ? ` (${t("Legacy")})` : "") :

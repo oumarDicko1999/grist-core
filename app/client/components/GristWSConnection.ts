@@ -24,6 +24,11 @@ const HEARTBEAT_PERIOD_IN_SECONDS = 45;
 // returning a base url for endpoints served by that worker.  The url
 // may need to change again in future.
 async function getDocWorkerUrl(assignmentId: string | null): Promise<string | null> {
+  const ikadocConfig = getGristConfig().ikadoc;
+  if (assignmentId === ikadocConfig?.documentId) {
+    return ikadocConfig.workerUrl;
+  }
+
   // Currently, a null assignmentId happens only in classic Grist, where the server
   // never changes.
   if (assignmentId === null) { return docUrl(null); }
@@ -414,6 +419,11 @@ export class GristWSConnection extends Disposable {
   private async _updateDocWorkerUrl() {
     try {
       const url: string | null = await this._settings.getDocWorkerUrl(this._assignmentId);
+      if (getGristConfig().ikadoc) {
+        this._docWorkerUrl = url;
+        return;
+      }
+
       // Doc worker urls in general will need to have org information in them, since
       // the doc worker will check for that.  The home service doesn't currently do
       // that for us, although it could.  TODO: update home server to produce
