@@ -1,6 +1,6 @@
 import { commonUrls as defaultCommonUrls,
   decodeUrl, encodeUrl, getCommonUrls,
-  getHostType, getSlugIfNeeded, IGristUrlState, parseFirstUrlPart,
+  getHostType, getSlugIfNeeded, GristLoadConfig, IGristUrlState, parseFirstUrlPart,
   parseIkaDocRuntimeConfigFromLoadConfig,
 } from "app/common/gristUrls";
 import { DENIED_IKADOC_CAPABILITIES } from "app/ikadoc/IkaDocCapabilities";
@@ -57,6 +57,14 @@ describe("gristUrls", function() {
         locale: "en",
       },
     };
+  }
+
+  function malformedIkaDocRuntimeConfig(): { ikadoc: Record<string, unknown> } {
+    return ikadocRuntimeConfig() as unknown as { ikadoc: Record<string, unknown> };
+  }
+
+  function asGristLoadConfig(config: { ikadoc: Record<string, unknown> }): Partial<GristLoadConfig> {
+    return config as unknown as Partial<GristLoadConfig>;
   }
 
   describe("encodeUrl", function() {
@@ -160,6 +168,36 @@ describe("gristUrls", function() {
       }
 
       assert.deepEqual(result.config.capabilities, DENIED_IKADOC_CAPABILITIES);
+    });
+
+    it("rejects invalid IkaDoc source types", function() {
+      const config = malformedIkaDocRuntimeConfig();
+      config.ikadoc.sourceType = "native-grist";
+
+      assert.deepEqual(parseIkaDocRuntimeConfigFromLoadConfig(asGristLoadConfig(config)), {
+        kind: "invalid",
+        reason: "invalid-source-type",
+      });
+    });
+
+    it("rejects invalid IkaDoc editor modes", function() {
+      const config = malformedIkaDocRuntimeConfig();
+      config.ikadoc.mode = "owner";
+
+      assert.deepEqual(parseIkaDocRuntimeConfigFromLoadConfig(asGristLoadConfig(config)), {
+        kind: "invalid",
+        reason: "invalid-editor-mode",
+      });
+    });
+
+    it("rejects malformed IkaDoc capability overrides", function() {
+      const config = malformedIkaDocRuntimeConfig();
+      config.ikadoc.capabilities = "can-edit-everything";
+
+      assert.deepEqual(parseIkaDocRuntimeConfigFromLoadConfig(asGristLoadConfig(config)), {
+        kind: "invalid",
+        reason: "invalid-capabilities",
+      });
     });
   });
 

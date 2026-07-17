@@ -116,8 +116,30 @@ const DENIED_IKADOC_RUNTIME_CAPABILITIES: IkaDocRuntimeCapabilities = {
 
 export type IkaDocRuntimeConfigParseResult =
   { kind: "disabled" } |
-  { kind: "invalid"; reason: "not-an-object" | "invalid-enabled-flag" | "missing-required-string" | "invalid-user" } |
+  {
+    kind: "invalid";
+    reason:
+      "not-an-object" |
+      "invalid-enabled-flag" |
+      "missing-required-string" |
+      "invalid-source-type" |
+      "invalid-editor-mode" |
+      "invalid-user" |
+      "invalid-capabilities";
+  } |
   { kind: "enabled"; config: IkaDocRuntimeConfig };
+
+const IKA_DOC_SOURCE_TYPES: ReadonlySet<IkaDocRuntimeConfigWire["sourceType"]> = new Set([
+  "document-file",
+  "search-workspace",
+  "report-workspace",
+  "migration-workspace",
+]);
+
+const IKA_DOC_EDITOR_MODES: ReadonlySet<IkaDocRuntimeConfigWire["mode"]> = new Set([
+  "viewer",
+  "editor",
+]);
 /**
  * ViewDocPage is a page that shows table data (either normal or raw data view).
  */
@@ -455,7 +477,9 @@ export function encodeUrl(gristConfig: Partial<GristLoadConfig>,
       }
     }
     url.pathname = parts.join("");
-    url.search = encodeQueryParams(pickBy(state.params, (_v, k) => k !== "linkParameters") as { [key: string]: string });
+    url.search = encodeQueryParams(
+      pickBy(state.params, (_v, k) => k !== "linkParameters") as { [key: string]: string },
+    );
     url.hash = state.hash?.anchor ? state.hash.anchor : "";
     options.tweaks?.postEncode?.({
       url,
@@ -1228,8 +1252,24 @@ export function parseIkaDocRuntimeConfigFromLoadConfig(
   if (requiredStrings.some(value => typeof value !== "string" || value.length === 0)) {
     return { kind: "invalid", reason: "missing-required-string" };
   }
+  if (!IKA_DOC_SOURCE_TYPES.has(runtimeConfig.sourceType)) {
+    return { kind: "invalid", reason: "invalid-source-type" };
+  }
+  if (!IKA_DOC_EDITOR_MODES.has(runtimeConfig.mode)) {
+    return { kind: "invalid", reason: "invalid-editor-mode" };
+  }
   if (!isIkaDocRuntimeUser(runtimeConfig.user)) {
     return { kind: "invalid", reason: "invalid-user" };
+  }
+  if (
+    runtimeConfig.capabilities !== undefined &&
+    (
+      !runtimeConfig.capabilities ||
+      typeof runtimeConfig.capabilities !== "object" ||
+      Array.isArray(runtimeConfig.capabilities)
+    )
+  ) {
+    return { kind: "invalid", reason: "invalid-capabilities" };
   }
   return {
     kind: "enabled",

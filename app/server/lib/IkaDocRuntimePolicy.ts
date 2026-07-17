@@ -2,8 +2,8 @@ import { ApiError } from "app/common/ApiError";
 import { IkaDocCapabilities } from "app/ikadoc/IkaDocCapabilities";
 import {
   IkaDocRuntimeSession,
-  IkaDocRuntimeSessionResolution,
   IkaDocRuntimeSessionRegistry,
+  IkaDocRuntimeSessionResolution,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 
@@ -17,6 +17,8 @@ export const IKADOC_RUNTIME_SESSION_COOKIE = "IKADOC_GRIST_GATEWAY_SESSION";
 export interface IkaDocRuntimeSessionValidator {
   validate(session: IkaDocRuntimeSession, operation: string): Promise<void>;
 }
+
+const BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS = 5000;
 
 const CELL_EDIT_ACTIONS = new Set([
   "AddRecord",
@@ -80,11 +82,11 @@ export function denyIkaDocRuntimeOperation(
     const session =
       resolution.kind === "active" ? resolution.session : undefined;
     if (!session) {
-      return hasIkaDocRuntimeSessionCookie(req)
-        ? next(
-            deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
-          )
-        : next();
+      return hasIkaDocRuntimeSessionCookie(req) ?
+        next(
+          deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+        ) :
+        next();
     }
     reportBlockedCapability(
       session,
@@ -438,7 +440,7 @@ function reportBlockedCapability(
     return;
   }
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    "Accept": "application/json",
     "Content-Type": "application/json",
     "X-CSRF-Token": "grist-runtime-denial",
   };
@@ -449,6 +451,7 @@ function reportBlockedCapability(
     method: "POST",
     headers,
     body: JSON.stringify({ capability, reason }),
+    timeout: BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS,
   })
     .then((response) => {
       if (!response.ok) {
