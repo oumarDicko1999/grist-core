@@ -72,6 +72,8 @@ session and Grist document id/url id that IkaDoc created. Native Grist orgs,
 workspaces, anonymous users, sharing state, API keys, and browser-supplied
 headers must not expand access.
 
+Native Grist documents remain native unless a table or column carries an explicit IkaDoc schema binding. Schema-bound tables may use IkaDoc reference, value-list, administrative-unit, enum, and validation editors, but those editors must never change the semantics of unbound Grist `Choice`, `ChoiceList`, `Ref`, or `RefList` columns.
+
 ## Request Flow
 
 Editor entry:
@@ -140,6 +142,17 @@ Grist runtime UI must visually fit the IkaDoc tenant UI.
 - Copy must be translatable through locale files.
 - Dark mode and visual-style switching must be driven by runtime theme state,
   not hard-coded colors.
+- Material mode follows the tenant UI Nexus/M3 baseline: primary `#27496c`,
+  tertiary `#693c00`, Inter body text, Manrope headings, M3 state layers,
+  and table/menu/list geometry that matches the Angular Material shell.
+- Runtime font assets live under `static/fonts/ikadoc/` and are loaded only by
+  `IkaDocThemeBridge`. Keep bundled font files, their upstream family names, and
+  license provenance together when refreshing Inter, Manrope, Fraunces, or
+  Material Symbols assets.
+- CSS bridge changes may tune tokens, row rhythm, surfaces, borders, radius, and
+  state layers. They must not be treated as sufficient for icon systems, menu
+  DOM structure, toolbar composition, picker behavior, or security gates. Those
+  require explicit fork seams with tests and entries in the seam ledger.
 
 CSS overrides are not a security mechanism. They only improve editor fit.
 
@@ -164,6 +177,13 @@ workflow.
 
 - IkaDoc UI owns the query builder and selected result range.
 - Selected columns come from the IkaDoc search result column visibility state.
+- Column ids are stable IkaDoc metadata/identity ids; display labels are resolved
+  by IkaDoc backend from the authenticated user language, tenant default
+  language, schema variant overrides, and metadata labels. Grist and frontend
+  label hints are not authoritative.
+- Identity columns use reserved ids such as `ikadoc_record_id`,
+  `ikadoc_schema_type`, and `ikadoc_schema_code`, while displaying compact
+  labels such as `ID`, `Schema type`, and `Schema` or `Schema code`.
 - Range semantics must be explicit: current page, page range, or all matching
   results.
 - Backend endpoints prepare the temporary Grist processing workspace.
@@ -172,6 +192,22 @@ workflow.
 
 Bulk update/apply is a separate feature and must not be mixed into
 search-to-Grist unless the spec explicitly changes.
+
+## Schema-Bound Metadata Integration
+
+Schema-bound Grist tables are the path for future IkaDoc import and bulk-write workflows. A table becomes schema-bound only through an explicit IkaDoc action that chooses the schema type and optional schema variant. The fork must then read versioned IkaDoc binding metadata from column/view-field options and enable IkaDoc-aware editors only for those bound columns.
+
+Required behavior:
+
+- native Grist columns keep native Grist widgets;
+- bound enum columns store stable enum codes and display localized labels;
+- bound value-list columns store canonical entry ids or stable entry codes and display localized labels;
+- bound administrative-unit and record-reference columns store canonical IkaDoc record ids or map native Grist lookup row ids to immutable `ikadoc_id` values;
+- bound reference-list columns preserve a canonical id list according to the backend contract;
+- copied, derived, content, and unsupported metadata remain read-only or blocked until the backend contract says otherwise;
+- all picker/autocomplete requests go through IkaDoc backend session validation and return only values allowed for the current actor, tenant, collection, schema, metadata field, and row context.
+
+Same-value fill across selected rows must be represented as one logical bulk proposal or bulk action, not many unrelated single-row edits. IkaDoc validates every target row/cell before apply and reports partial failures with audit-safe detail.
 
 ## Logging And Audit
 
