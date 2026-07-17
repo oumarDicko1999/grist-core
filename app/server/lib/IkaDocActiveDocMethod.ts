@@ -9,8 +9,8 @@ import {
 import log from "app/server/lib/log";
 
 import type { Client } from "app/server/lib/Client";
-import type { DocSession } from "app/server/lib/DocSession";
 import type { DocApiUsageTracker } from "app/server/lib/DocApiUsageTracker";
+import type { DocSession } from "app/server/lib/DocSession";
 import type { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 
 export interface IkaDocActiveDocMethodPolicy {
@@ -18,7 +18,7 @@ export interface IkaDocActiveDocMethodPolicy {
   capability?: keyof IkaDocCapabilities;
 }
 
-type ActiveDocMethod = (docSession: DocSession, ...args: unknown[]) => Promise<unknown> | unknown;
+type ActiveDocMethod = (docSession: DocSession, ...args: unknown[]) => unknown;
 
 interface ActiveDocMethodHost {
   [methodName: string]: ActiveDocMethod;
@@ -98,12 +98,12 @@ export function activeDocMethod(
       // (acquire increments the parallel counter before checking limits).
       try {
         tracker.acquire(activeDoc.docName, dailyMax);
-        return await method(docSession, ...args);
+        return await method.call(activeDoc, docSession, ...args);
       } finally {
         tracker.release(activeDoc.docName);
       }
     }
 
-    return method(docSession, ...args);
+    return method.call(activeDoc, docSession, ...args);
   };
 }

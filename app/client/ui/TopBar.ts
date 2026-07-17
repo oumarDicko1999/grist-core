@@ -114,7 +114,7 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
   return [
     // TODO Before gristDoc is loaded, we could show doc-name without the page. For now, we delay
     // showing of breadcrumbs until gristDoc is loaded.
-    dom.maybe(pageModel.gristDoc, gristDoc =>
+    ikadocConfig ? null : dom.maybe(pageModel.gristDoc, gristDoc =>
       cssBreadcrumbContainer(
         docBreadcrumbs(displayNameWs, pageModel.currentDocTitle, gristDoc.currentPageName, {
           docNameSave: renameDoc,

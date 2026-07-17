@@ -1,3 +1,4 @@
+import { Document } from "app/gen-server/entity/Document";
 import {
   DENIED_IKADOC_CAPABILITIES,
   normalizeIkaDocCapabilities,
@@ -6,7 +7,6 @@ import {
   IkaDocEditorAdmissionClient,
   IkaDocEditorAdmissionRequest,
 } from "app/ikadoc/IkaDocEditorAdmission";
-import { Document } from "app/gen-server/entity/Document";
 import { DocAuthorizerImpl } from "app/server/lib/DocAuthorizer";
 import { activeDocMethod } from "app/server/lib/IkaDocActiveDocMethod";
 import {
@@ -16,7 +16,6 @@ import {
   IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER,
   ikaDocForwardAuthSignature,
 } from "app/server/lib/IkaDocForwardAuthAssertion";
-import type { RequestWithLogin } from "app/server/lib/Authorizer";
 import {
   createIkaDocRuntimeAuthMiddleware,
   createIkaDocRuntimeAuthSession,
@@ -38,8 +37,10 @@ import axios from "axios";
 import { assert } from "chai";
 import express from "express";
 
-describe("IkaDoc runtime policy", function () {
-  it("does not affect normal Grist documents", async function () {
+import type { RequestWithLogin } from "app/server/lib/Authorizer";
+
+describe("IkaDoc runtime policy", function() {
+  it("does not affect normal Grist documents", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const app = express();
     app.get(
@@ -58,7 +59,7 @@ describe("IkaDoc runtime policy", function () {
     assert.deepEqual(response.data, { ok: true });
   });
 
-  it("denies registered IkaDoc runtime documents when a capability is missing", async function () {
+  it("denies registered IkaDoc runtime documents when a capability is missing", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: false }));
     const app = express();
@@ -84,7 +85,7 @@ describe("IkaDoc runtime policy", function () {
     });
   });
 
-  it("reports browser REST capability denials to the admitted IkaDoc audit callback", async function () {
+  it("reports browser REST capability denials to the admitted IkaDoc audit callback", async function() {
     const audit = await startAuditServer();
     try {
       const registry = new IkaDocRuntimeSessionRegistry();
@@ -134,7 +135,7 @@ describe("IkaDoc runtime policy", function () {
     }
   });
 
-  it("reports browser REST capability denials without forwarding cookies cross-origin", async function () {
+  it("reports browser REST capability denials without forwarding cookies cross-origin", async function() {
     const audit = await startAuditServer();
     try {
       const registry = new IkaDocRuntimeSessionRegistry();
@@ -181,7 +182,7 @@ describe("IkaDoc runtime policy", function () {
     }
   });
 
-  it("allows registered IkaDoc runtime documents when the capability is granted", async function () {
+  it("allows registered IkaDoc runtime documents when the capability is granted", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const app = express();
@@ -201,42 +202,44 @@ describe("IkaDoc runtime policy", function () {
     assert.deepEqual(response.data, { ok: true });
   });
 
-  it("restores runtime credentials for document REST routes after Grist user auth rewrites the request", async function () {
-    const registry = new IkaDocRuntimeSessionRegistry();
-    registry.register(runtimeConfig({ canExportFromBrowser: true }));
-    const app = express();
-    const dbManager = fakeRuntimeAuthDbManager();
-    app.use("/api", createIkaDocRuntimeAuthMiddleware(dbManager, registry));
-    app.use("/api", (req, _res, next) => {
-      const mreq = req as unknown as RequestWithLogin;
-      mreq.authSession = undefined;
-      mreq.docAuth = undefined;
-      next();
-    });
-    app.use(
-      "/api/docs/:docId",
-      createIkaDocRuntimeAuthMiddleware(dbManager, registry),
-    );
-    app.get("/api/docs/:docId", (req, res) => {
-      const mreq = req as unknown as RequestWithLogin;
-      res.status(200).json({
-        hasCredential: Boolean(mreq.authSession?.credential),
-        altSessionId: mreq.altSessionId,
+  it(
+    "restores runtime credentials for document REST routes after Grist user auth rewrites the request",
+    async function() {
+      const registry = new IkaDocRuntimeSessionRegistry();
+      registry.register(runtimeConfig({ canExportFromBrowser: true }));
+      const app = express();
+      const dbManager = fakeRuntimeAuthDbManager();
+      app.use("/api", createIkaDocRuntimeAuthMiddleware(dbManager, registry));
+      app.use("/api", (req, _res, next) => {
+        const mreq = req as unknown as RequestWithLogin;
+        mreq.authSession = undefined;
+        mreq.docAuth = undefined;
+        next();
+      });
+      app.use(
+        "/api/docs/:docId",
+        createIkaDocRuntimeAuthMiddleware(dbManager, registry),
+      );
+      app.get("/api/docs/:docId", (req, res) => {
+        const mreq = req as unknown as RequestWithLogin;
+        res.status(200).json({
+          hasCredential: Boolean(mreq.authSession?.credential),
+          altSessionId: mreq.altSessionId,
+        });
+      });
+
+      const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
+        Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(response.data, {
+        hasCredential: true,
+        altSessionId: "session-1",
       });
     });
 
-    const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
-    });
-
-    assert.equal(response.status, 200);
-    assert.deepEqual(response.data, {
-      hasCredential: true,
-      altSessionId: "session-1",
-    });
-  });
-
-  it("restores runtime credentials from a signed IkaDoc forward-auth assertion", async function () {
+  it("restores runtime credentials from a signed IkaDoc forward-auth assertion", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const app = express();
@@ -275,7 +278,7 @@ describe("IkaDoc runtime policy", function () {
     });
   });
 
-  it("serves active session details from the admitted IkaDoc runtime session", async function () {
+  it("serves active session details from the admitted IkaDoc runtime session", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const app = express();
@@ -305,7 +308,7 @@ describe("IkaDoc runtime policy", function () {
     assert.equal(response.data.org.access, "editors");
   });
 
-  it("serves session user and org lists from the admitted IkaDoc runtime session", async function () {
+  it("serves session user and org lists from the admitted IkaDoc runtime session", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const app = express();
@@ -327,7 +330,7 @@ describe("IkaDoc runtime policy", function () {
     assert.equal(response.data.orgs[0].name, "records");
   });
 
-  it("does not handle native Grist session details without an IkaDoc runtime session", async function () {
+  it("does not handle native Grist session details without an IkaDoc runtime session", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const app = express();
     app.get(
@@ -342,7 +345,7 @@ describe("IkaDoc runtime policy", function () {
     assert.deepEqual(response.data, { nativeHandlerReached: true });
   });
 
-  it("creates websocket runtime auth sessions from signed IkaDoc forward-auth assertions", async function () {
+  it("creates websocket runtime auth sessions from signed IkaDoc forward-auth assertions", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const dbManager = fakeRuntimeAuthDbManager();
@@ -381,7 +384,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("limits runtime credential scope and document auth to the admitted IkaDoc document", async function () {
+  it("limits runtime credential scope and document auth to the admitted IkaDoc document", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
     const admittedDoc = runtimeDocument("doc-1", "doc-url-1");
@@ -404,7 +407,7 @@ describe("IkaDoc runtime policy", function () {
       res.status(200).json({
         filteredIds: scope
           ?.filter?.([admittedDoc, otherDoc])
-          .map((doc) => doc.id),
+          .map(doc => doc.id),
         scopeUserId: scope?.userId,
         authAccess: docAuth?.access,
         authDocId: docAuth?.docId,
@@ -428,7 +431,7 @@ describe("IkaDoc runtime policy", function () {
     });
   });
 
-  it("uses runtime credential doc auth for websocket document authorization", async function () {
+  it("uses runtime credential doc auth for websocket document authorization", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
     const dbManager = fakeRuntimeAuthDbManager({
@@ -465,7 +468,46 @@ describe("IkaDoc runtime policy", function () {
     });
   });
 
-  it("fails closed for forged IkaDoc forward-auth assertions", async function () {
+  it("uses viewer document auth for read-only IkaDoc runtime sessions", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register({
+      ...runtimeConfig({ canEditCells: false, canEditStructure: false }),
+      mode: "viewer",
+    });
+    const dbManager = fakeRuntimeAuthDbManager({
+      cachedDoc: runtimeDocument("doc-1", "doc-url-1"),
+    });
+    const app = express();
+    app.use(
+      "/api/docs/:docId",
+      createIkaDocRuntimeAuthMiddleware(dbManager, registry),
+    );
+    app.get("/api/docs/:docId", async (req, res) => {
+      const credential = (req as unknown as RequestWithLogin).authSession
+        ?.credential;
+      const docAuth = await credential?.docAuth(
+        req as unknown as RequestWithLogin,
+        dbManager,
+        req.params.docId,
+      );
+      res.status(200).json({
+        access: docAuth?.access,
+        cachedAccess: docAuth?.cachedDoc?.access,
+      });
+    });
+
+    const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
+      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.data, {
+      access: "viewers",
+      cachedAccess: "viewers",
+    });
+  });
+
+  it("fails closed for forged IkaDoc forward-auth assertions", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canExportFromBrowser: true }));
     const app = express();
@@ -499,7 +541,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("revalidates missing local runtime sessions with IkaDoc before document REST auth", async function () {
+  it("revalidates missing local runtime sessions with IkaDoc before document REST auth", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const admissionRequests: IkaDocEditorAdmissionRequest[] = [];
     const app = express();
@@ -551,7 +593,7 @@ describe("IkaDoc runtime policy", function () {
     ]);
   });
 
-  it("fails closed when IkaDoc rejects revalidation for a missing local runtime session", async function () {
+  it("fails closed when IkaDoc rejects revalidation for a missing local runtime session", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const admissionRequests: IkaDocEditorAdmissionRequest[] = [];
     const app = express();
@@ -596,7 +638,7 @@ describe("IkaDoc runtime policy", function () {
     ]);
   });
 
-  it("denies registered IkaDoc runtime documents after session expiry", async function () {
+  it("denies registered IkaDoc runtime documents after session expiry", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig(
@@ -626,7 +668,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies registered IkaDoc runtime documents for always-blocked operations", async function () {
+  it("denies registered IkaDoc runtime documents for always-blocked operations", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canFork: true }));
     const app = express();
@@ -646,7 +688,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies always-blocked operations for IkaDoc browser sessions without document route params", async function () {
+  it("denies always-blocked operations for IkaDoc browser sessions without document route params", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({}));
     const app = express();
@@ -668,7 +710,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("fails closed for stale IkaDoc browser session cookies", async function () {
+  it("fails closed for stale IkaDoc browser session cookies", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const app = express();
     app.get(
@@ -689,7 +731,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies Grist home-resource APIs for IkaDoc browser sessions", async function () {
+  it("denies Grist home-resource APIs for IkaDoc browser sessions", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({}));
     const app = express();
@@ -711,7 +753,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("fails closed for stale IkaDoc browser session cookies on capability-gated routes", async function () {
+  it("fails closed for stale IkaDoc browser session cookies on capability-gated routes", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const app = express();
     app.get(
@@ -736,7 +778,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("prunes expired runtime sessions during registry lookup", function () {
+  it("prunes expired runtime sessions during registry lookup", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig(
@@ -751,7 +793,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isUndefined(registry.getByDocumentId("doc-url-1"));
   });
 
-  it("prunes expired runtime sessions without removing active sessions", function () {
+  it("prunes expired runtime sessions without removing active sessions", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig(
@@ -774,7 +816,7 @@ describe("IkaDoc runtime policy", function () {
     assert.equal(registry.getByDocumentId("doc-url-2")?.sessionId, "session-2");
   });
 
-  it("denies websocket-style operations by registered document id", function () {
+  it("denies websocket-style operations by registered document id", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canUsePlugins: false }));
 
@@ -790,7 +832,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("reports websocket-style capability denials without storing the browser cookie", async function () {
+  it("reports websocket-style capability denials without storing the browser cookie", async function() {
     const audit = await startAuditServer();
     try {
       const registry = new IkaDocRuntimeSessionRegistry();
@@ -823,7 +865,7 @@ describe("IkaDoc runtime policy", function () {
     }
   });
 
-  it("allows websocket-style operations by registered document id when the capability is granted", function () {
+  it("allows websocket-style operations by registered document id when the capability is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canUsePlugins: true }));
 
@@ -835,7 +877,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies websocket-style operations after session expiry", function () {
+  it("denies websocket-style operations after session expiry", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig(
@@ -857,7 +899,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies websocket-style always-blocked operations by registered document id", function () {
+  it("denies websocket-style always-blocked operations by registered document id", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canFork: true }));
 
@@ -872,7 +914,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("blocks websocket dispatcher calls before active document execution", async function () {
+  it("blocks websocket dispatcher calls before active document execution", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canUsePlugins: false }));
     let called = false;
@@ -904,7 +946,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isFalse(called);
   });
 
-  it("revalidates registered IkaDoc runtime sessions before websocket document execution", async function () {
+  it("revalidates registered IkaDoc runtime sessions before websocket document execution", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
     const validatedOperations: string[] = [];
@@ -941,7 +983,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isFalse(called);
   });
 
-  it("allows websocket dispatcher calls when the capability is granted", async function () {
+  it("allows websocket dispatcher calls when the capability is granted", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canUsePlugins: true }));
     let called = false;
@@ -958,8 +1000,9 @@ describe("IkaDoc runtime policy", function () {
     );
 
     await method(
-      clientForActiveDoc("doc-1", "forwardPluginRpc", () => {
+      clientForActiveDoc("doc-1", "forwardPluginRpc", function(this: { docName: string }) {
         called = true;
+        assert.equal(this.docName, "doc-1");
       }),
       1,
     );
@@ -967,7 +1010,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isTrue(called);
   });
 
-  it("allows local file import without enabling external data access", async function () {
+  it("allows local file import without enabling external data access", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canImportLocalFiles: true, canUseExternalData: false }),
@@ -1018,7 +1061,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("blocks local file import when the import capability is missing", async function () {
+  it("blocks local file import when the import capability is missing", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
     let called = false;
@@ -1050,7 +1093,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isFalse(called);
   });
 
-  it("blocks websocket applyUserActions payloads before active document execution", async function () {
+  it("blocks websocket applyUserActions payloads before active document execution", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
     let called = false;
@@ -1083,7 +1126,7 @@ describe("IkaDoc runtime policy", function () {
     assert.isFalse(called);
   });
 
-  it("allows normal user-table edits when cell editing is granted", function () {
+  it("allows normal user-table edits when cell editing is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
 
@@ -1093,7 +1136,7 @@ describe("IkaDoc runtime policy", function () {
     ]);
   });
 
-  it("denies structure actions when only cell editing is granted", function () {
+  it("denies structure actions when only cell editing is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
 
@@ -1106,7 +1149,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("allows structure actions when structure editing is granted", function () {
+  it("allows structure actions when structure editing is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditCells: true, canEditStructure: true }),
@@ -1117,7 +1160,7 @@ describe("IkaDoc runtime policy", function () {
     ]);
   });
 
-  it("denies formula schema actions when only structure editing is granted", function () {
+  it("denies formula schema actions when only structure editing is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: false }),
@@ -1132,7 +1175,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies formula schema actions when structure editing is missing", function () {
+  it("denies formula schema actions when structure editing is missing", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: false, canUseFormulas: true }),
@@ -1147,7 +1190,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("allows formula schema actions when formula and structure editing are granted", function () {
+  it("allows formula schema actions when formula and structure editing are granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: true }),
@@ -1158,7 +1201,7 @@ describe("IkaDoc runtime policy", function () {
     ]);
   });
 
-  it("denies formula metadata edits without formula capability", function () {
+  it("denies formula metadata edits without formula capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: false }),
@@ -1173,7 +1216,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies validation formula metadata edits without formula capability", function () {
+  it("denies validation formula metadata edits without formula capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: false }),
@@ -1188,7 +1231,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies visible column formula creation without formula capability", function () {
+  it("denies visible column formula creation without formula capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: false }),
@@ -1203,7 +1246,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies table creation with formula columns without formula capability", function () {
+  it("denies table creation with formula columns without formula capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditStructure: true, canUseFormulas: false }),
@@ -1225,7 +1268,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies attachment metadata edits without attachment capability", function () {
+  it("denies attachment metadata edits without attachment capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditStructure: true }));
 
@@ -1238,7 +1281,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies trigger metadata edits without external data capability", function () {
+  it("denies trigger metadata edits without external data capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditStructure: true }));
 
@@ -1251,7 +1294,7 @@ describe("IkaDoc runtime policy", function () {
     );
   });
 
-  it("denies access-rule metadata edits without access management capability", function () {
+  it("denies access-rule metadata edits without access management capability", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
       runtimeConfig({ canEditCells: true, canEditStructure: true }),
@@ -1324,7 +1367,7 @@ async function startAuditServer() {
     res.status(204).end();
   });
   const server = http.createServer(app);
-  await new Promise<void>((resolve) => server.listen(0, resolve));
+  await new Promise<void>(resolve => server.listen(0, resolve));
   const address = server.address();
   assert.isObject(address);
   const baseUrl = `http://127.0.0.1:${(address as { port: number }).port}`;
@@ -1332,18 +1375,18 @@ async function startAuditServer() {
     baseUrl,
     requests,
     waitForRequest: () =>
-      requests.length > 0
-        ? Promise.resolve()
-        : new Promise<void>((resolve, reject) => {
-            notifyRequest = resolve;
-            setTimeout(
-              () => reject(new Error("Timed out waiting for audit callback")),
-              1000,
-            );
-          }),
+      requests.length > 0 ?
+        Promise.resolve() :
+        new Promise<void>((resolve, reject) => {
+          notifyRequest = resolve;
+          setTimeout(
+            () => reject(new Error("Timed out waiting for audit callback")),
+            1000,
+          );
+        }),
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
+        server.close(error => (error ? reject(error) : resolve()));
       }),
   };
 }
@@ -1370,7 +1413,7 @@ async function requestApp(
   headers?: Record<string, string>,
 ) {
   const server = http.createServer(app);
-  await new Promise<void>((resolve) => server.listen(0, resolve));
+  await new Promise<void>(resolve => server.listen(0, resolve));
   const address = server.address();
   assert.isObject(address);
 
@@ -1387,7 +1430,7 @@ async function requestApp(
     return await axios.get(url, config);
   } finally {
     await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+      server.close(error => (error ? reject(error) : resolve()));
     });
   }
 }
@@ -1464,7 +1507,7 @@ async function captureError(
 function clientForActiveDoc(
   docName: string,
   methodName: string,
-  onCall: () => void,
+  onCall: (this: { docName: string }) => void,
 ) {
   return {
     authSession: { isApiKeyAuth: false },
@@ -1473,8 +1516,8 @@ function clientForActiveDoc(
         activeDoc: {
           docName,
           getLogMeta: () => ({}),
-          [methodName]: async () => {
-            onCall();
+          [methodName]: async function() {
+            onCall.call(this);
           },
         },
         authorizer: {

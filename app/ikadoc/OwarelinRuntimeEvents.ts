@@ -1,5 +1,5 @@
-import { applyIkaDocThemeBridgeState } from "app/ikadoc/IkaDocThemeState";
 import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
+import { applyIkaDocThemeBridgeState } from "app/ikadoc/IkaDocThemeState";
 
 const MAX_RUNTIME_STATE_MESSAGE_LENGTH = 240;
 
@@ -143,8 +143,10 @@ export function applyOwarelinHostEvent(event: OwarelinRuntimeEvent<OwarelinInbou
       event.detail.appearance :
       currentAppearance;
     const theme = typeof event.detail.theme === "string" ? event.detail.theme : undefined;
+    const mode = document.documentElement.dataset.ikadocRuntimeMode === "viewer" ? "viewer" : "editor";
     applyIkaDocThemeBridgeState({
       appearance,
+      mode,
       theme,
     });
   }

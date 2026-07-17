@@ -4,6 +4,10 @@ import { hooks } from "app/client/Hooks";
 import { makeT } from "app/client/lib/localization";
 import { ViewSectionRec } from "app/client/models/DocModel";
 import { urlState } from "app/client/models/gristUrlState";
+import {
+  canEditIkaDocRuntimeStructure,
+  canExportFromIkaDocRuntimeBrowser,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { testId } from "app/client/ui2018/cssVars";
 import { menuDivider, menuItemCmd, menuItemLink } from "app/client/ui2018/menus";
 import { WidgetType } from "app/common/widgetTypes";
@@ -18,6 +22,8 @@ const t = makeT("ViewLayoutMenu");
 export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: boolean) {
   const viewInstance = viewSection.viewInstance.peek()!;
   const gristDoc = viewInstance.gristDoc;
+  const canConfigureView = !isReadonly && canEditIkaDocRuntimeStructure();
+  const canExportFromBrowser = canExportFromIkaDocRuntimeBrowser();
 
   // get current row index from cursor
   const cursorRow = viewInstance.cursor.rowIndex.peek();
@@ -69,7 +75,7 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
   };
 
   const isCard = (use: UseCB) => use(viewSection.widgetType) === WidgetType.Card;
-  const showCreateForm = (use: UseCB) => use(viewSection.widgetType) === WidgetType.Table &&
+  const showCreateForm = (use: UseCB) => canConfigureView && use(viewSection.widgetType) === WidgetType.Table &&
     Boolean(viewRec.getRowId()) && !isReadonly;
 
   return [
@@ -85,15 +91,27 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
       ),
     ),
     menuItemCmd(allCommands.printSection, t("Print widget"), testId("print-section")),
-    menuItemLink(hooks.maybeModifyLinkAttrs({ href: gristDoc.getCsvLink(), target: "_blank", download: "" }),
-      t("Download as CSV"), testId("download-section")),
-    menuItemLink(hooks.maybeModifyLinkAttrs({ href: gristDoc.getXlsxActiveViewLink(), target: "_blank", download: "" }),
-      t("Download as XLSX"), testId("download-section")),
+    canExportFromBrowser ? [
+      menuItemLink(
+        hooks.maybeModifyLinkAttrs({ href: gristDoc.getCsvLink(), target: "_blank", download: "" }),
+        t("Download as CSV"),
+        testId("download-section"),
+      ),
+      menuItemLink(
+        hooks.maybeModifyLinkAttrs({
+          href: gristDoc.getXlsxActiveViewLink(),
+          target: "_blank",
+          download: "",
+        }),
+        t("Download as XLSX"),
+        testId("download-section"),
+      ),
+    ] : null,
     dom.maybe(use => ["detail", "single"].includes(use(viewSection.parentKey)), () =>
       menuItemCmd(allCommands.editLayout, t("Edit card layout"),
-        dom.cls("disabled", isReadonly))),
+        dom.hide(!canConfigureView))),
 
-    dom.maybe(!isSinglePage, () => [
+    dom.maybe(!isSinglePage && canConfigureView, () => [
       menuDivider(),
       menuItemCmd(allCommands.viewTabOpen, t("Widget options"), testId("widget-options")),
       menuItemCmd(allCommands.sortFilterTabOpen, t("Advanced sort & filter"), dom.hide(viewSection.isRecordCard)),
@@ -104,19 +122,22 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
     menuDivider(dom.hide(viewSection.isRecordCard)),
     dom.maybe(use => use(viewSection.parentKey) === "custom" && use(viewSection.hasCustomOptions), () =>
       menuItemCmd(allCommands.openWidgetConfiguration, t("Open configuration"),
+        dom.hide(!canConfigureView),
         testId("section-open-configuration")),
     ),
     menuItemCmd(allCommands.collapseSection, t("Collapse widget"),
       dom.cls("disabled", dontCollapseSection()),
       dom.hide(viewSection.isRecordCard),
       testId("section-collapse")),
-    menuItemCmd(allCommands.duplicateSection, t("Duplicate widget"),
-      dom.cls("disabled", dontDuplicateSection),
-      testId("duplicate-section")),
-    menuItemCmd(allCommands.deleteSection, t("Delete widget"),
-      dom.cls("disabled", dontRemoveSection()),
-      dom.hide(viewSection.isRecordCard),
-      testId("section-delete")),
+    canConfigureView ? [
+      menuItemCmd(allCommands.duplicateSection, t("Duplicate widget"),
+        dom.cls("disabled", dontDuplicateSection),
+        testId("duplicate-section")),
+      menuItemCmd(allCommands.deleteSection, t("Delete widget"),
+        dom.cls("disabled", dontRemoveSection()),
+        dom.hide(viewSection.isRecordCard),
+        testId("section-delete")),
+    ] : null,
   ];
 }
 
@@ -125,6 +146,7 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
  */
 export function makeCollapsedLayoutMenu(viewSection: ViewSectionRec, gristDoc: GristDoc) {
   const isReadonly = gristDoc.isReadonly.get();
+  const canConfigureView = !isReadonly && canEditIkaDocRuntimeStructure();
   const sectionId = viewSection.table.peek().rawViewSectionRef.peek();
   const anchorUrlState = { hash: { sectionId, popup: true } };
   const rawUrl = urlState().makeUrl(anchorUrlState);
@@ -141,10 +163,12 @@ export function makeCollapsedLayoutMenu(viewSection: ViewSectionRec, gristDoc: G
     ),
     menuDivider(),
     menuItemCmd(allCommands.restoreSection, t("Add to page"),
-      dom.cls("disabled", isReadonly),
+      dom.cls("disabled", !canConfigureView),
+      dom.hide(!canConfigureView),
       testId("section-expand")),
     menuItemCmd(allCommands.deleteCollapsedSection, t("Delete widget"),
-      dom.cls("disabled", isReadonly),
+      dom.cls("disabled", !canConfigureView),
+      dom.hide(!canConfigureView),
       testId("section-delete")),
   ];
 }

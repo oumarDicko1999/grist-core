@@ -7,6 +7,7 @@ import { setTestState } from "app/client/lib/testState";
 import { TableRec } from "app/client/models/DocModel";
 import { docListHeader, docMenuTrigger } from "app/client/ui/DocMenuCss";
 import { duplicateTable, DuplicateTableResponse } from "app/client/ui/DuplicateTable";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { hoverTooltip, showTransientTooltip } from "app/client/ui/tooltips";
 import { buildTableName } from "app/client/ui/WidgetTitle";
 import * as css from "app/client/ui2018/cssVars";
@@ -137,7 +138,8 @@ export class DataTables extends Disposable {
       const rawViewSectionRef = use(fromKo(table.rawViewSectionRef));
       const isSummaryTable = use(table.summarySourceTable) !== 0;
       const isReadonly = use(this._gristDoc.isReadonly);
-      if (!rawViewSectionRef || isSummaryTable || isReadonly) {
+      const canEditStructure = canEditIkaDocRuntimeStructure();
+      if (!rawViewSectionRef || isSummaryTable || isReadonly || !canEditStructure) {
         // Some very old documents might not have a rawViewSection, and raw summary
         // tables can't currently be renamed.
         const tableName = [
@@ -164,17 +166,19 @@ export class DataTables extends Disposable {
 
   private _menuItems(table: TableRec, isEditingName: Observable<boolean>) {
     const { isReadonly, docModel } = this._gristDoc;
+    const canEditStructure = canEditIkaDocRuntimeStructure();
     return [
       menuItem(
         () => { isEditingName.set(true); },
         t("Rename table"),
-        dom.cls("disabled", use => use(isReadonly) || use(table.summarySourceTable) !== 0),
+        dom.cls("disabled", use => !canEditStructure || use(isReadonly) || use(table.summarySourceTable) !== 0),
         testId("menu-rename-table"),
       ),
       menuItem(
         () => this._duplicateTable(table),
         t("Duplicate table"),
         dom.cls("disabled", use =>
+          !canEditStructure ||
           use(isReadonly) ||
           use(table.isHidden) ||
           use(table.summarySourceTable) !== 0,
@@ -184,7 +188,7 @@ export class DataTables extends Disposable {
       menuItem(
         () => this._removeTable(table),
         t("Remove table"),
-        dom.cls("disabled", use => use(isReadonly) || (
+        dom.cls("disabled", use => !canEditStructure || use(isReadonly) || (
           // Can't delete last visible table, unless it is a hidden table.
           use(docModel.visibleTables.getObservable()).length <= 1 && !use(table.isHidden)
         )),
