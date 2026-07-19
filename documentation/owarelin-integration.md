@@ -111,12 +111,37 @@ High-risk surfaces include:
 - plugin and custom widget execution,
 - assistant/proposal features,
 - triggers, webhooks, and external egress,
-- formula and Python execution surfaces,
+- formula and Python execution surfaces, including sandbox effectiveness,
 - structure edits,
 - admin/account/workspace/org features.
 
 Client-side hiding is only UX. Server, REST, websocket, and user-action policy
 gates are the security boundary.
+
+
+## Formula Sandbox
+
+Grist formulas are Python code evaluated by the document data engine. Existing
+formulas can run when a document opens or recalculates, so sandboxing is required
+for formula-bearing managed sessions even when formula editing UI is hidden.
+
+Owarelin/IkaDoc runtime mode requires an effective sandbox:
+
+- `GRIST_SANDBOX_FLAVOR=unsandboxed` and `GRIST_SANDBOX_FLAVOR=skip` are not
+  acceptable for managed sessions;
+- Linux/container production should prefer `gvisor`/`runsc` when the runtime
+  probe proves it functional;
+- `pyodide` may be used for local development, tests, or explicitly accepted
+  deployments when the probe reports it functional and effective;
+- request/network formula features, webhook domains, and trusted plugins remain
+  disabled unless a separate threat model and allowlist approve them;
+- sandbox failures and Python errors shown to users must be product-safe and must
+  not expose server paths, environment variables, secrets, upstream stderr, or
+  document content.
+
+Formula capability controls whether users may create or edit formula definitions.
+It is not a substitute for sandboxing, because existing formulas may still
+execute inside native `.grist`, search, report, and schema-bound workspaces.
 
 ## Document Lifecycle
 
@@ -126,6 +151,8 @@ Owarelin owns document lifecycle. Grist is an editor/viewer runtime.
 - Grist opens only admitted sessions.
 - Save/discard must call IkaDoc-owned endpoints.
 - No-op saves must not imply a new vault version.
+- Saved `.grist` workspaces must persist through IkaDoc vault/content versioning;
+  Grist runtime storage and cache are not durable product persistence.
 - Session expiry, cleanup, and check-out state must close or block the Grist
   runtime path.
 - Recreating the Grist process clears the in-memory runtime registry; live
@@ -193,9 +220,15 @@ workflow.
 Bulk update/apply is a separate feature and must not be mixed into
 search-to-Grist unless the spec explicitly changes.
 
-## Schema-Bound Metadata Integration
+## Guided Metadata Integration
 
-Schema-bound Grist tables are the path for future IkaDoc import and bulk-write workflows. A table becomes schema-bound only through an explicit IkaDoc action that chooses the schema type and optional schema variant. The fork must then read versioned IkaDoc binding metadata from column/view-field options and enable IkaDoc-aware editors only for those bound columns.
+Guided Grist workspaces are the path for future IkaDoc import and bulk-write workflows. The `.grist` file remains a normal Grist file; the special part is the Owarelin/IkaDoc use case attached to it. A table becomes guided only through an explicit IkaDoc action that chooses the workflow, schema type, and optional schema variant. The fork then shows the right labels, editors, and controls for non-technical users until they click the final Owarelin/IkaDoc export/apply action.
+
+Guided documents must carry an explicit workflow intent. The fork must be able to distinguish regular native Grist files from IkaDoc record-creation workspaces, record-import workspaces, bulk edit proposals, bulk write proposals, search-processing workspaces, report-analysis workspaces, and document-file editor sessions. This is just the use case behind the file, and it must survive saving a partially completed `.grist` file so the user can return later through IkaDoc without losing the right tools.
+
+Intent values must be mutually exclusive and backend-issued. `record-creation` means rows are candidate new records. `record-import` means rows are an import/upsert data set handled by IkaDoc migration import. `bulk-edit-proposal` means rows target existing records only. `bulk-write-proposal` means a broader backend-defined write package. No intent may imply delete, archive, workflow transition, content upload, or schema mutation unless a future product flow explicitly adds that action and permission.
+
+The fork must not infer workflow intent from table names, labels, hidden columns, previous browser state, or native Grist ACL/workspace metadata. IkaDoc stores a small use-case marker with or linked to the IkaDoc vault/content version: intent, target collection, schema type, optional schema code or variant, and allowed final action. IkaDoc UI uses that marker to distinguish normal `.grist` files from guided files in document lists, previews, and action menus. Reopening a saved guided file must re-check that marker before enabling import, bulk edit, bulk write, validation, picker, or export/apply controls. Missing or stale markers fail closed or open as normal/read-only Grist with product-safe guidance. New saved versions carry the current marker; rollback opens with the marker attached to that version; copying a guided `.grist` file must either intentionally copy the marker or create a normal unmarked `.grist` file.
 
 Required behavior:
 
@@ -204,8 +237,16 @@ Required behavior:
 - bound value-list columns store canonical entry ids or stable entry codes and display localized labels;
 - bound administrative-unit and record-reference columns store canonical IkaDoc record ids or map native Grist lookup row ids to immutable `ikadoc_id` values;
 - bound reference-list columns preserve a canonical id list according to the backend contract;
+- bound opaque JSON fields are read-only by default and require explicit advanced permission plus backend validation before raw JSON editing is allowed;
+- bound structured JSON fields use an IkaDoc descriptor carrying payload class, editor kind, nested members when available, required/default semantics, and whether the JSON object is edited as columns, a modal form, or raw text;
+- bound special-domain JSON fields, such as retention rule delay, use IkaDoc-owned domain editors rather than generic JSON cells. Retention schedule descriptors should expose medium types, active/semi-active steps, time unit, trigger field, event options, combined-step logic, disposition step, and sort mapping when supported. A compact retention syntax may be shown in cells, but IkaDoc owns parsing, validation, serialization, and the canonical JSON shape;
 - copied, derived, content, and unsupported metadata remain read-only or blocked until the backend contract says otherwise;
-- all picker/autocomplete requests go through IkaDoc backend session validation and return only values allowed for the current actor, tenant, collection, schema, metadata field, and row context.
+- bound column headers show both the localized metadata label and stable metadata code. Labels are semantic display text only; codes remain the mapping and apply authority;
+- all picker/autocomplete requests go through IkaDoc backend session validation and return only values allowed for the current actor, tenant, collection, schema, metadata field, and row context;
+- users do not type authoritative row ids, record ids, or import strategy switches. IkaDoc generates or resolves those values through add-row, normalization, or the final apply action;
+- import rows may carry legacy ids only when IkaDoc selects an `oldSystem` migration/re-import strategy. Normal record creation and bulk-write candidate rows use backend-generated identity. Bulk-edit rows must carry immutable target record id and expected record version from IkaDoc selection state. Apply decides create, update, no-op, or conflict from backend lineage and current database state, not from user-edited id cells, and retries must not create duplicate records;
+- bulk-write rows must declare their allowed operation family;
+- formula-backed bound cells contribute only their evaluated value in the apply snapshot. Formula expressions remain Grist workspace behavior and are not imported or persisted as IkaDoc record metadata authority.
 
 Same-value fill across selected rows must be represented as one logical bulk proposal or bulk action, not many unrelated single-row edits. IkaDoc validates every target row/cell before apply and reports partial failures with audit-safe detail.
 
