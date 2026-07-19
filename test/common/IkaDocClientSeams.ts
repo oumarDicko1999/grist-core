@@ -54,14 +54,19 @@ const CLIENT_SEAMS = [
     file: "app/client/ui/TopBar.ts",
     anchors: [
       "buildIkaDocEditorControls",
-      "postOwarelinRuntimeEvent(ikadocConfig, \"owarelin:documentDirty\")",
+      'postOwarelinRuntimeEvent(ikadocConfig, "owarelin:documentDirty")',
     ],
   },
   {
     file: "app/client/ui/ShareMenu.ts",
+    anchors: ["if (getGristConfig().ikadoc) {", "return null;"],
+  },
+  {
+    file: "app/client/ui/DocHistory.ts",
     anchors: [
-      "if (getGristConfig().ikadoc) {",
-      "return null;",
+      "canExportFromIkaDocRuntimeBrowser",
+      "const canCompareSnapshots = canExportFromIkaDocRuntimeBrowser();",
+      "canCompareSnapshots ? menuItemLink(setLink(snapshot, origUrlId), t(\"Compare to current\")) : null",
     ],
   },
   {
@@ -124,29 +129,40 @@ describe("IkaDoc client seams", function() {
     assert.include(source, "--ik-radius-pill: 999rem;");
     assert.include(source, "border-radius: var(--ik-radius-pill);");
     assert.include(source, "--ik-menu-bg: var(--mat-sys-surface-container);");
-    assert.include(source, "--ik-table-row-hover: var(--mat-sys-surface-container-low);");
+    assert.include(
+      source,
+      "--ik-table-row-hover: var(--mat-sys-surface-container-low);",
+    );
     assert.include(source, "--ik-menu-bg: var(--ow-color-panel);");
     assert.include(source, "--ik-table-row-hover: var(--ow-color-row-hover);");
     assert.include(source, "html[data-ikadoc-visual-style='owarelin']");
-    assert.include(source, "html[data-ikadoc-visual-style='owarelin'][data-grist-appearance='dark']");
+    assert.include(
+      source,
+      "html[data-ikadoc-visual-style='owarelin'][data-grist-appearance='dark']",
+    );
   });
 
   it("keeps the IkaDoc tools panel limited to document history", function() {
     const source = readSource("app/client/ui/Tools.ts");
-    const ikadocBranchIndex = source.indexOf("if (ikadocConfig) {\n    return cssTools");
-    const normalAssistantIndex = source.indexOf("buildOpenAssistantButton(gristDoc");
+    const ikadocBranchIndex = source.indexOf(
+      "if (ikadocConfig) {\n    return cssTools",
+    );
+    const normalAssistantIndex = source.indexOf(
+      "buildOpenAssistantButton(gristDoc",
+    );
 
     assert.isAtLeast(ikadocBranchIndex, 0);
     assert.isAbove(normalAssistantIndex, ikadocBranchIndex);
-    assert.include(source, "cssLinkText(t(\"Document history\"))");
-    assert.include(source, "testId(\"log\")");
+    assert.include(source, 'cssLinkText(t("Document history"))');
+    assert.include(source, "ikadocConfig.capabilities?.canViewHistory");
+    assert.include(source, 'testId("log")');
   });
 
   it("keeps IkaDoc save and discard owned by the host page", function() {
     const source = readSource("app/client/ui/IkaDocEditorControls.ts");
 
-    assert.notInclude(source, "testId(\"ikadoc-editor-save\")");
-    assert.notInclude(source, "testId(\"ikadoc-editor-discard\")");
+    assert.notInclude(source, 'testId("ikadoc-editor-save")');
+    assert.notInclude(source, 'testId("ikadoc-editor-discard")');
     assert.notInclude(source, "runIkaDocSave");
     assert.notInclude(source, "runIkaDocDiscard");
   });
@@ -170,10 +186,17 @@ describe("IkaDoc client seams", function() {
       const locale = JSON.parse(readSource(localeFile));
       const controls = locale.IkaDocEditorControls;
 
-      assert.isObject(controls, `${localeFile} is missing IkaDocEditorControls`);
+      assert.isObject(
+        controls,
+        `${localeFile} is missing IkaDocEditorControls`,
+      );
       for (const key of IKADOC_EDITOR_CONTROL_KEYS) {
         assert.isString(controls[key], `${localeFile} is missing ${key}`);
-        assert.isAbove(controls[key].length, 0, `${localeFile} has an empty ${key}`);
+        assert.isAbove(
+          controls[key].length,
+          0,
+          `${localeFile} has an empty ${key}`,
+        );
       }
     }
   });

@@ -202,42 +202,40 @@ describe("IkaDoc runtime policy", function() {
     assert.deepEqual(response.data, { ok: true });
   });
 
-  it(
-    "restores runtime credentials for document REST routes after Grist user auth rewrites the request",
-    async function() {
-      const registry = new IkaDocRuntimeSessionRegistry();
-      registry.register(runtimeConfig({ canExportFromBrowser: true }));
-      const app = express();
-      const dbManager = fakeRuntimeAuthDbManager();
-      app.use("/api", createIkaDocRuntimeAuthMiddleware(dbManager, registry));
-      app.use("/api", (req, _res, next) => {
-        const mreq = req as unknown as RequestWithLogin;
-        mreq.authSession = undefined;
-        mreq.docAuth = undefined;
-        next();
-      });
-      app.use(
-        "/api/docs/:docId",
-        createIkaDocRuntimeAuthMiddleware(dbManager, registry),
-      );
-      app.get("/api/docs/:docId", (req, res) => {
-        const mreq = req as unknown as RequestWithLogin;
-        res.status(200).json({
-          hasCredential: Boolean(mreq.authSession?.credential),
-          altSessionId: mreq.altSessionId,
-        });
-      });
-
-      const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-        Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
-      });
-
-      assert.equal(response.status, 200);
-      assert.deepEqual(response.data, {
-        hasCredential: true,
-        altSessionId: "session-1",
+  it("restores runtime credentials after Grist user auth rewrites document REST requests", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canExportFromBrowser: true }));
+    const app = express();
+    const dbManager = fakeRuntimeAuthDbManager();
+    app.use("/api", createIkaDocRuntimeAuthMiddleware(dbManager, registry));
+    app.use("/api", (req, _res, next) => {
+      const mreq = req as unknown as RequestWithLogin;
+      mreq.authSession = undefined;
+      mreq.docAuth = undefined;
+      next();
+    });
+    app.use(
+      "/api/docs/:docId",
+      createIkaDocRuntimeAuthMiddleware(dbManager, registry),
+    );
+    app.get("/api/docs/:docId", (req, res) => {
+      const mreq = req as unknown as RequestWithLogin;
+      res.status(200).json({
+        hasCredential: Boolean(mreq.authSession?.credential),
+        altSessionId: mreq.altSessionId,
       });
     });
+
+    const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
+      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.data, {
+      hasCredential: true,
+      altSessionId: "session-1",
+    });
+  });
 
   it("restores runtime credentials from a signed IkaDoc forward-auth assertion", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
@@ -1000,9 +998,71 @@ describe("IkaDoc runtime policy", function() {
     );
 
     await method(
-      clientForActiveDoc("doc-1", "forwardPluginRpc", function(this: { docName: string }) {
+      clientForActiveDoc(
+        "doc-1",
+        "forwardPluginRpc",
+        function(this: { docName: string }) {
+          called = true;
+          assert.equal(this.docName, "doc-1");
+        },
+      ),
+      1,
+    );
+
+    assert.isTrue(called);
+  });
+
+  it("blocks websocket history summaries when history viewing is missing", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canViewHistory: false }));
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "viewers",
+      "getActionSummaries",
+      {
+        capability: "canViewHistory",
+        operation: "view document history",
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc("doc-1", "getActionSummaries", () => {
+          called = true;
+        }),
+        1,
+      ),
+    );
+
+    assert.equal(
+      error?.message,
+      "IkaDoc Grist session does not allow view document history.",
+    );
+    assert.isFalse(called);
+  });
+
+  it("allows websocket history summaries when history viewing is granted", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canViewHistory: true }));
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "viewers",
+      "getActionSummaries",
+      {
+        capability: "canViewHistory",
+        operation: "view document history",
+      },
+    );
+
+    await method(
+      clientForActiveDoc("doc-1", "getActionSummaries", () => {
         called = true;
-        assert.equal(this.docName, "doc-1");
       }),
       1,
     );
@@ -1312,6 +1372,54 @@ describe("IkaDoc runtime policy", function() {
         ]),
       "IkaDoc Grist session does not allow apply AddRecord.",
     );
+  });
+
+  it("denies custom-widget layout creation without custom-widget capability", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canCreateCharts: true }),
+    );
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "_grist_Views_section", 1, { parentKey: "custom" }],
+        ]),
+      "IkaDoc Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
+  it("denies custom-widget option changes without custom-widget capability", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canEditStructure: true }));
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          [
+            "UpdateRecord",
+            "_grist_Views_section",
+            1,
+            {
+              options: JSON.stringify({
+                customView: { mode: "url", url: "https://example.test" },
+              }),
+            },
+          ],
+        ]),
+      "IkaDoc Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
+  it("allows custom-widget layout creation when custom-widget and structure capabilities are granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canUseCustomWidgets: true }),
+    );
+
+    assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+      ["UpdateRecord", "_grist_Views_section", 1, { parentKey: "custom" }],
+    ]);
   });
 });
 

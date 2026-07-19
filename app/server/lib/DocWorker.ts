@@ -177,7 +177,10 @@ export class DocWorker {
         capability: "canUseExternalData",
         operation: "fetch external URL",
       }),
-      getActionSummaries: method("viewers", "getActionSummaries"),
+      getActionSummaries: method("viewers", "getActionSummaries", {
+        capability: "canViewHistory",
+        operation: "view document history",
+      }),
       reloadDoc: method("editors", "reloadDoc"),
       fork: method("viewers", "fork", { operation: "fork document" }),
       checkAclFormula: method("viewers", "checkAclFormula"),

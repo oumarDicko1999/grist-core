@@ -292,6 +292,9 @@ function capabilitiesForUserAction(
   if (tableId === "_grist_Triggers" || tableId === "_grist_Webhooks") {
     return ["canUseExternalData"];
   }
+  if (isCustomWidgetAction(tableId, action)) {
+    return ["canUseCustomWidgets", "canEditStructure"];
+  }
   if (isChartOrLayoutMetadataTable(tableId)) {
     return ["canCreateCharts"];
   }
@@ -362,6 +365,74 @@ function hasFormulaFields(values: unknown): boolean {
     "recalcWhen" in values ||
     "recalcDeps" in values
   );
+}
+
+function isCustomWidgetAction(
+  tableId: string | undefined,
+  action: unknown[],
+): boolean {
+  if (tableId !== "_grist_Views_section") {
+    return false;
+  }
+  const values = action[3];
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return false;
+  }
+  return hasCustomWidgetParentKey(values) || hasCustomWidgetOptions(values);
+}
+
+function hasCustomWidgetParentKey(values: object): boolean {
+  if (!("parentKey" in values)) {
+    return false;
+  }
+  const parentKey = values.parentKey;
+  if (typeof parentKey === "string") {
+    return isCustomWidgetType(parentKey);
+  }
+  return (
+    Array.isArray(parentKey) &&
+    parentKey.some(
+      value => typeof value === "string" && isCustomWidgetType(value),
+    )
+  );
+}
+
+function isCustomWidgetType(value: string): boolean {
+  return value === "custom" || value.startsWith("custom.");
+}
+
+function hasCustomWidgetOptions(values: object): boolean {
+  if (!("options" in values)) {
+    return false;
+  }
+  const options = values.options;
+  if (typeof options === "string") {
+    return optionsContainCustomWidget(options);
+  }
+  return (
+    Array.isArray(options) &&
+    options.some(
+      option =>
+        typeof option === "string" && optionsContainCustomWidget(option),
+    )
+  );
+}
+
+function optionsContainCustomWidget(options: string): boolean {
+  if (!options.includes("customView")) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(options);
+    return Boolean(
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      "customView" in parsed,
+    );
+  } catch {
+    return true;
+  }
 }
 
 function isChartOrLayoutMetadataTable(tableId: string | undefined): boolean {

@@ -66,10 +66,10 @@ export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Obse
       { "aria-labelledby": "grist-tools-heading" },
       cssTools.cls("-collapsed", use => !use(leftPanelOpen)),
       cssSectionHeader(cssSectionHeaderText(t("TOOLS"), { id: "grist-tools-heading" })),
-      cssPageEntry(
+      ikadocConfig.capabilities?.canViewHistory ? cssPageEntry(
         cssPageButton(cssPageIcon("Log"), cssLinkText(t("Document history")), testId("log"),
           dom.on("click", () => gristDoc.showTool("docHistory"))),
-      ),
+      ) : null,
     );
   }
 
