@@ -31,14 +31,17 @@ describe("IkaDocRuntimeConfig", function() {
   });
 
   it("rejects malformed enabled config instead of silently defaulting", function() {
-    assert.deepEqual(parseIkaDocRuntimeConfig({
-      enabled: true,
-      sessionId: "session-1",
-  collectionCode: "records",
-    }), {
-      kind: "invalid",
-      reason: "missing-required-string",
-    });
+    assert.deepEqual(
+      parseIkaDocRuntimeConfig({
+        enabled: true,
+        sessionId: "session-1",
+        collectionCode: "records",
+      }),
+      {
+        kind: "invalid",
+        reason: "missing-required-string",
+      },
+    );
   });
 
   it("denies every capability when an enabled config omits capability data", function() {
@@ -77,7 +80,57 @@ describe("IkaDocRuntimeConfig", function() {
       canEditCells: true,
       canSaveToIkaDoc: true,
     });
-    assert.equal(result.config.refreshUrl, "/ikadoc/sessions/session-1/refresh");
-    assert.equal(result.config.proposalUrl, "/ikadoc/sessions/session-1/proposal");
+    assert.equal(
+      result.config.refreshUrl,
+      "/ikadoc/sessions/session-1/refresh",
+    );
+    assert.equal(
+      result.config.proposalUrl,
+      "/ikadoc/sessions/session-1/proposal",
+    );
+  });
+
+  it("accepts backend-issued guided workspace markers", function() {
+    const result = parseIkaDocRuntimeConfig({
+      ...VALID_IKADOC_CONFIG,
+      guidedWorkspace: {
+        intent: "RECORD_IMPORT",
+        targetCollectionCode: "records",
+        targetSchemaType: "document",
+        targetSchemaCode: "document_default",
+        finalAction: "APPLY_TO_IKADOC",
+      },
+    });
+
+    assert.equal(result.kind, "enabled");
+    if (result.kind !== "enabled") {
+      return;
+    }
+
+    assert.deepEqual(result.config.guidedWorkspace, {
+      intent: "RECORD_IMPORT",
+      targetCollectionCode: "records",
+      targetSchemaType: "document",
+      targetSchemaCode: "document_default",
+      finalAction: "APPLY_TO_IKADOC",
+    });
+  });
+
+  it("rejects malformed guided workspace markers", function() {
+    assert.deepEqual(
+      parseIkaDocRuntimeConfig({
+        ...VALID_IKADOC_CONFIG,
+        guidedWorkspace: {
+          intent: "RECORD_IMPORT",
+          targetCollectionCode: "records",
+          targetSchemaType: "document",
+          finalAction: "DELETE_RECORDS",
+        },
+      }),
+      {
+        kind: "invalid",
+        reason: "invalid-guided-workspace",
+      },
+    );
   });
 });

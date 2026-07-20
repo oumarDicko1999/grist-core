@@ -3,9 +3,13 @@ import {
   IkaDocCapabilityOverrides,
   normalizeIkaDocCapabilities,
 } from "app/ikadoc/IkaDocCapabilities";
+import {
+  IkaDocGuidedWorkspaceMarker,
+  parseIkaDocGuidedWorkspaceMarker,
+} from "app/ikadoc/IkaDocGuidedWorkspace";
 
 export type IkaDocSessionSourceType =
-  "document-file" |
+  | "document-file" |
   "search-workspace" |
   "report-workspace" |
   "migration-workspace";
@@ -38,27 +42,32 @@ export interface IkaDocRuntimeConfig {
   blockedCapabilityUrl?: string;
   refreshUrl?: string;
   proposalUrl?: string;
+  guidedWorkspace?: IkaDocGuidedWorkspaceMarker;
   capabilities: IkaDocCapabilities;
   locale: string;
   theme?: string;
   appearance: "light" | "dark";
 }
 
-export interface IkaDocRuntimeConfigWire extends Omit<IkaDocRuntimeConfig, "capabilities"> {
+export interface IkaDocRuntimeConfigWire extends Omit<
+  IkaDocRuntimeConfig,
+  "capabilities"
+> {
   capabilities?: IkaDocCapabilityOverrides;
 }
 
 export type IkaDocRuntimeConfigParseFailure =
-  "not-an-object" |
+  | "not-an-object" |
   "invalid-enabled-flag" |
   "missing-required-string" |
   "invalid-source-type" |
   "invalid-editor-mode" |
   "invalid-user" |
-  "invalid-capabilities";
+  "invalid-capabilities" |
+  "invalid-guided-workspace";
 
 export type IkaDocRuntimeConfigParseResult =
-  { kind: "disabled" } |
+  | { kind: "disabled" } |
   { kind: "invalid"; reason: IkaDocRuntimeConfigParseFailure } |
   { kind: "enabled"; config: IkaDocRuntimeConfig };
 
@@ -87,7 +96,9 @@ const REQUIRED_STRING_FIELDS = [
   "locale",
 ] as const;
 
-export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigParseResult {
+export function parseIkaDocRuntimeConfig(
+  input: unknown,
+): IkaDocRuntimeConfigParseResult {
   if (input === undefined) {
     return { kind: "disabled" };
   }
@@ -107,11 +118,17 @@ export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigPar
     }
   }
 
-  if (typeof raw.sourceType !== "string" || !IKA_DOC_SOURCE_TYPES.has(raw.sourceType as IkaDocSessionSourceType)) {
+  if (
+    typeof raw.sourceType !== "string" ||
+    !IKA_DOC_SOURCE_TYPES.has(raw.sourceType as IkaDocSessionSourceType)
+  ) {
     return { kind: "invalid", reason: "invalid-source-type" };
   }
 
-  if (typeof raw.mode !== "string" || !IKA_DOC_EDITOR_MODES.has(raw.mode as IkaDocEditorMode)) {
+  if (
+    typeof raw.mode !== "string" ||
+    !IKA_DOC_EDITOR_MODES.has(raw.mode as IkaDocEditorMode)
+  ) {
     return { kind: "invalid", reason: "invalid-editor-mode" };
   }
 
@@ -121,9 +138,16 @@ export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigPar
 
   if (
     raw.capabilities !== undefined &&
-    (!raw.capabilities || typeof raw.capabilities !== "object" || Array.isArray(raw.capabilities))
+    (!raw.capabilities ||
+      typeof raw.capabilities !== "object" ||
+      Array.isArray(raw.capabilities))
   ) {
     return { kind: "invalid", reason: "invalid-capabilities" };
+  }
+
+  const guidedWorkspace = normalizeGuidedWorkspace(raw.guidedWorkspace);
+  if (guidedWorkspace === "invalid") {
+    return { kind: "invalid", reason: "invalid-guided-workspace" };
   }
 
   const sessionId = raw.sessionId as string;
@@ -146,7 +170,8 @@ export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigPar
       user: normalizeIkaDocRuntimeUser(raw.user),
       collectionCode,
       sourceType: raw.sourceType as IkaDocSessionSourceType,
-      sourceSummary: typeof raw.sourceSummary === "string" ? raw.sourceSummary : undefined,
+      sourceSummary:
+        typeof raw.sourceSummary === "string" ? raw.sourceSummary : undefined,
       mode: raw.mode as IkaDocEditorMode,
       expiresAt,
       documentId,
@@ -156,10 +181,18 @@ export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigPar
       validationUrl,
       saveUrl: typeof raw.saveUrl === "string" ? raw.saveUrl : undefined,
       discardUrl,
-      blockedCapabilityUrl: typeof raw.blockedCapabilityUrl === "string" ? raw.blockedCapabilityUrl : undefined,
-      refreshUrl: typeof raw.refreshUrl === "string" ? raw.refreshUrl : undefined,
-      proposalUrl: typeof raw.proposalUrl === "string" ? raw.proposalUrl : undefined,
-      capabilities: normalizeIkaDocCapabilities(raw.capabilities as IkaDocCapabilityOverrides | undefined),
+      blockedCapabilityUrl:
+        typeof raw.blockedCapabilityUrl === "string" ?
+          raw.blockedCapabilityUrl :
+          undefined,
+      refreshUrl:
+        typeof raw.refreshUrl === "string" ? raw.refreshUrl : undefined,
+      proposalUrl:
+        typeof raw.proposalUrl === "string" ? raw.proposalUrl : undefined,
+      guidedWorkspace,
+      capabilities: normalizeIkaDocCapabilities(
+        raw.capabilities as IkaDocCapabilityOverrides | undefined,
+      ),
       locale,
       theme: typeof raw.theme === "string" ? raw.theme : undefined,
       appearance,
@@ -167,25 +200,43 @@ export function parseIkaDocRuntimeConfig(input: unknown): IkaDocRuntimeConfigPar
   };
 }
 
+function normalizeGuidedWorkspace(
+  input: unknown,
+): IkaDocGuidedWorkspaceMarker | undefined | "invalid" {
+  if (input === undefined || input === null) {
+    return undefined;
+  }
+  return parseIkaDocGuidedWorkspaceMarker(input) ?? "invalid";
+}
+
 function isIkaDocRuntimeUser(input: unknown): input is Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return false;
   }
   const raw = input as Record<string, unknown>;
-  return typeof raw.userId === "string" &&
+  return (
+    typeof raw.userId === "string" &&
     raw.userId.length > 0 &&
     typeof raw.username === "string" &&
     raw.username.length > 0 &&
     typeof raw.displayName === "string" &&
     raw.displayName.length > 0 &&
-    (raw.email === null || raw.email === undefined || typeof raw.email === "string");
+    (raw.email === null ||
+      raw.email === undefined ||
+      typeof raw.email === "string")
+  );
 }
 
-function normalizeIkaDocRuntimeUser(input: Record<string, unknown>): IkaDocRuntimeUser {
+function normalizeIkaDocRuntimeUser(
+  input: Record<string, unknown>,
+): IkaDocRuntimeUser {
   return {
     userId: input.userId as string,
     username: input.username as string,
     displayName: input.displayName as string,
-    email: typeof input.email === "string" && input.email.length > 0 ? input.email : null,
+    email:
+      typeof input.email === "string" && input.email.length > 0 ?
+        input.email :
+        null,
   };
 }

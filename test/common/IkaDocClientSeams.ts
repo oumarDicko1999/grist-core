@@ -66,7 +66,7 @@ const CLIENT_SEAMS = [
     anchors: [
       "canExportFromIkaDocRuntimeBrowser",
       "const canCompareSnapshots = canExportFromIkaDocRuntimeBrowser();",
-      "canCompareSnapshots ? menuItemLink(setLink(snapshot, origUrlId), t(\"Compare to current\")) : null",
+      'canCompareSnapshots ? menuItemLink(setLink(snapshot, origUrlId), t("Compare to current")) : null',
     ],
   },
   {
@@ -96,15 +96,18 @@ const CLIENT_SEAMS = [
 
 const IKADOC_EDITOR_CONTROL_KEYS = [
   "Build proposal",
-  "Building IkaDoc proposal",
-  "Checking IkaDoc session",
-  "IkaDoc proposal requested",
-  "IkaDoc request failed",
-  "IkaDoc source refreshed",
+  "Building proposal",
+  "Checking session",
+  "Guided workspace",
+  "Guided workspace unavailable",
+  "Guided workspace: {{schema}}",
+  "Proposal requested",
   "Refresh",
-  "Refreshing IkaDoc source",
-  "{{sourceSummary}}IkaDoc session ready",
-  "{{sourceSummary}}IkaDoc session: {{status}}",
+  "Refreshing source",
+  "Request failed",
+  "Source refreshed",
+  "{{sourceSummary}}Session ready",
+  "{{sourceSummary}}Session: {{status}}",
 ] as const;
 
 describe("IkaDoc client seams", function() {

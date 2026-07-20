@@ -25,8 +25,10 @@ const CONFIG = {
   documentUrlId: "doc-url-1",
   workerUrl: "/ikadoc/sessions/session-1/worker",
   statusUrl: "https://records.owarelin.localhost/api/grist/sessions/session-1",
-  validationUrl: "https://records.owarelin.localhost/api/grist/editor/session-validation",
-  discardUrl: "https://records.owarelin.localhost/api/grist/sessions/session-1/cancel",
+  validationUrl:
+    "https://records.owarelin.localhost/api/grist/editor/session-validation",
+  discardUrl:
+    "https://records.owarelin.localhost/api/grist/sessions/session-1/cancel",
   capabilities: DENIED_IKADOC_CAPABILITIES,
   locale: "en",
   appearance: "light" as const,
@@ -70,35 +72,60 @@ describe("OwarelinRuntimeEvents", function() {
   });
 
   it("accepts inbound host events only for the current session and known names", function() {
-    const accepted = parseOwarelinRuntimeEvent({
-      type: "owarelin:themeChanged",
-      version: 1,
-      sessionId: "session-1",
-      sourceType: "document-file",
-      emittedAt: "2026-07-11T00:00:00.000Z",
-      detail: { theme: "nexus", appearance: "dark" },
-    }, CONFIG);
+    const accepted = parseOwarelinRuntimeEvent(
+      {
+        type: "owarelin:themeChanged",
+        version: 1,
+        sessionId: "session-1",
+        sourceType: "document-file",
+        emittedAt: "2026-07-11T00:00:00.000Z",
+        detail: { theme: "nexus", appearance: "dark" },
+      },
+      CONFIG,
+    );
 
-    const wrongSession = parseOwarelinRuntimeEvent({
-      type: "owarelin:themeChanged",
-      version: 1,
-      sessionId: "other-session",
-      emittedAt: "2026-07-11T00:00:00.000Z",
-      detail: { theme: "nexus" },
-    }, CONFIG);
+    const wrongSession = parseOwarelinRuntimeEvent(
+      {
+        type: "owarelin:themeChanged",
+        version: 1,
+        sessionId: "other-session",
+        emittedAt: "2026-07-11T00:00:00.000Z",
+        detail: { theme: "nexus" },
+      },
+      CONFIG,
+    );
 
-    const unknown = parseOwarelinRuntimeEvent({
-      type: "owarelin:cellContentChanged",
-      version: 1,
-      sessionId: "session-1",
-      emittedAt: "2026-07-11T00:00:00.000Z",
-      detail: {},
-    }, CONFIG);
+    const unknown = parseOwarelinRuntimeEvent(
+      {
+        type: "owarelin:cellContentChanged",
+        version: 1,
+        sessionId: "session-1",
+        emittedAt: "2026-07-11T00:00:00.000Z",
+        detail: {},
+      },
+      CONFIG,
+    );
 
     assert.equal(accepted?.type, "owarelin:themeChanged");
     assert.deepEqual(accepted?.detail, { theme: "nexus", appearance: "dark" });
     assert.equal(wrongSession, undefined);
     assert.equal(unknown, undefined);
+  });
+
+  it("accepts guided descriptor host events for the current session", function() {
+    const accepted = parseOwarelinRuntimeEvent(
+      {
+        type: "owarelin:guidedWorkspaceDescriptorChanged",
+        version: 1,
+        sessionId: "session-1",
+        sourceType: "document-file",
+        emittedAt: "2026-07-11T00:00:00.000Z",
+        detail: { descriptor: guidedDescriptor() },
+      },
+      CONFIG,
+    );
+
+    assert.equal(accepted?.type, "owarelin:guidedWorkspaceDescriptorChanged");
   });
 
   it("applies lifecycle host events to IkaDoc-owned runtime state attributes", function() {
@@ -114,10 +141,22 @@ describe("OwarelinRuntimeEvents", function() {
       detail: { safeMessage: "Session expired" },
     });
 
-    assert.equal(document.documentElement.dataset.owarelinRuntimeState, "expired");
-    assert.equal(document.documentElement.dataset.owarelinRuntimeStateEvent, "owarelin:sessionExpired");
-    assert.equal(document.documentElement.dataset.owarelinRuntimeStateAt, "2026-07-11T00:00:00.000Z");
-    assert.equal(document.documentElement.dataset.owarelinRuntimeStateMessage, "Session expired");
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeState,
+      "expired",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeStateEvent,
+      "owarelin:sessionExpired",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeStateAt,
+      "2026-07-11T00:00:00.000Z",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeStateMessage,
+      "Session expired",
+    );
   });
 
   it("tracks save state host events without exposing document data", function() {
@@ -134,9 +173,18 @@ describe("OwarelinRuntimeEvents", function() {
     });
 
     assert.equal(document.documentElement.dataset.owarelinSaveState, "failed");
-    assert.equal(document.documentElement.dataset.owarelinRuntimeState, "save-failed");
-    assert.equal(document.documentElement.dataset.owarelinRuntimeStateMessage?.length, 240);
-    assert.notInclude(JSON.stringify(document.documentElement.dataset), "private");
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeState,
+      "save-failed",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinRuntimeStateMessage?.length,
+      240,
+    );
+    assert.notInclude(
+      JSON.stringify(document.documentElement.dataset),
+      "private",
+    );
   });
 
   it("applies host theme and appearance changes to runtime attributes", function() {
@@ -153,7 +201,10 @@ describe("OwarelinRuntimeEvents", function() {
     });
 
     assert.equal(document.documentElement.dataset.tenantThemeStyle, "material");
-    assert.equal(document.documentElement.dataset.ikadocVisualStyle, "material");
+    assert.equal(
+      document.documentElement.dataset.ikadocVisualStyle,
+      "material",
+    );
     assert.equal(document.documentElement.dataset.gristAppearance, "dark");
     assert.equal(document.documentElement.style.colorScheme, "dark");
   });
@@ -174,8 +225,79 @@ describe("OwarelinRuntimeEvents", function() {
     });
 
     assert.equal(document.documentElement.dataset.tenantThemeStyle, "owarelin");
-    assert.equal(document.documentElement.dataset.ikadocVisualStyle, "owarelin");
+    assert.equal(
+      document.documentElement.dataset.ikadocVisualStyle,
+      "owarelin",
+    );
     assert.equal(document.documentElement.dataset.gristAppearance, "dark");
     assert.equal(document.documentElement.style.colorScheme, "dark");
   });
+
+  it("stores safe guided workspace descriptor summary on the runtime root", function() {
+    const jsdom = new JSDOM("<!doctype html><html><body></body></html>");
+    (global as any).document = jsdom.window.document;
+
+    applyOwarelinHostEvent({
+      type: "owarelin:guidedWorkspaceDescriptorChanged",
+      version: 1,
+      sessionId: "session-1",
+      sourceType: "document-file",
+      emittedAt: "2026-07-11T00:00:00.000Z",
+      detail: { descriptor: guidedDescriptor() },
+    });
+
+    assert.equal(
+      document.documentElement.dataset.owarelinGuidedWorkspace,
+      "RECORD_IMPORT",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinGuidedWorkspaceSchema,
+      "Document",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinGuidedWorkspaceFields,
+      "1",
+    );
+    assert.equal(
+      document.documentElement.dataset.owarelinGuidedWorkspaceProtectedColumns,
+      "1",
+    );
+  });
 });
+
+function guidedDescriptor() {
+  return {
+    marker: {
+      intent: "RECORD_IMPORT",
+      targetCollectionCode: "records",
+      targetSchemaType: "document",
+      targetSchemaCode: "document_default",
+      finalAction: "APPLY_TO_IKADOC",
+    },
+    schemaType: { code: "document", label: "Document" },
+    schema: {
+      code: "document_default",
+      fullCode: "document.document_default",
+      label: "Document",
+    },
+    fields: [
+      {
+        code: "title",
+        label: "Title",
+        columnLabel: "Title (title)",
+        kind: "string",
+        editor: { kind: "text-input", valueShape: "scalar" },
+        readOnly: false,
+        required: true,
+      },
+    ],
+    protectedColumns: [
+      {
+        code: "ikadoc_row_key",
+        label: "Row key",
+        readOnly: true,
+        required: true,
+      },
+    ],
+  };
+}

@@ -1,10 +1,11 @@
+import { parseIkaDocGuidedWorkspaceDescriptor } from "app/ikadoc/IkaDocGuidedWorkspace";
 import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 import { applyIkaDocThemeBridgeState } from "app/ikadoc/IkaDocThemeState";
 
 const MAX_RUNTIME_STATE_MESSAGE_LENGTH = 240;
 
 export type OwarelinInboundRuntimeEventName =
-  "owarelin:languageChanged" |
+  | "owarelin:languageChanged" |
   "owarelin:themeChanged" |
   "owarelin:sessionExpired" |
   "owarelin:checkoutReleased" |
@@ -15,10 +16,11 @@ export type OwarelinInboundRuntimeEventName =
   "owarelin:saveStarted" |
   "owarelin:saveCompleted" |
   "owarelin:saveFailed" |
-  "owarelin:cleanupPending";
+  "owarelin:cleanupPending" |
+  "owarelin:guidedWorkspaceDescriptorChanged";
 
 export type OwarelinOutboundRuntimeEventName =
-  "owarelin:editorReady" |
+  | "owarelin:editorReady" |
   "owarelin:documentDirty" |
   "owarelin:documentClean" |
   "owarelin:saveRequested" |
@@ -45,7 +47,9 @@ export interface OwarelinRuntimeEvent<T extends string = string> {
 
 let attachedSessionId: string | undefined;
 
-export function attachOwarelinRuntimeEventBridge(config: IkaDocRuntimeConfig): void {
+export function attachOwarelinRuntimeEventBridge(
+  config: IkaDocRuntimeConfig,
+): void {
   if (attachedSessionId === config.sessionId) {
     return;
   }
@@ -119,9 +123,13 @@ export function parseOwarelinRuntimeEvent(
     type: raw.type,
     version: 1,
     sessionId: config.sessionId,
-    sourceType: typeof raw.sourceType === "string" ? raw.sourceType : config.sourceType,
+    sourceType:
+      typeof raw.sourceType === "string" ? raw.sourceType : config.sourceType,
     emittedAt: raw.emittedAt,
-    detail: detail && typeof detail === "object" && !Array.isArray(detail) ? detail as Record<string, unknown> : {},
+    detail:
+      detail && typeof detail === "object" && !Array.isArray(detail) ?
+        (detail as Record<string, unknown>) :
+        {},
   };
 }
 
@@ -129,21 +137,38 @@ function owarelinHostOrigin(config: IkaDocRuntimeConfig): string {
   return new URL(config.statusUrl, window.location.href).origin;
 }
 
-function isOwarelinInboundRuntimeEventName(value: string): value is OwarelinInboundRuntimeEventName {
-  return INBOUND_OWARELIN_RUNTIME_EVENTS.has(value as OwarelinInboundRuntimeEventName);
+function isOwarelinInboundRuntimeEventName(
+  value: string,
+): value is OwarelinInboundRuntimeEventName {
+  return INBOUND_OWARELIN_RUNTIME_EVENTS.has(
+    value as OwarelinInboundRuntimeEventName,
+  );
 }
 
-export function applyOwarelinHostEvent(event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>): void {
-  if (event.type === "owarelin:languageChanged" && typeof event.detail.locale === "string") {
+export function applyOwarelinHostEvent(
+  event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
+): void {
+  if (
+    event.type === "owarelin:languageChanged" &&
+    typeof event.detail.locale === "string"
+  ) {
     document.documentElement.lang = event.detail.locale;
   }
   if (event.type === "owarelin:themeChanged") {
-    const currentAppearance = document.documentElement.dataset.gristAppearance === "dark" ? "dark" : "light";
-    const appearance = event.detail.appearance === "dark" || event.detail.appearance === "light" ?
-      event.detail.appearance :
-      currentAppearance;
-    const theme = typeof event.detail.theme === "string" ? event.detail.theme : undefined;
-    const mode = document.documentElement.dataset.ikadocRuntimeMode === "viewer" ? "viewer" : "editor";
+    const currentAppearance =
+      document.documentElement.dataset.gristAppearance === "dark" ?
+        "dark" :
+        "light";
+    const appearance =
+      event.detail.appearance === "dark" || event.detail.appearance === "light" ?
+        event.detail.appearance :
+        currentAppearance;
+    const theme =
+      typeof event.detail.theme === "string" ? event.detail.theme : undefined;
+    const mode =
+      document.documentElement.dataset.ikadocRuntimeMode === "viewer" ?
+        "viewer" :
+        "editor";
     applyIkaDocThemeBridgeState({
       appearance,
       mode,
@@ -166,6 +191,9 @@ export function applyOwarelinHostEvent(event: OwarelinRuntimeEvent<OwarelinInbou
     case "owarelin:cleanupPending":
       setRuntimeState("cleanup-pending", event);
       break;
+    case "owarelin:guidedWorkspaceDescriptorChanged":
+      setGuidedWorkspaceDescriptorState(event);
+      break;
     case "owarelin:sourceRefreshed":
       setRuntimeState("source-refreshed", event);
       break;
@@ -187,6 +215,30 @@ export function applyOwarelinHostEvent(event: OwarelinRuntimeEvent<OwarelinInbou
   }
 }
 
+function setGuidedWorkspaceDescriptorState(
+  event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
+): void {
+  const descriptor = parseIkaDocGuidedWorkspaceDescriptor(
+    event.detail.descriptor,
+  );
+  if (!descriptor) {
+    setRuntimeState("guided-workspace-descriptor-invalid", {
+      ...event,
+      detail: { safeMessage: "Guided workspace metadata is unavailable." },
+    });
+    return;
+  }
+
+  document.documentElement.dataset.owarelinGuidedWorkspace =
+    descriptor.marker.intent;
+  document.documentElement.dataset.owarelinGuidedWorkspaceSchema =
+    descriptor.schema.label;
+  document.documentElement.dataset.owarelinGuidedWorkspaceFields =
+    descriptor.fields.length.toString();
+  document.documentElement.dataset.owarelinGuidedWorkspaceProtectedColumns =
+    descriptor.protectedColumns.length.toString();
+}
+
 function setRuntimeState(
   state: string,
   event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
@@ -194,29 +246,36 @@ function setRuntimeState(
   document.documentElement.dataset.owarelinRuntimeState = state;
   document.documentElement.dataset.owarelinRuntimeStateEvent = event.type;
   document.documentElement.dataset.owarelinRuntimeStateAt = event.emittedAt;
-  const safeMessage = readStringDetail(event.detail, "safeMessage") ?? readStringDetail(event.detail, "message");
+  const safeMessage =
+    readStringDetail(event.detail, "safeMessage") ??
+    readStringDetail(event.detail, "message");
   if (safeMessage) {
     document.documentElement.dataset.owarelinRuntimeStateMessage =
       safeMessage.slice(0, MAX_RUNTIME_STATE_MESSAGE_LENGTH);
   }
 }
 
-function readStringDetail(detail: Record<string, unknown>, field: string): string | undefined {
+function readStringDetail(
+  detail: Record<string, unknown>,
+  field: string,
+): string | undefined {
   const value = detail[field];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-const INBOUND_OWARELIN_RUNTIME_EVENTS: ReadonlySet<OwarelinInboundRuntimeEventName> = new Set([
-  "owarelin:languageChanged",
-  "owarelin:themeChanged",
-  "owarelin:sessionExpired",
-  "owarelin:checkoutReleased",
-  "owarelin:moduleDisabled",
-  "owarelin:tenantSuspended",
-  "owarelin:sourceRefreshed",
-  "owarelin:proposalReady",
-  "owarelin:saveStarted",
-  "owarelin:saveCompleted",
-  "owarelin:saveFailed",
-  "owarelin:cleanupPending",
-]);
+const INBOUND_OWARELIN_RUNTIME_EVENTS: ReadonlySet<OwarelinInboundRuntimeEventName> =
+  new Set([
+    "owarelin:languageChanged",
+    "owarelin:themeChanged",
+    "owarelin:sessionExpired",
+    "owarelin:checkoutReleased",
+    "owarelin:moduleDisabled",
+    "owarelin:tenantSuspended",
+    "owarelin:sourceRefreshed",
+    "owarelin:proposalReady",
+    "owarelin:saveStarted",
+    "owarelin:saveCompleted",
+    "owarelin:saveFailed",
+    "owarelin:cleanupPending",
+    "owarelin:guidedWorkspaceDescriptorChanged",
+  ]);
