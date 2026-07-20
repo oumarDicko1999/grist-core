@@ -1,6 +1,7 @@
 import { ApiError } from "app/common/ApiError";
 
 import { createHmac, timingSafeEqual } from "crypto";
+
 import type { Request } from "express";
 import type { IncomingMessage } from "http";
 
@@ -87,9 +88,9 @@ function singleHeader(
 
 function requestPath(req: Request | IncomingMessage): string {
   const originalUrl =
-    "originalUrl" in req && typeof req.originalUrl === "string"
-      ? req.originalUrl
-      : undefined;
+    "originalUrl" in req && typeof req.originalUrl === "string" ?
+      req.originalUrl :
+      undefined;
   return new URL(originalUrl || req.url || "/", "http://ikadoc.local").pathname;
 }
 

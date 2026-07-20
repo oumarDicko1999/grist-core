@@ -37,6 +37,7 @@ import { parseFirstUrlPart } from "app/common/gristUrls";
 import { safeJsonParse } from "app/common/gutil";
 import * as version from "app/common/version";
 import { HomeDBAuth } from "app/gen-server/lib/homedb/Interfaces";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { resolveIdentity } from "app/server/lib/Authorizer";
 import { AuthSession } from "app/server/lib/AuthSession";
 import { ScopedSession } from "app/server/lib/BrowserSession";
@@ -45,7 +46,6 @@ import { Hosts, RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristLoginMiddleware, GristServer } from "app/server/lib/GristServer";
 import { GristServerSocket } from "app/server/lib/GristServerSocket";
 import { GristSocketServer } from "app/server/lib/GristSocketServer";
-import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { createIkaDocRuntimeAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
@@ -151,7 +151,7 @@ export class Comm extends EventEmitter {
   public async testServerShutdown() {
     if (this._wss) {
       for (const wssi of this._wss) {
-        await fromCallback((cb) => wssi.close(cb));
+        await fromCallback(cb => wssi.close(cb));
       }
       this._wss = null;
     }
@@ -214,16 +214,16 @@ export class Comm extends EventEmitter {
     let authSession: AuthSession;
     const org = (req as RequestWithOrg).org || "";
     const ikadocAuthSession =
-      dbManager && this._options.ikadocRuntimeSessionRegistry
-        ? await createIkaDocRuntimeAuthSession(
-            dbManager,
-            this._options.ikadocRuntimeSessionRegistry,
-            req,
-            org,
-            this._options.ikadocEditorAdmissionClient,
-            this._options.ikadocForwardAuthSecret,
-          )
-        : undefined;
+      dbManager && this._options.ikadocRuntimeSessionRegistry ?
+        await createIkaDocRuntimeAuthSession(
+          dbManager,
+          this._options.ikadocRuntimeSessionRegistry,
+          req,
+          org,
+          this._options.ikadocEditorAdmissionClient,
+          this._options.ikadocForwardAuthSecret,
+        ) :
+        undefined;
     if (ikadocAuthSession) {
       authSession = ikadocAuthSession;
     } else if (

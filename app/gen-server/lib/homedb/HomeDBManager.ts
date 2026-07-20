@@ -110,7 +110,6 @@ import { getScope } from "app/server/lib/requestUtils";
 import { expectedResetDate } from "app/server/lib/serverUtils";
 
 import { Request } from "express";
-import type { RequestWithLogin } from "app/server/lib/Authorizer";
 import { flatten, pick, size } from "lodash";
 import moment from "moment";
 import {
@@ -124,6 +123,8 @@ import {
   WhereExpressionBuilder,
 } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
+
+import type { RequestWithLogin } from "app/server/lib/Authorizer";
 
 // Support transactions in Sqlite in async code.  This is a monkey patch, affecting
 // the prototypes of various TypeORM classes.

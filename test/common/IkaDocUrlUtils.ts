@@ -12,7 +12,7 @@ describe("IkaDoc urlUtils", function() {
         ikadoc: {
           enabled: true,
           sessionId: "session-1",
-  collectionCode: "records",
+          collectionCode: "records",
           user: {
             userId: "user-1",
             username: "alice",

@@ -1,28 +1,29 @@
 import { ApiError } from "app/common/ApiError";
-import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { FullUser } from "app/common/LoginSessionAPI";
-import { Organization } from "app/common/UserAPI";
-import {
-  IkaDocForwardAuthAssertion,
-  ikaDocForwardAuthAssertionForRequest,
-} from "app/server/lib/IkaDocForwardAuthAssertion";
 import * as roles from "app/common/roles";
+import { Organization } from "app/common/UserAPI";
 import { Document } from "app/gen-server/entity/Document";
 import { Scope } from "app/gen-server/lib/homedb/HomeDBManager";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { AuthCredential } from "app/server/lib/AuthCredential";
 import { RequestWithLogin } from "app/server/lib/Authorizer";
 import { AuthSession } from "app/server/lib/AuthSession";
 import {
+  IkaDocForwardAuthAssertion,
+  ikaDocForwardAuthAssertionForRequest,
+} from "app/server/lib/IkaDocForwardAuthAssertion";
+import {
   deniedIkaDocRuntimeOperation,
   hasIkaDocRuntimeSessionCookie,
-  ikadocRuntimeSessionForRequest,
   ikaDocRuntimeSessionCookie,
+  ikadocRuntimeSessionForRequest,
   isIkaDocRuntimeSessionExpired,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import {
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
+import log from "app/server/lib/log";
 
 import type {
   DocAuthResult,
@@ -31,7 +32,6 @@ import type {
 } from "app/gen-server/lib/homedb/Interfaces";
 import type { Request, RequestHandler } from "express";
 import type { IncomingMessage } from "http";
-import log from "app/server/lib/log";
 
 export function createIkaDocRuntimeAuthMiddleware(
   dbManager: HomeDBAuth,
@@ -269,10 +269,10 @@ async function getIkaDocRuntimeSessionForRequest(
   admissionClient: IkaDocEditorAdmissionClient | undefined,
   assertion: IkaDocForwardAuthAssertion | undefined,
 ): Promise<IkaDocRuntimeSession | undefined> {
-  const session = assertion
-    ? (registry.getBySessionId(assertion.sessionId) ??
-      ikadocRuntimeSessionForRequest(registry, req))
-    : ikadocRuntimeSessionForRequest(registry, req);
+  const session = assertion ?
+    (registry.getBySessionId(assertion.sessionId) ??
+      ikadocRuntimeSessionForRequest(registry, req)) :
+    ikadocRuntimeSessionForRequest(registry, req);
   if (session || !admissionClient) {
     return session;
   }
@@ -333,7 +333,7 @@ class IkaDocRuntimeCredential implements AuthCredential {
   public scope(_req: Request): Scope {
     return {
       userId: this._previewerUserId,
-      filter: (entities) =>
+      filter: entities =>
         entities.filter((entity) => {
           if (entity instanceof Document) {
             return this._isRuntimeDocument(entity);
@@ -400,7 +400,7 @@ class IkaDocRuntimeCredential implements AuthCredential {
       doc.urlId === this._session.documentUrlId ||
       Boolean(
         doc.aliases?.some(
-          (alias) => alias.urlId === this._session.documentUrlId,
+          alias => alias.urlId === this._session.documentUrlId,
         ),
       )
     );

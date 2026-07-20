@@ -34,6 +34,7 @@ import {
 } from "app/gen-server/lib/homedb/HomeDBManager";
 import { Housekeeper } from "app/gen-server/lib/Housekeeper";
 import { Usage } from "app/gen-server/lib/Usage";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { AccessTokens, IAccessTokens } from "app/server/lib/AccessTokens";
 import { attachAppEndpoint } from "app/server/lib/AppEndpoint";
 import { appSettings } from "app/server/lib/AppSettings";
@@ -104,7 +105,6 @@ import { IAuditLogger } from "app/server/lib/IAuditLogger";
 import { IBilling } from "app/server/lib/IBilling";
 import { IDocNotificationManager } from "app/server/lib/IDocNotificationManager";
 import { IDocStorageManager } from "app/server/lib/IDocStorageManager";
-import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { readIkaDocAdmissionConfig } from "app/server/lib/IkaDocAdmissionConfig";
 import { createIkaDocBackendAdmissionClient } from "app/server/lib/IkaDocBackendAdmissionClient";
 import { IkaDocBackendSessionValidator } from "app/server/lib/IkaDocBackendSessionValidator";
@@ -113,6 +113,7 @@ import {
   createIkaDocRuntimeProfileHandler,
   createIkaDocRuntimeSessionAccessHandler,
 } from "app/server/lib/IkaDocRuntimeAuth";
+import { attachIkaDocRuntimeHealthEndpoint } from "app/server/lib/IkaDocRuntimeHealthEndpoint";
 import {
   denyIkaDocRuntimeOperation,
   IkaDocRuntimeSessionValidator,
@@ -282,18 +283,23 @@ export class FlexServer implements GristServer {
   private _widgetRepository: IWidgetRepository;
   private _docNotificationManager: IDocNotificationManager | undefined | false =
     false;
+
   private _oauthValidator: IOAuthValidator | undefined | false = false;
   private _pubSubManager: IPubSubManager = createPubSubManager(
     process.env.REDIS_URL,
   );
+
   private _assistant?: IAssistant;
   private _accessTokens: IAccessTokens;
   private readonly _ikadocRuntimeSessionRegistry =
     new IkaDocRuntimeSessionRegistry();
+
   private readonly _ikadocEditorAdmissionClient:
     IkaDocEditorAdmissionClient | undefined;
+
   private readonly _ikadocRuntimeSessionValidator:
     IkaDocRuntimeSessionValidator | undefined;
+
   private readonly _ikadocForwardAuthSecret: string | undefined;
   private _internalPermitStore: IPermitStore; // store for permits that stay within our servers
   private _externalPermitStore: IPermitStore; // store for permits that pass through outside servers
@@ -321,19 +327,23 @@ export class FlexServer implements GristServer {
     req: express.Request,
     target: URL,
   ) => Promise<string>;
+
   private _getSignUpRedirectUrl: (
     req: express.Request,
     target: URL,
   ) => Promise<string>;
+
   private _getLogoutRedirectUrl: (
     req: express.Request,
     nextUrl: URL,
   ) => Promise<string>;
+
   private _sendAppPage: (
     req: express.Request,
     resp: express.Response,
     options: ISendAppPageOptions,
   ) => Promise<void>;
+
   private _getLoginSystem: () => Promise<GristLoginSystem>;
   // Set once ready() is called
   private _isReady: boolean = false;
@@ -376,8 +386,8 @@ export class FlexServer implements GristServer {
     // This directory hold Grist documents.
     let docsRoot = path.resolve(
       this.options?.dataDir ||
-        process.env.GRIST_DATA_DIR ||
-        getAppPathTo(this.appRoot, "samples"),
+      process.env.GRIST_DATA_DIR ||
+      getAppPathTo(this.appRoot, "samples"),
     );
     // In testing, it can be useful to separate out document roots used
     // by distinct FlexServers.
@@ -396,12 +406,12 @@ export class FlexServer implements GristServer {
     this._ikadocEditorAdmissionClient = createIkaDocBackendAdmissionClient(
       ikadocAdmissionConfig,
     );
-    this._ikadocRuntimeSessionValidator = ikadocAdmissionConfig
-      ? new IkaDocBackendSessionValidator(
+    this._ikadocRuntimeSessionValidator = ikadocAdmissionConfig ?
+      new IkaDocBackendSessionValidator(
         ikadocAdmissionConfig.bearerToken,
         ikadocAdmissionConfig.timeoutMs,
-      )
-      : undefined;
+      ) :
+      undefined;
     this._ikadocForwardAuthSecret = ikadocAdmissionConfig?.forwardAuthSecret;
 
     this._deploymentType = this.create.deploymentType();
@@ -869,7 +879,7 @@ export class FlexServer implements GristServer {
       // If we had any extra check, collect their status to report them.
       if (checks.size > 0) {
         const results = await Promise.all(checks.values());
-        ok = ok && results.every((r) => r === true);
+        ok = ok && results.every(r => r === true);
         statuses = Array.from(
           checks.keys(),
           (key, i) => `${key} ${results[i] ? "ok" : "not ok"}`,
@@ -951,7 +961,7 @@ export class FlexServer implements GristServer {
       // Allow whitelisted paths through the gate.
       const rawPath = req.originalUrl.split("?")[0];
       const path = extractOrgParts(req.hostname, rawPath).pathRemainder;
-      if (allowedPaths.some((allowedPath) => allowedPath.test(path))) {
+      if (allowedPaths.some(allowedPath => allowedPath.test(path))) {
         return next("router");
       }
 
@@ -1122,9 +1132,9 @@ export class FlexServer implements GristServer {
     // as well. This isn't used in grist-core but is handy for extensions such
     // as an Electron app.
     const staticExtDir = getAppPathTo(this.appRoot, "static") + "_ext";
-    const staticExtApp = fse.existsSync(staticExtDir)
-      ? express.static(staticExtDir, serveAnyOrigin)
-      : null;
+    const staticExtApp = fse.existsSync(staticExtDir) ?
+      express.static(staticExtDir, serveAnyOrigin) :
+      null;
     const staticApp = express.static(
       getAppPathTo(this.appRoot, "static"),
       serveAnyOrigin,
@@ -1428,6 +1438,10 @@ export class FlexServer implements GristServer {
       return;
     }
 
+    attachIkaDocRuntimeHealthEndpoint({
+      app: this.app,
+      getSandboxInfo: () => this.getSandboxInfo(),
+    });
     this.app.get(
       "/api/profile/user",
       createIkaDocRuntimeProfileHandler(
@@ -1475,11 +1489,11 @@ export class FlexServer implements GristServer {
       return;
     }
 
-    const scimRouter = isAffirmative(process.env.GRIST_ENABLE_SCIM)
-      ? buildScimRouter(this._dbManager, this._installAdmin)
-      : () => {
-          throw new ApiError("SCIM API is not enabled", 501);
-        };
+    const scimRouter = isAffirmative(process.env.GRIST_ENABLE_SCIM) ?
+      buildScimRouter(this._dbManager, this._installAdmin) :
+      () => {
+        throw new ApiError("SCIM API is not enabled", 501);
+      };
 
     this.app.use("/api/scim", scimRouter);
   }
@@ -1734,110 +1748,110 @@ export class FlexServer implements GristServer {
       baseDomain: this._defaultBaseDomain,
     });
 
-    const forcedLoginMiddleware = getForceLogin()
-      ? this._redirectToLoginWithoutExceptionsMiddleware
-      : noop;
+    const forcedLoginMiddleware = getForceLogin() ?
+      this._redirectToLoginWithoutExceptionsMiddleware :
+      noop;
 
-    const welcomeNewUser: express.RequestHandler = isSingleUserMode()
-      ? (req, res, next) => next()
-      : expressWrap(async (req, res, next) => {
-          const mreq = req as RequestWithLogin;
-          const user = getUser(req);
-          if (user?.isFirstTimeUser) {
-            log.debug(`welcoming user: ${user.name}`);
-            // Reset isFirstTimeUser flag.
-            await this._dbManager.updateUser(user.id, {
-              isFirstTimeUser: false,
-            });
+    const welcomeNewUser: express.RequestHandler = isSingleUserMode() ?
+      (req, res, next) => next() :
+      expressWrap(async (req, res, next) => {
+        const mreq = req as RequestWithLogin;
+        const user = getUser(req);
+        if (user?.isFirstTimeUser) {
+          log.debug(`welcoming user: ${user.name}`);
+          // Reset isFirstTimeUser flag.
+          await this._dbManager.updateUser(user.id, {
+            isFirstTimeUser: false,
+          });
 
-            // This is a good time to set some other flags, for showing a page with welcome question(s)
-            // to this new user and recording their sign-up with Google Tag Manager. These flags are also
-            // scoped to the user, but isFirstTimeUser has a dedicated DB field because it predates userPrefs.
-            // Note that the updateOrg() method handles all levels of prefs (for user, user+org, or org).
-            await this._dbManager.updateOrg(getScope(req), 0, {
-              userPrefs: {
-                showNewUserQuestions: true,
-                recordSignUpEvent: true,
-              },
-            });
+          // This is a good time to set some other flags, for showing a page with welcome question(s)
+          // to this new user and recording their sign-up with Google Tag Manager. These flags are also
+          // scoped to the user, but isFirstTimeUser has a dedicated DB field because it predates userPrefs.
+          // Note that the updateOrg() method handles all levels of prefs (for user, user+org, or org).
+          await this._dbManager.updateOrg(getScope(req), 0, {
+            userPrefs: {
+              showNewUserQuestions: true,
+              recordSignUpEvent: true,
+            },
+          });
 
-            // Give a chance to the login system to react to the first visit after signup.
-            this._loginMiddleware.onFirstVisit?.(req);
+          // Give a chance to the login system to react to the first visit after signup.
+          this._loginMiddleware.onFirstVisit?.(req);
 
-            // If the assistant needs to perform some work (e.g. redirect to a new document with a
-            // particular prompt pre-filled), do it now.
-            //
-            // TODO: break out this and other parts of `welcomeNewUser` into separate Express middleware.
-            // `onFirstVisit` may send a response, which is why we awkwardly check `headersSent` wasn't
-            // set before resuming the current middleware. This wouldn't be necessary if `onFirstVisit`
-            // was a proper Express middleware that called `next` when not sending a response.
-            if (
-              this._assistant?.version === 2 &&
-              this._assistant.onFirstVisit
-            ) {
-              await this._assistant.onFirstVisit(req, res);
-              if (res.headersSent) {
-                return;
-              }
-            }
-
-            // If we need to copy an unsaved document or template as part of sign-up, do so now
-            // and redirect to it.
-            const docId = await this._maybeCopyDocToHomeWorkspace(mreq, res);
-            if (docId) {
-              return res.redirect(this.getMergedOrgUrl(mreq, `/doc/${docId}`));
-            }
-
-            const domain = mreq.org ?? null;
-            if (
-              !process.env.GRIST_SINGLE_ORG &&
-              this._dbManager.isMergedOrg(domain)
-            ) {
-              // We're logging in for the first time on the merged org; if the user has
-              // access to other team sites, forward the user to a page that lists all
-              // the teams they have access to.
-              const result = await this._dbManager.getMergedOrgs(
-                getScope(mreq),
-              );
-              const orgs = this._dbManager.unwrapQueryResult(result);
-              if (orgs.length > 1 && mreq.path === "/") {
-                // Only forward if the request is for the home page.
-                return res.redirect(
-                  this.getMergedOrgUrl(mreq, "/welcome/teams"),
-                );
-              }
+          // If the assistant needs to perform some work (e.g. redirect to a new document with a
+          // particular prompt pre-filled), do it now.
+          //
+          // TODO: break out this and other parts of `welcomeNewUser` into separate Express middleware.
+          // `onFirstVisit` may send a response, which is why we awkwardly check `headersSent` wasn't
+          // set before resuming the current middleware. This wouldn't be necessary if `onFirstVisit`
+          // was a proper Express middleware that called `next` when not sending a response.
+          if (
+            this._assistant?.version === 2 &&
+            this._assistant.onFirstVisit
+          ) {
+            await this._assistant.onFirstVisit(req, res);
+            if (res.headersSent) {
+              return;
             }
           }
-          if (mreq.org?.startsWith("o-")) {
-            // We are on a team site without a custom subdomain.
-            const orgInfo = this._dbManager.unwrapQueryResult(
-              await this._dbManager.getOrg({ userId: user.id }, mreq.org),
+
+          // If we need to copy an unsaved document or template as part of sign-up, do so now
+          // and redirect to it.
+          const docId = await this._maybeCopyDocToHomeWorkspace(mreq, res);
+          if (docId) {
+            return res.redirect(this.getMergedOrgUrl(mreq, `/doc/${docId}`));
+          }
+
+          const domain = mreq.org ?? null;
+          if (
+            !process.env.GRIST_SINGLE_ORG &&
+            this._dbManager.isMergedOrg(domain)
+          ) {
+            // We're logging in for the first time on the merged org; if the user has
+            // access to other team sites, forward the user to a page that lists all
+            // the teams they have access to.
+            const result = await this._dbManager.getMergedOrgs(
+              getScope(mreq),
             );
-
-            // If the user is a billing manager for the org, and the org
-            // is supposed to have a custom subdomain, forward the user
-            // to a page to set it.
-
-            // TODO: this is more or less a hack for AppSumo signup flow,
-            // and could be removed if/when signup flow is revamped.
-
-            // If "welcomeNewUser" is ever added to billing pages, we'd need
-            // to avoid a redirect loop.
-
-            if (
-              orgInfo.billingAccount.isManager &&
-              orgInfo.billingAccount.getEffectiveFeatures().vanityDomain
-            ) {
-              const prefix: string = isOrgInPathOnly(req.hostname)
-                ? `/o/${mreq.org}`
-                : "";
+            const orgs = this._dbManager.unwrapQueryResult(result);
+            if (orgs.length > 1 && mreq.path === "/") {
+              // Only forward if the request is for the home page.
               return res.redirect(
-                `${prefix}/billing/payment?billingTask=signUpLite`,
+                this.getMergedOrgUrl(mreq, "/welcome/teams"),
               );
             }
           }
-          next();
-        });
+        }
+        if (mreq.org?.startsWith("o-")) {
+          // We are on a team site without a custom subdomain.
+          const orgInfo = this._dbManager.unwrapQueryResult(
+            await this._dbManager.getOrg({ userId: user.id }, mreq.org),
+          );
+
+          // If the user is a billing manager for the org, and the org
+          // is supposed to have a custom subdomain, forward the user
+          // to a page to set it.
+
+          // TODO: this is more or less a hack for AppSumo signup flow,
+          // and could be removed if/when signup flow is revamped.
+
+          // If "welcomeNewUser" is ever added to billing pages, we'd need
+          // to avoid a redirect loop.
+
+          if (
+            orgInfo.billingAccount.isManager &&
+            orgInfo.billingAccount.getEffectiveFeatures().vanityDomain
+          ) {
+            const prefix: string = isOrgInPathOnly(req.hostname) ?
+              `/o/${mreq.org}` :
+              "";
+            return res.redirect(
+              `${prefix}/billing/payment?billingTask=signUpLite`,
+            );
+          }
+        }
+        next();
+      });
 
     attachAppEndpoint({
       app: this.app,
@@ -1995,9 +2009,9 @@ export class FlexServer implements GristServer {
     // should be factored out of it.
     this.addComm();
 
-    const signinMiddleware = this._loginMiddleware.getLoginOrSignUpMiddleware
-      ? this._loginMiddleware.getLoginOrSignUpMiddleware()
-      : [];
+    const signinMiddleware = this._loginMiddleware.getLoginOrSignUpMiddleware ?
+      this._loginMiddleware.getLoginOrSignUpMiddleware() :
+      [];
     this.app.get(
       "/login",
       ...signinMiddleware,
@@ -2030,7 +2044,7 @@ export class FlexServer implements GristServer {
 
       log.warn(
         "Adding a /test/login endpoint because GRIST_TEST_LOGIN is set. " +
-          "Users will be able to login as anyone.",
+        "Users will be able to login as anyone.",
       );
 
       this.app.get(
@@ -2169,7 +2183,7 @@ export class FlexServer implements GristServer {
     if (!isSingleUserMode()) {
       const externalStorage = appSettings.section("externalStorage");
       const haveExternalStorage = Object.values(externalStorage.nested).some(
-        (storage) => storage.flag("active").getAsBool(),
+        storage => storage.flag("active").getAsBool(),
       );
       const disabled = externalStorage
         .flag("disable")
@@ -2218,8 +2232,8 @@ export class FlexServer implements GristServer {
     const checkedStoreOptions =
       await checkAvailabilityAttachmentStoreOptions(allStoreOptions);
     log.info("Attachment store backend availability", {
-      available: checkedStoreOptions.available.map((option) => option.name),
-      unavailable: checkedStoreOptions.unavailable.map((option) => option.name),
+      available: checkedStoreOptions.available.map(option => option.name),
+      unavailable: checkedStoreOptions.unavailable.map(option => option.name),
     });
 
     this._attachmentStoreProvider =
@@ -2588,7 +2602,7 @@ export class FlexServer implements GristServer {
           });
         }
         const nonOtherUseCases = useCases.filter(
-          (useCase) => useCase !== "Other",
+          useCase => useCase !== "Other",
         );
         for (const useCase of [
           ...nonOtherUseCases,
@@ -2647,11 +2661,11 @@ export class FlexServer implements GristServer {
         }
         try {
           const errPage =
-            err.status === 403
-              ? "access-denied"
-              : err.status === 404
-                ? "not-found"
-                : "other-error";
+            err.status === 403 ?
+              "access-denied" :
+              err.status === 404 ?
+                "not-found" :
+                "other-error";
           const config = { errPage, errMessage: err.message || err };
           await this._sendAppPage(req, resp, {
             path: "error.html",
@@ -2740,9 +2754,9 @@ export class FlexServer implements GristServer {
         (item.value !== undefined ? String(item.value) : "-") +
         (item.foundInEnvVar ? ` [${item.foundInEnvVar}]` : "") +
         (item.usedDefault ? " [default]" : "") +
-        (item.wouldFindInEnvVar && !item.foundInEnvVar
-          ? ` [${item.wouldFindInEnvVar}]`
-          : "");
+        (item.wouldFindInEnvVar && !item.foundInEnvVar ?
+          ` [${item.wouldFindInEnvVar}]` :
+          "");
       log.info("== %s: %s", item.name, txt);
     }
   }
@@ -2774,7 +2788,7 @@ export class FlexServer implements GristServer {
     ) {
       log.warn(
         "Setting an ALLOWED_WEBHOOK_DOMAINS wildcard without GRIST_PROXY_FOR_UNTRUSTED_URLS " +
-          "exposes your internal network",
+        "exposes your internal network",
       );
     }
   }
@@ -3147,9 +3161,9 @@ export class FlexServer implements GristServer {
       // user has ever logged in on this browser.
       signUp = mreq.session.users === undefined;
     }
-    const getRedirectUrl = signUp
-      ? this._getSignUpRedirectUrl
-      : this._getLoginRedirectUrl;
+    const getRedirectUrl = signUp ?
+      this._getSignUpRedirectUrl :
+      this._getLoginRedirectUrl;
     const url = new URL(await getRedirectUrl(req, nextUrl));
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) {
@@ -3459,9 +3473,9 @@ export class FlexServer implements GristServer {
     const gristLabsModules = path.dirname(
       path.dirname(require.resolve("@gristlabs/express-session")),
     );
-    const bundledRoot = isAffirmative(process.env.GRIST_SKIP_BUNDLED_WIDGETS)
-      ? undefined
-      : path.join(gristLabsModules, "grist-widget", "dist");
+    const bundledRoot = isAffirmative(process.env.GRIST_SKIP_BUNDLED_WIDGETS) ?
+      undefined :
+      path.join(gristLabsModules, "grist-widget", "dist");
     this.info.push(["bundledRoot", bundledRoot]);
     const pluginManager = new PluginManager(
       this.appRoot,
@@ -3581,7 +3595,7 @@ export class FlexServer implements GristServer {
     let body: string | undefined;
     let permitKey: string | undefined;
     try {
-      body = JSON.stringify(mapValues(row, (value) => [value]));
+      body = JSON.stringify(mapValues(row, value => [value]));
 
       // Take an extra step to translate the special urlId to a docId. This is helpful to
       // allow the same urlId to be used in production and in test. We need the docId for the
@@ -3607,7 +3621,7 @@ export class FlexServer implements GristServer {
         ),
         {
           method: "POST",
-          headers: { Permit: permitKey, "Content-Type": "application/json" },
+          headers: { "Permit": permitKey, "Content-Type": "application/json" },
           body,
         },
       );
@@ -3714,9 +3728,9 @@ export class FlexServer implements GristServer {
       this._sessions.clearCacheIfNeeded();
       next();
     });
-    const pluggedMiddleware = this._loginMiddleware.getLogoutMiddleware
-      ? this._loginMiddleware.getLogoutMiddleware()
-      : [];
+    const pluggedMiddleware = this._loginMiddleware.getLogoutMiddleware ?
+      this._loginMiddleware.getLogoutMiddleware() :
+      [];
     return [...pluggedMiddleware, sessionClearMiddleware];
   }
 
@@ -3738,18 +3752,18 @@ export class FlexServer implements GristServer {
     ) {
       throw new Error(
         "Both GRIST_LOG_HTTP and GRIST_LOG_SKIP_HTTP are set. " +
-          "Please remove GRIST_LOG_SKIP_HTTP and set GRIST_LOG_HTTP to the value you actually want.",
+        "Please remove GRIST_LOG_SKIP_HTTP and set GRIST_LOG_HTTP to the value you actually want.",
       );
     }
 
     if (process.env.GRIST_LOG_SKIP_HTTP !== undefined) {
-      const expectedGristLogHttpVal = deprecatedOptionEnablesLog
-        ? "true"
-        : "false";
+      const expectedGristLogHttpVal = deprecatedOptionEnablesLog ?
+        "true" :
+        "false";
 
       log.warn(
         `Setting env variable GRIST_LOG_SKIP_HTTP="${process.env.GRIST_LOG_SKIP_HTTP}" ` +
-          `is deprecated in favor of GRIST_LOG_HTTP="${expectedGristLogHttpVal}"`,
+        `is deprecated in favor of GRIST_LOG_HTTP="${expectedGristLogHttpVal}"`,
       );
     }
 
@@ -3882,9 +3896,9 @@ function isTestLoginAllowed() {
 const _mcpHeaders = appSettings.section("mcp").flag("enabled").readBool({
   envVar: "GRIST_MCP_ENABLED",
   defaultValue: false,
-})
-  ? ", mcp-protocol-version, mcp-session-id"
-  : "";
+}) ?
+  ", mcp-protocol-version, mcp-session-id" :
+  "";
 
 function trustOriginHandler(
   req: express.Request,
@@ -3943,53 +3957,53 @@ const serveAnyOrigin: serveStatic.ServeStaticOptions = {
 };
 
 type Part =
-  | "activation"
-  | "api"
-  | "api-error"
-  | "api-mw"
-  | "assistant"
-  | "audit-logger"
-  | "billing-api"
-  | "boot"
-  | "cleanup"
-  | "clientSecret"
-  | "comm"
-  | "dir"
-  | "doc"
-  | "doc_api_forwarder"
-  | "early-api"
-  | "google-auth"
-  | "health"
-  | "homedb"
-  | "hosts"
-  | "housekeeper"
-  | "json"
-  | "landing"
-  | "log-endpoint"
-  | "logging"
-  | "login"
-  | "loginMiddleware"
-  | "map"
-  | "extraDoc"
-  | "extraDocForwarder"
-  | "extraHome"
-  | "middleware"
-  | "notifier"
-  | "org"
-  | "pluginUntaggedAssets"
-  | "router"
-  | "scim"
-  | "sessions"
-  | "start"
-  | "static_and_bower"
-  | "strip_dw"
-  | "tag"
-  | "telemetry"
-  | "testAssets"
-  | "testinghooks"
-  | "update"
-  | "usage"
-  | "webhooks"
-  | "widgets";
+  | "activation" |
+  "api" |
+  "api-error" |
+  "api-mw" |
+  "assistant" |
+  "audit-logger" |
+  "billing-api" |
+  "boot" |
+  "cleanup" |
+  "clientSecret" |
+  "comm" |
+  "dir" |
+  "doc" |
+  "doc_api_forwarder" |
+  "early-api" |
+  "google-auth" |
+  "health" |
+  "homedb" |
+  "hosts" |
+  "housekeeper" |
+  "json" |
+  "landing" |
+  "log-endpoint" |
+  "logging" |
+  "login" |
+  "loginMiddleware" |
+  "map" |
+  "extraDoc" |
+  "extraDocForwarder" |
+  "extraHome" |
+  "middleware" |
+  "notifier" |
+  "org" |
+  "pluginUntaggedAssets" |
+  "router" |
+  "scim" |
+  "sessions" |
+  "start" |
+  "static_and_bower" |
+  "strip_dw" |
+  "tag" |
+  "telemetry" |
+  "testAssets" |
+  "testinghooks" |
+  "update" |
+  "usage" |
+  "webhooks" |
+  "widgets";
 
 type CheckKey = Part | `!${Part}`;

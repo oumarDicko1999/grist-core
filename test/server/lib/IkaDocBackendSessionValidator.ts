@@ -1,9 +1,10 @@
 import { IkaDocBackendSessionValidator } from "app/server/lib/IkaDocBackendSessionValidator";
 import { IkaDocRuntimeSession } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 
-import { assert } from "chai";
-import { AddressInfo } from "net";
 import { createServer, IncomingMessage, ServerResponse } from "http";
+import { AddressInfo } from "net";
+
+import { assert } from "chai";
 
 describe("IkaDoc backend session validator", function() {
   it("posts session, document, and operation proof with the configured bearer token", async function() {

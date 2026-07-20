@@ -9,9 +9,9 @@ export interface IkaDocRuntimeSession {
 }
 
 export type IkaDocRuntimeSessionResolution =
-  | { kind: "active"; session: IkaDocRuntimeSession }
-  | { kind: "expired"; session: IkaDocRuntimeSession }
-  | { kind: "missing" };
+  | { kind: "active"; session: IkaDocRuntimeSession } |
+  { kind: "expired"; session: IkaDocRuntimeSession } |
+  { kind: "missing" };
 
 export class IkaDocRuntimeSessionRegistry {
   private readonly _byDocumentId = new Map<string, IkaDocRuntimeSession>();

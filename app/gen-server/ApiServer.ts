@@ -29,6 +29,7 @@ import {
   WorkspaceAccessChanges,
 } from "app/gen-server/lib/homedb/Interfaces";
 import { Permissions } from "app/gen-server/lib/Permissions";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { appSettings } from "app/server/lib/AppSettings";
 import {
   getAuthorizedUserId,
@@ -43,15 +44,14 @@ import {
 import { expressWrap } from "app/server/lib/expressWrap";
 import { RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristServer } from "app/server/lib/GristServer";
-import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
-import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
-import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import { getCookieDomain } from "app/server/lib/gristSessions";
 import {
   getCanAnyoneCreateOrgs,
   getPersonalOrgsEnabled,
   getTemplateOrg,
 } from "app/server/lib/gristSettings";
+import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
   clearSessionCacheIfNeeded,
@@ -229,9 +229,9 @@ export class ApiServer {
       expressWrap(async (req, res) => {
         const scope = getScope(req);
         const merged = isParameterOn(req.query.merged);
-        const query = merged
-          ? await this._dbManager.getMergedOrgs(scope)
-          : await this._dbManager.getOrgs(scope);
+        const query = merged ?
+          await this._dbManager.getMergedOrgs(scope) :
+          await this._dbManager.getOrgs(scope);
         return sendReply(req, res, query);
       }),
     );
@@ -678,7 +678,7 @@ export class ApiServer {
       "/api/orgs/:oid/access",
       expressWrap(async (req, res) => {
         const org = getOrgKey(req);
-        const query = await this._withPrivilegedViewForUser(org, req, (scope) =>
+        const query = await this._withPrivilegedViewForUser(org, req, scope =>
           this._dbManager.getOrgAccess(scope, org),
         );
         return sendReply(req, res, query);
@@ -716,9 +716,9 @@ export class ApiServer {
       expressWrap(async (req, res) => {
         const fullUser = await this._getFullUser(req);
         // Limit credentials to mostly public info.
-        const result = (req as RequestWithLogin).authSession?.credential
-          ? pick(fullUser, "email", "name", "picture", "ref", "locale")
-          : fullUser;
+        const result = (req as RequestWithLogin).authSession?.credential ?
+          pick(fullUser, "email", "name", "picture", "ref", "locale") :
+          fullUser;
         return sendOkReply(req, res, result, {
           allowedFields: new Set(["allowGoogleLogin"]),
         });
@@ -887,14 +887,14 @@ export class ApiServer {
       expressWrap(async (req, res) => {
         const fullUser = await this._getFullUser(req, { includePrefs: true });
         const domain = getOrgFromRequest(req);
-        const org = domain
-          ? await this._withPrivilegedViewForUser(domain, req, (scope) =>
-              this._dbManager.getOrg(scope, domain),
-            )
-          : null;
-        let orgError = org?.errMessage
-          ? { error: org.errMessage, status: org.status }
-          : undefined;
+        const org = domain ?
+          await this._withPrivilegedViewForUser(domain, req, scope =>
+            this._dbManager.getOrg(scope, domain),
+          ) :
+          null;
+        let orgError = org?.errMessage ?
+          { error: org.errMessage, status: org.status } :
+          undefined;
         if (!domain && !fullUser.anonymous && !getPersonalOrgsEnabled()) {
           orgError = {
             error: "Personal orgs are disabled and no team site is available",
@@ -1010,9 +1010,9 @@ export class ApiServer {
         } catch {
           valid = false;
         }
-        const available = valid
-          ? await this._dbManager.isDomainAvailable(domain)
-          : false;
+        const available = valid ?
+          await this._dbManager.isDomainAvailable(domain) :
+          false;
         return sendOkReply(req, res, { valid, available });
       }),
     );
@@ -1110,16 +1110,16 @@ export class ApiServer {
           const payload = req.body as SATypes.PatchServiceAccount;
           const updateProps = {
             ...(payload.label ? { label: payload.label } : {}),
-            ...(payload.description
-              ? { description: payload.description }
-              : {}),
-            ...(payload.expiresAt
-              ? { expiresAt: new Date(payload.expiresAt) }
-              : {}),
+            ...(payload.description ?
+              { description: payload.description } :
+              {}),
+            ...(payload.expiresAt ?
+              { expiresAt: new Date(payload.expiresAt) } :
+              {}),
             expiresAt:
-              payload.expiresAt !== undefined
-                ? new Date(payload.expiresAt)
-                : undefined,
+              payload.expiresAt !== undefined ?
+                new Date(payload.expiresAt) :
+                undefined,
           };
 
           const resp = await this._dbManager.updateServiceAccount(
@@ -1250,9 +1250,9 @@ export class ApiServer {
 
     const fullUser = this._dbManager.makeFullUser(user);
     const sessionUser = getSessionUser(mreq.session, org || "", fullUser.email);
-    const loginMethod = sessionUser?.profile
-      ? sessionUser.profile.loginMethod
-      : undefined;
+    const loginMethod = sessionUser?.profile ?
+      sessionUser.profile.loginMethod :
+      undefined;
     const allowGoogleLogin = user.options?.allowGoogleLogin ?? true;
     return { ...fullUser, loginMethod, allowGoogleLogin };
   }
