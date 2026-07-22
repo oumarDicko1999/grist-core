@@ -1048,21 +1048,25 @@ const IKA_DOC_THEME_BRIDGE_CSS = `
   }
 
   html[data-ikadoc-runtime='true'] .viewsection_content {
+    box-sizing: border-box;
+    overflow: hidden;
     background: var(--mat-sys-surface-container-lowest);
-    border-color: transparent;
-    margin: 0;
+    border: 1px solid var(--ik-app-border);
+    border-radius: 0.5rem;
+    margin: 0.375rem;
   }
 
   html[data-ikadoc-runtime='true'] .viewsection_title {
+    min-height: 2rem;
     color: var(--mat-sys-on-surface);
-    background: var(--mat-sys-surface-container-lowest);
-    border-color: transparent;
+    background: var(--mat-sys-surface-container-low);
+    border-bottom: 1px solid var(--ik-app-border);
     font-family: var(--ik-font-body);
     max-width: 100%;
     overflow: hidden;
-    margin-bottom: 0.375rem;
+    margin: 0;
     margin-left: 0;
-    padding: 0 0.25rem;
+    padding: 0 0.625rem;
   }
 
   html[data-ikadoc-runtime='true'] .viewsection_title > div,
@@ -1078,6 +1082,12 @@ const IKA_DOC_THEME_BRIDGE_CSS = `
   html[data-ikadoc-runtime='true'] .view_data_pane_container {
     border: 0;
     box-shadow: none;
+  }
+
+  html[data-ikadoc-runtime='true'] .active_section.viewsection_content,
+  html[data-ikadoc-runtime='true'] .active_section--no-focus.viewsection_content {
+    border-color: color-mix(in srgb, var(--mat-sys-primary) 48%, var(--ik-app-border));
+    box-shadow: inset 0.1875rem 0 0 color-mix(in srgb, var(--mat-sys-primary) 72%, transparent);
   }
 
   html[data-ikadoc-runtime='true'] .active_section > .view_data_pane_container,
