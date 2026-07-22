@@ -141,8 +141,8 @@ export class DocWorker {
       useQuerySet: method("viewers", "useQuerySet"),
       disposeQuerySet: method("viewers", "disposeQuerySet"),
       applyUserActions: method("editors", "applyUserActions", {
-        capability: "canEditCells",
         operation: "apply document edits",
+        classifyUserActions: true,
       }),
       applyUserActionsById: method("editors", "applyUserActionsById", {
         capability: "canEditCells",
@@ -183,8 +183,14 @@ export class DocWorker {
       }),
       reloadDoc: method("editors", "reloadDoc"),
       fork: method("viewers", "fork", { operation: "fork document" }),
-      checkAclFormula: method("viewers", "checkAclFormula"),
-      getAclResources: method("viewers", "getAclResources"),
+      checkAclFormula: method("viewers", "checkAclFormula", {
+        capability: "canManageAccess",
+        operation: "check access formula",
+      }),
+      getAclResources: method("viewers", "getAclResources", {
+        capability: "canManageAccess",
+        operation: "list access resources",
+      }),
       waitForInitialization: method("viewers", "waitForInitialization"),
       getUsersForViewAs: method("viewers", "getUsersForViewAs", {
         capability: "canManageAccess",
@@ -200,10 +206,16 @@ export class DocWorker {
       }),
       startTiming: method("owners", "startTiming"),
       stopTiming: method("owners", "stopTiming"),
-      getAssistantState: method("owners", "getAssistantState"),
+      getAssistantState: method("owners", "getAssistantState", {
+        operation: "use assistant",
+      }),
       listActiveUserProfiles: method(null, "listActiveUserProfiles"),
-      applyProposal: method("owners", "applyProposal"),
-      getAssistance: method("viewers", "getAssistance"),
+      applyProposal: method("owners", "applyProposal", {
+        operation: "use proposals",
+      }),
+      getAssistance: method("viewers", "getAssistance", {
+        operation: "use assistant",
+      }),
     });
   }
 

@@ -33,7 +33,7 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
 
   app.get("/grist/editor/:sessionId", ...middleware, expressWrap(async (req, res) => {
     if (!admissionClient) {
-      throw new ApiError("IkaDoc editor runtime is not configured.", 503);
+      throw new ApiError("Spreadsheet editor runtime is not configured.", 503);
     }
 
     const result = await admissionClient.admitEditor({
@@ -71,6 +71,7 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
       googleTagManager: false,
       config: {
         assignmentId: runtimeConfig.documentId,
+        assistant: undefined,
         enableWidgetRepository: false,
         experimentalPlugins: false,
         getWorker: { [runtimeConfig.documentId]: runtimeConfig.workerUrl },

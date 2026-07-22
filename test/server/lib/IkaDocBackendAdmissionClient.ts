@@ -139,7 +139,7 @@ describe("IkaDoc backend admission client", function() {
       assert.deepEqual(result, {
         kind: "denied",
         code: "malformed-response",
-        safeMessage: "IkaDoc editor admission returned an invalid response.",
+        safeMessage: "Spreadsheet editor admission returned an invalid response.",
       });
     } finally {
       await server.close();
@@ -161,7 +161,7 @@ describe("IkaDoc backend admission client", function() {
       assert.deepEqual(result, {
         kind: "denied",
         code: "permission-denied",
-        safeMessage: "IkaDoc editor admission was denied.",
+        safeMessage: "Spreadsheet editor admission was denied.",
       });
     } finally {
       await server.close();
@@ -180,7 +180,7 @@ describe("IkaDoc backend admission client", function() {
       assert.deepEqual(result, {
         kind: "denied",
         code: "backend-unavailable",
-        safeMessage: "IkaDoc editor admission is unavailable.",
+        safeMessage: "Spreadsheet editor admission is unavailable.",
       });
     } finally {
       await server.close();

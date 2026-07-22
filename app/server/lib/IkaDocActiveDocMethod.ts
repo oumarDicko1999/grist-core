@@ -1,9 +1,14 @@
 import { IkaDocCapabilities } from "app/ikadoc/IkaDocCapabilities";
+import { ikaDocRuntimeSessionFromAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
 import {
   assertIkaDocUserActionsAllowedForDocument,
+  assertIkaDocUserActionsAllowedForSession,
   denyIkaDocRuntimeOperationForDocument,
+  denyIkaDocRuntimeOperationForSession,
   IkaDocRuntimeSessionValidator,
   requireIkaDocRuntimeCapabilityForDocument,
+  requireIkaDocRuntimeCapabilityForSession,
+  validateIkaDocRuntimeSession,
   validateIkaDocRuntimeSessionForDocument,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import log from "app/server/lib/log";
@@ -16,6 +21,7 @@ import type { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeS
 export interface IkaDocActiveDocMethodPolicy {
   operation: string;
   capability?: keyof IkaDocCapabilities;
+  classifyUserActions?: boolean;
 }
 
 type ActiveDocMethod = (docSession: DocSession, ...args: unknown[]) => unknown;
@@ -51,32 +57,62 @@ export function activeDocMethod(
       await docSession.authorizer.assertAccess(role);
     }
     if (ikadocPolicy) {
-      await validateIkaDocRuntimeSessionForDocument(
-        ikadocRuntimeSessionRegistry,
-        ikadocRuntimeSessionValidator,
-        activeDoc.docName,
-        ikadocPolicy.operation,
+      const runtimeSession = ikaDocRuntimeSessionFromAuthSession(
+        client.authSession,
       );
-      if (ikadocPolicy.capability) {
-        requireIkaDocRuntimeCapabilityForDocument(
-          ikadocRuntimeSessionRegistry,
+      if (runtimeSession) {
+        await validateIkaDocRuntimeSession(
+          ikadocRuntimeSessionValidator,
+          runtimeSession,
           activeDoc.docName,
-          ikadocPolicy.capability,
           ikadocPolicy.operation,
         );
+        if (ikadocPolicy.capability) {
+          requireIkaDocRuntimeCapabilityForSession(
+            runtimeSession,
+            ikadocPolicy.capability,
+            ikadocPolicy.operation,
+          );
+        } else if (!ikadocPolicy.classifyUserActions) {
+          denyIkaDocRuntimeOperationForSession(
+            runtimeSession,
+            ikadocPolicy.operation,
+          );
+        }
+        if (ikadocPolicy.classifyUserActions) {
+          assertIkaDocUserActionsAllowedForSession(
+            runtimeSession,
+            args[0],
+          );
+        }
       } else {
-        denyIkaDocRuntimeOperationForDocument(
+        await validateIkaDocRuntimeSessionForDocument(
           ikadocRuntimeSessionRegistry,
+          ikadocRuntimeSessionValidator,
           activeDoc.docName,
           ikadocPolicy.operation,
         );
-      }
-      if (methodName === "applyUserActions") {
-        assertIkaDocUserActionsAllowedForDocument(
-          ikadocRuntimeSessionRegistry,
-          activeDoc.docName,
-          args[0],
-        );
+        if (ikadocPolicy.capability) {
+          requireIkaDocRuntimeCapabilityForDocument(
+            ikadocRuntimeSessionRegistry,
+            activeDoc.docName,
+            ikadocPolicy.capability,
+            ikadocPolicy.operation,
+          );
+        } else if (!ikadocPolicy.classifyUserActions) {
+          denyIkaDocRuntimeOperationForDocument(
+            ikadocRuntimeSessionRegistry,
+            activeDoc.docName,
+            ikadocPolicy.operation,
+          );
+        }
+        if (ikadocPolicy.classifyUserActions) {
+          assertIkaDocUserActionsAllowedForDocument(
+            ikadocRuntimeSessionRegistry,
+            activeDoc.docName,
+            args[0],
+          );
+        }
       }
     }
     // Include a basic log record for each ActiveDoc method call.

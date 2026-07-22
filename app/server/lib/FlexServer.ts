@@ -410,6 +410,7 @@ export class FlexServer implements GristServer {
       new IkaDocBackendSessionValidator(
         ikadocAdmissionConfig.bearerToken,
         ikadocAdmissionConfig.timeoutMs,
+        ikadocAdmissionConfig.validationUrl,
       ) :
       undefined;
     this._ikadocForwardAuthSecret = ikadocAdmissionConfig?.forwardAuthSecret;
@@ -2340,16 +2341,23 @@ export class FlexServer implements GristServer {
     // Only meaningful on instances that handle documents.
     if (!this._docManager) {
       // "unknown" means this server doesn't handle documents, so we didn't test any sandbox.
-      return (this._sandboxInfo = {
+      return {
         flavor: "unknown",
         configured: false,
         functional: false,
         effective: false,
         lastSuccessfulStep: "none",
-      } as SandboxInfo);
+      } as SandboxInfo;
     }
     // No flavor argument — uses the deployment's default via create.NSandbox().
-    return (this._sandboxInfo = await testSandboxFlavor());
+    let sandboxInfo = await testSandboxFlavor();
+    if (!(sandboxInfo.configured && sandboxInfo.functional && sandboxInfo.effective)) {
+      sandboxInfo = await testSandboxFlavor();
+    }
+    if (sandboxInfo.configured && sandboxInfo.functional && sandboxInfo.effective) {
+      this._sandboxInfo = sandboxInfo;
+    }
+    return sandboxInfo;
   }
 
   public getInfo(key: string): any {

@@ -65,7 +65,7 @@ export function createIkaDocRuntimeAuthMiddleware(
         },
       );
       return next(
-        deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+        deniedIkaDocRuntimeOperation("use expired runtime session"),
       );
     }
     if (isIkaDocRuntimeSessionExpired(session)) {
@@ -78,7 +78,7 @@ export function createIkaDocRuntimeAuthMiddleware(
       });
       return next(
         deniedIkaDocRuntimeOperation(
-          "use expired IkaDoc runtime session",
+          "use expired runtime session",
           session,
         ),
       );
@@ -136,13 +136,13 @@ export function createIkaDocRuntimeProfileHandler(
     );
     if (!session) {
       return next(
-        deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+        deniedIkaDocRuntimeOperation("use expired runtime session"),
       );
     }
     if (isIkaDocRuntimeSessionExpired(session)) {
       return next(
         deniedIkaDocRuntimeOperation(
-          "use expired IkaDoc runtime session",
+          "use expired runtime session",
           session,
         ),
       );
@@ -183,13 +183,13 @@ export function createIkaDocRuntimeSessionAccessHandler(
     );
     if (!session) {
       return next(
-        deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+        deniedIkaDocRuntimeOperation("use expired runtime session"),
       );
     }
     if (isIkaDocRuntimeSessionExpired(session)) {
       return next(
         deniedIkaDocRuntimeOperation(
-          "use expired IkaDoc runtime session",
+          "use expired runtime session",
           session,
         ),
       );
@@ -240,11 +240,11 @@ export async function createIkaDocRuntimeAuthSession(
     assertion,
   );
   if (!session) {
-    throw deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session");
+    throw deniedIkaDocRuntimeOperation("use expired runtime session");
   }
   if (isIkaDocRuntimeSessionExpired(session)) {
     throw deniedIkaDocRuntimeOperation(
-      "use expired IkaDoc runtime session",
+      "use expired runtime session",
       session,
     );
   }
@@ -261,6 +261,15 @@ export async function createIkaDocRuntimeAuthSession(
     credential,
     false,
   );
+}
+
+export function ikaDocRuntimeSessionFromAuthSession(
+  authSession: AuthSession,
+): IkaDocRuntimeSession | undefined {
+  const credential = authSession.credential;
+  return credential instanceof IkaDocRuntimeCredential ?
+    credential.session :
+    undefined;
 }
 
 async function getIkaDocRuntimeSessionForRequest(
@@ -310,22 +319,22 @@ class IkaDocRuntimeCredential implements AuthCredential {
   public readonly identifiedUser: FullUser;
 
   public constructor(
-    private readonly _session: IkaDocRuntimeSession,
+    public readonly session: IkaDocRuntimeSession,
     anonymousUserId: number,
     private readonly _previewerUserId: number,
   ) {
     this.identifiedUser = {
       id: anonymousUserId,
-      email: runtimeUserEmail(_session),
-      loginEmail: runtimeUserEmail(_session),
-      name: _session.config.user.displayName,
-      ref: runtimeUserRef(_session),
+      email: runtimeUserEmail(session),
+      loginEmail: runtimeUserEmail(session),
+      name: session.config.user.displayName,
+      ref: runtimeUserRef(session),
       picture: null,
       anonymous: false,
-      locale: _session.config.locale,
+      locale: session.config.locale,
       extra: {
-        ikadocUserId: _session.config.user.userId,
-        ikadocSessionId: _session.sessionId,
+        ikadocUserId: session.config.user.userId,
+        ikadocSessionId: session.sessionId,
       },
     };
   }
@@ -349,23 +358,23 @@ class IkaDocRuntimeCredential implements AuthCredential {
     urlId: string,
   ): Promise<DocAuthResult> {
     if (
-      urlId !== this._session.documentId &&
-      urlId !== this._session.documentUrlId
+      urlId !== this.session.documentId &&
+      urlId !== this.session.documentUrlId
     ) {
       log.warn("IkaDoc runtime doc auth denied", {
         urlId,
-        documentId: this._session.documentId,
-        documentUrlId: this._session.documentUrlId,
-        sessionId: this._session.sessionId,
+        documentId: this.session.documentId,
+        documentUrlId: this.session.documentUrlId,
+        sessionId: this.session.sessionId,
       });
-      throw new ApiError("IkaDoc document access denied", 403);
+      throw new ApiError("Spreadsheet document access denied", 403);
     }
 
     log.info("IkaDoc runtime doc auth granted", {
       urlId,
-      documentId: this._session.documentId,
-      documentUrlId: this._session.documentUrlId,
-      sessionId: this._session.sessionId,
+      documentId: this.session.documentId,
+      documentUrlId: this.session.documentUrlId,
+      sessionId: this.session.sessionId,
     });
 
     const docAuth = await dbManager.getDocAuthCached({
@@ -377,14 +386,14 @@ class IkaDocRuntimeCredential implements AuthCredential {
       return docAuth;
     }
     if (!docAuth.cachedDoc || !this._isRuntimeDocument(docAuth.cachedDoc)) {
-      throw new ApiError("IkaDoc document access denied", 403);
+      throw new ApiError("Spreadsheet document access denied", 403);
     }
 
     const access =
-      this._session.config.mode === "editor" ? roles.EDITOR : roles.VIEWER;
+      this.session.config.mode === "editor" ? roles.EDITOR : roles.VIEWER;
     return {
       ...docAuth,
-      docId: this._session.documentId,
+      docId: this.session.documentId,
       access,
       cachedDoc: cloneRuntimeDocumentWithAccess(docAuth.cachedDoc, access),
     };
@@ -396,11 +405,11 @@ class IkaDocRuntimeCredential implements AuthCredential {
 
   private _isRuntimeDocument(doc: Document): boolean {
     return (
-      doc.id === this._session.documentId ||
-      doc.urlId === this._session.documentUrlId ||
+      doc.id === this.session.documentId ||
+      doc.urlId === this.session.documentUrlId ||
       Boolean(
         doc.aliases?.some(
-          alias => alias.urlId === this._session.documentUrlId,
+          alias => alias.urlId === this.session.documentUrlId,
         ),
       )
     );

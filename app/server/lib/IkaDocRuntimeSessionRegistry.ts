@@ -11,6 +11,7 @@ export interface IkaDocRuntimeSession {
 export type IkaDocRuntimeSessionResolution =
   | { kind: "active"; session: IkaDocRuntimeSession } |
   { kind: "expired"; session: IkaDocRuntimeSession } |
+  { kind: "forbidden"; session: IkaDocRuntimeSession } |
   { kind: "missing" };
 
 export class IkaDocRuntimeSessionRegistry {
@@ -22,6 +23,10 @@ export class IkaDocRuntimeSessionRegistry {
     config: IkaDocRuntimeConfig,
     registeredAtMs = Date.now(),
   ): IkaDocRuntimeSession {
+    const existing = this._bySessionId.get(config.sessionId);
+    if (existing) {
+      this._delete(existing);
+    }
     const session = {
       sessionId: config.sessionId,
       documentId: config.documentId,

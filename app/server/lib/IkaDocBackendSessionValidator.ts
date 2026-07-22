@@ -8,11 +8,15 @@ export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValida
   public constructor(
     private readonly _bearerToken: string | undefined,
     private readonly _timeoutMs: number,
+    private readonly _validationUrl?: string,
   ) {}
 
-  public async validate(session: IkaDocRuntimeSession, operation: string): Promise<void> {
+  public async validate(
+    session: IkaDocRuntimeSession,
+    operation: string,
+  ): Promise<void> {
     if (!this._bearerToken) {
-      throw new Error("IkaDoc editor validation is not configured");
+      throw new Error("Spreadsheet editor validation is not configured.");
     }
 
     const options: RequestInit = {
@@ -31,7 +35,10 @@ export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValida
       timeout: this._timeoutMs,
     };
 
-    const response = await fetch(session.config.validationUrl, options);
+    const response = await fetch(
+      this._validationUrl || session.config.validationUrl,
+      options,
+    );
     if (response.ok) {
       return;
     }
@@ -43,6 +50,6 @@ export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValida
       status: response.status,
       statusText: response.statusText,
     });
-    throw new Error(`IkaDoc editor session rejected ${operation}`);
+    throw new Error(`Spreadsheet editor session rejected ${operation}`);
   }
 }

@@ -78,11 +78,65 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(response.status, 403);
     assert.deepEqual(response.data, {
-      error: "IkaDoc Grist session does not allow export document.",
+      error: "This Grist session does not allow export document.",
       details: {
-        userError: "This action is disabled for the IkaDoc spreadsheet editor.",
+        userError: "This action is disabled for this spreadsheet editor.",
       },
     });
+  });
+
+  it("denies editor-only browser capabilities in viewer mode even when granted", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig(
+        { canSaveToIkaDoc: true },
+        undefined,
+        "2099-01-01T00:00:00.000Z",
+        "viewer",
+      ),
+    );
+    const app = express();
+    app.post(
+      "/api/docs/:docId/save",
+      requireIkaDocCapability(
+        registry,
+        "canSaveToIkaDoc",
+        "save document",
+      ),
+      (_req, res) => res.status(200).json({ ok: true }),
+    );
+    attachJsonErrorHandler(app);
+
+    const response = await requestApp(app, "/api/docs/doc-1/save", "post");
+
+    assert.equal(response.status, 403);
+    assert.equal(
+      response.data.error,
+      "This Grist session does not allow save document.",
+    );
+  });
+
+  it("denies direct editor-only document capabilities in viewer mode even when granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig(
+        { canSaveToIkaDoc: true },
+        undefined,
+        "2099-01-01T00:00:00.000Z",
+        "viewer",
+      ),
+    );
+
+    assert.throws(
+      () =>
+        requireIkaDocRuntimeCapabilityForDocument(
+          registry,
+          "doc-1",
+          "canSaveToIkaDoc",
+          "save document",
+        ),
+      "This Grist session does not allow save document.",
+    );
   });
 
   it("reports browser REST capability denials to the admitted IkaDoc audit callback", async function() {
@@ -200,6 +254,68 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(response.status, 200);
     assert.deepEqual(response.data, { ok: true });
+  });
+
+  it("uses the browser runtime cookie before document lookup when sessions share a document", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canExportFromBrowser: false }));
+    registry.register({
+      ...runtimeConfig({ canExportFromBrowser: true }),
+      sessionId: "session-2",
+    });
+    const app = express();
+    app.get(
+      "/api/docs/:docId/download",
+      requireIkaDocCapability(
+        registry,
+        "canExportFromBrowser",
+        "export document",
+      ),
+      (_req, res) => res.status(200).json({ ok: true }),
+    );
+    attachJsonErrorHandler(app);
+
+    const response = await requestApp(app, "/api/docs/doc-1/download", "get", {
+      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(
+      response.data.error,
+      "This Grist session does not allow export document.",
+    );
+  });
+
+  it("rejects a browser runtime cookie used against a different document route", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canExportFromBrowser: true }));
+    registry.register({
+      ...runtimeConfig({ canExportFromBrowser: true }),
+      sessionId: "session-2",
+      documentId: "doc-2",
+      documentUrlId: "doc-url-2",
+    });
+    const app = express();
+    app.get(
+      "/api/docs/:docId/download",
+      requireIkaDocCapability(
+        registry,
+        "canExportFromBrowser",
+        "export document",
+      ),
+      (_req, res) => res.status(200).json({ ok: true }),
+    );
+    attachJsonErrorHandler(app);
+
+    const response = await requestApp(app, "/api/docs/doc-2/download", "get", {
+      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(
+      response.data.error,
+      "This Grist session does not allow use this runtime session for another document.",
+    );
   });
 
   it("restores runtime credentials after Grist user auth rewrites document REST requests", async function() {
@@ -623,7 +739,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow use expired IkaDoc runtime session.",
+      "This Grist session does not allow use expired runtime session.",
     );
     assert.isUndefined(registry.getBySessionId("session-1"));
     assert.deepEqual(admissionRequests, [
@@ -662,7 +778,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow use expired IkaDoc runtime session.",
+      "This Grist session does not allow use expired runtime session.",
     );
   });
 
@@ -682,7 +798,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow copy document.",
+      "This Grist session does not allow copy document.",
     );
   });
 
@@ -704,7 +820,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow create Grist-owned document.",
+      "This Grist session does not allow create Grist-owned document.",
     );
   });
 
@@ -725,7 +841,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow use expired IkaDoc runtime session.",
+      "This Grist session does not allow use expired runtime session.",
     );
   });
 
@@ -747,7 +863,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow browse Grist home resources.",
+      "This Grist session does not allow browse Grist home resources.",
     );
   });
 
@@ -772,7 +888,7 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 403);
     assert.equal(
       response.data.error,
-      "IkaDoc Grist session does not allow use expired IkaDoc runtime session.",
+      "This Grist session does not allow use expired runtime session.",
     );
   });
 
@@ -814,6 +930,21 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(registry.getByDocumentId("doc-url-2")?.sessionId, "session-2");
   });
 
+  it("removes stale document indexes when a runtime session is replaced", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canExportFromBrowser: true }));
+    registry.register({
+      ...runtimeConfig({ canExportFromBrowser: true }),
+      documentId: "doc-2",
+      documentUrlId: "doc-url-2",
+    });
+
+    assert.isUndefined(registry.getByDocumentId("doc-1"));
+    assert.isUndefined(registry.getByDocumentId("doc-url-1"));
+    assert.equal(registry.getByDocumentId("doc-2")?.sessionId, "session-1");
+    assert.equal(registry.getBySessionId("session-1")?.documentId, "doc-2");
+  });
+
   it("denies websocket-style operations by registered document id", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canUsePlugins: false }));
@@ -826,7 +957,7 @@ describe("IkaDoc runtime policy", function() {
           "canUsePlugins",
           "use plugin RPC",
         ),
-      "IkaDoc Grist session does not allow use plugin RPC.",
+      "This Grist session does not allow use plugin RPC.",
     );
   });
 
@@ -849,7 +980,7 @@ describe("IkaDoc runtime policy", function() {
             "canUsePlugins",
             "use plugin RPC",
           ),
-        "IkaDoc Grist session does not allow use plugin RPC.",
+        "This Grist session does not allow use plugin RPC.",
       );
       await audit.waitForRequest();
       assert.equal(audit.requests.length, 1);
@@ -893,7 +1024,7 @@ describe("IkaDoc runtime policy", function() {
           "canUsePlugins",
           "use plugin RPC",
         ),
-      "IkaDoc Grist session does not allow use expired IkaDoc runtime session.",
+      "This Grist session does not allow use expired runtime session.",
     );
   });
 
@@ -908,7 +1039,7 @@ describe("IkaDoc runtime policy", function() {
           "doc-1",
           "fork document",
         ),
-      "IkaDoc Grist session does not allow fork document.",
+      "This Grist session does not allow fork document.",
     );
   });
 
@@ -939,7 +1070,58 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(
       error?.message,
-      "IkaDoc Grist session does not allow use plugin RPC.",
+      "This Grist session does not allow use plugin RPC.",
+    );
+    assert.isFalse(called);
+  });
+
+  it("uses websocket client runtime session before document lookup when sessions share a document", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canUsePlugins: false }));
+    registry.register({
+      ...runtimeConfig({ canUsePlugins: true }),
+      sessionId: "session-2",
+    });
+    const authSession = await createIkaDocRuntimeAuthSession(
+      fakeRuntimeAuthDbManager(),
+      registry,
+      {
+        headers: {
+          cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+        },
+      } as unknown as http.IncomingMessage,
+      "ikadoc",
+    );
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "editors",
+      "forwardPluginRpc",
+      {
+        capability: "canUsePlugins",
+        operation: "use plugin RPC",
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc(
+          "doc-1",
+          "forwardPluginRpc",
+          () => {
+            called = true;
+          },
+          authSession,
+        ),
+        1,
+      ),
+    );
+
+    assert.equal(
+      error?.message,
+      "This Grist session does not allow use plugin RPC.",
     );
     assert.isFalse(called);
   });
@@ -979,6 +1161,114 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(error?.message, "IkaDoc session was revoked");
     assert.deepEqual(validatedOperations, ["apply document edits"]);
     assert.isFalse(called);
+  });
+
+  it("blocks websocket ACL helper calls without access-management capability", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canManageAccess: false }));
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "viewers",
+      "getAclResources",
+      {
+        capability: "canManageAccess",
+        operation: "list access resources",
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc("doc-1", "getAclResources", () => {
+          called = true;
+        }),
+        1,
+      ),
+    );
+
+    assert.equal(
+      error?.message,
+      "This Grist session does not allow list access resources.",
+    );
+    assert.isFalse(called);
+  });
+
+  it("allows websocket ACL helper calls with access-management capability", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canManageAccess: true }));
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "viewers",
+      "checkAclFormula",
+      {
+        capability: "canManageAccess",
+        operation: "check access formula",
+      },
+    );
+
+    await method(
+      clientForActiveDoc("doc-1", "checkAclFormula", () => {
+        called = true;
+      }),
+      1,
+      "user.Email == 'alice@example.test'",
+    );
+
+    assert.isTrue(called);
+  });
+
+  it("blocks websocket assistant and proposal calls in IkaDoc runtime mode", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({}));
+    const blockedMethods = [
+      {
+        methodName: "getAssistantState",
+        role: "owners" as const,
+        operation: "use assistant",
+      },
+      {
+        methodName: "getAssistance",
+        role: "viewers" as const,
+        operation: "use assistant",
+      },
+      {
+        methodName: "applyProposal",
+        role: "owners" as const,
+        operation: "use proposals",
+      },
+    ];
+
+    for (const blocked of blockedMethods) {
+      let called = false;
+      const method = activeDocMethod(
+        undefined,
+        registry,
+        undefined,
+        blocked.role,
+        blocked.methodName,
+        { operation: blocked.operation },
+      );
+
+      const error = await captureError(() =>
+        method(
+          clientForActiveDoc("doc-1", blocked.methodName, () => {
+            called = true;
+          }),
+          1,
+        ),
+      );
+
+      assert.equal(
+        error?.message,
+        `This Grist session does not allow ${blocked.operation}.`,
+      );
+      assert.isFalse(called);
+    }
   });
 
   it("allows websocket dispatcher calls when the capability is granted", async function() {
@@ -1039,7 +1329,7 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(
       error?.message,
-      "IkaDoc Grist session does not allow view document history.",
+      "This Grist session does not allow view document history.",
     );
     assert.isFalse(called);
   });
@@ -1117,7 +1407,7 @@ describe("IkaDoc runtime policy", function() {
     assert.isTrue(called);
     assert.equal(
       externalError?.message,
-      "IkaDoc Grist session does not allow fetch external URL.",
+      "This Grist session does not allow fetch external URL.",
     );
   });
 
@@ -1148,7 +1438,7 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(
       error?.message,
-      "IkaDoc Grist session does not allow import files.",
+      "This Grist session does not allow import files.",
     );
     assert.isFalse(called);
   });
@@ -1164,8 +1454,8 @@ describe("IkaDoc runtime policy", function() {
       "editors",
       "applyUserActions",
       {
-        capability: "canEditCells",
         operation: "apply document edits",
+        classifyUserActions: true,
       },
     );
 
@@ -1181,9 +1471,46 @@ describe("IkaDoc runtime policy", function() {
 
     assert.equal(
       error?.message,
-      "IkaDoc Grist session does not allow apply malformed document edits.",
+      "This Grist session does not allow apply malformed document edits.",
     );
     assert.isFalse(called);
+  });
+
+  it("allows websocket chart actions through the action classifier without cell-edit capability", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canCreateCharts: true }),
+    );
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "editors",
+      "applyUserActions",
+      {
+        operation: "apply document edits",
+        classifyUserActions: true,
+      },
+    );
+
+    await method(
+      clientForActiveDoc("doc-1", "applyUserActions", () => {
+        called = true;
+      }),
+      1,
+      [
+        ["CreateViewSection", 1, 1, "chart", null, null],
+        [
+          "AddRecord",
+          "_grist_Views_section_field",
+          null,
+          { parentId: 7, colRef: 2, parentPos: 1 },
+        ],
+      ],
+    );
+
+    assert.isTrue(called);
   });
 
   it("allows normal user-table edits when cell editing is granted", function() {
@@ -1196,6 +1523,26 @@ describe("IkaDoc runtime policy", function() {
     ]);
   });
 
+  it("denies user-table edits in viewer mode even when cell editing is present", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig(
+        { canEditCells: true },
+        undefined,
+        "2099-01-01T00:00:00.000Z",
+        "viewer",
+      ),
+    );
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "Table1", 1, { Name: "Updated" }],
+        ]),
+      "This Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
   it("denies structure actions when only cell editing is granted", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
@@ -1205,7 +1552,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["AddColumn", "Table1", "Formula", { type: "Any" }],
         ]),
-      "IkaDoc Grist session does not allow apply AddColumn.",
+      "This Grist session does not allow apply AddColumn.",
     );
   });
 
@@ -1231,7 +1578,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["ModifyColumn", "Table1", "A", { isFormula: true, formula: "$B" }],
         ]),
-      "IkaDoc Grist session does not allow apply ModifyColumn.",
+      "This Grist session does not allow apply ModifyColumn.",
     );
   });
 
@@ -1246,7 +1593,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["ModifyColumn", "Table1", "A", { isFormula: true, formula: "$B" }],
         ]),
-      "IkaDoc Grist session does not allow apply ModifyColumn.",
+      "This Grist session does not allow apply ModifyColumn.",
     );
   });
 
@@ -1272,7 +1619,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["UpdateRecord", "_grist_Tables_column", 1, { formula: "$B" }],
         ]),
-      "IkaDoc Grist session does not allow apply UpdateRecord.",
+      "This Grist session does not allow apply UpdateRecord.",
     );
   });
 
@@ -1287,7 +1634,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["AddRecord", "_grist_Validations", null, { formula: "$A > 0" }],
         ]),
-      "IkaDoc Grist session does not allow apply AddRecord.",
+      "This Grist session does not allow apply AddRecord.",
     );
   });
 
@@ -1302,7 +1649,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["AddVisibleColumn", "Table1", "Formula", { formula: "$A + 1" }],
         ]),
-      "IkaDoc Grist session does not allow apply AddVisibleColumn.",
+      "This Grist session does not allow apply AddVisibleColumn.",
     );
   });
 
@@ -1324,8 +1671,30 @@ describe("IkaDoc runtime policy", function() {
             ],
           ],
         ]),
-      "IkaDoc Grist session does not allow apply AddTable.",
+      "This Grist session does not allow apply AddTable.",
     );
+  });
+
+  it("denies comment metadata edits without comment capability", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canEditStructure: true }));
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["AddRecord", "_grist_Cells", null, { content: "comment" }],
+        ]),
+      "This Grist session does not allow apply AddRecord.",
+    );
+  });
+
+  it("allows comment metadata edits with comment capability", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canUseComments: true }));
+
+    assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+      ["AddRecord", "_grist_Cells", null, { content: "comment" }],
+    ]);
   });
 
   it("denies attachment metadata edits without attachment capability", function() {
@@ -1337,7 +1706,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["AddRecord", "_grist_Attachments", null, { fileName: "secret.pdf" }],
         ]),
-      "IkaDoc Grist session does not allow apply AddRecord.",
+      "This Grist session does not allow apply AddRecord.",
     );
   });
 
@@ -1350,7 +1719,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["AddRecord", "_grist_Triggers", null, { label: "Webhook" }],
         ]),
-      "IkaDoc Grist session does not allow apply AddRecord.",
+      "This Grist session does not allow apply AddRecord.",
     );
   });
 
@@ -1370,7 +1739,7 @@ describe("IkaDoc runtime policy", function() {
             { aclFormula: "user.Email == 'x@example.test'" },
           ],
         ]),
-      "IkaDoc Grist session does not allow apply AddRecord.",
+      "This Grist session does not allow apply AddRecord.",
     );
   });
 
@@ -1385,7 +1754,7 @@ describe("IkaDoc runtime policy", function() {
         assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
           ["UpdateRecord", "_grist_Views_section", 1, { parentKey: "custom" }],
         ]),
-      "IkaDoc Grist session does not allow apply UpdateRecord.",
+      "This Grist session does not allow apply UpdateRecord.",
     );
   });
 
@@ -1407,8 +1776,95 @@ describe("IkaDoc runtime policy", function() {
             },
           ],
         ]),
-      "IkaDoc Grist session does not allow apply UpdateRecord.",
+      "This Grist session does not allow apply UpdateRecord.",
     );
+  });
+
+  it("denies page metadata edits when only chart creation is granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canCreateCharts: true }));
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "_grist_Pages", 1, { pagePos: 2 }],
+        ]),
+      "This Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
+  it("denies generic layout metadata edits when only chart creation is granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canCreateCharts: true }));
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "_grist_Views_section", 1, { title: "Renamed" }],
+        ]),
+      "This Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
+  it("denies chart metadata edits when chart creation is missing", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canEditStructure: true }));
+
+    assert.throws(
+      () =>
+        assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "_grist_Views_section", 1, { chartType: "bar" }],
+        ]),
+      "This Grist session does not allow apply UpdateRecord.",
+    );
+  });
+
+  it("allows chart metadata edits when chart and structure capabilities are granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canCreateCharts: true }),
+    );
+
+    assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+      ["UpdateRecord", "_grist_Views_section", 1, { chartType: "bar" }],
+    ]);
+  });
+
+  it("allows chart view-section creation when chart and structure capabilities are granted", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canCreateCharts: true }),
+    );
+
+    assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+      ["CreateViewSection", 1, 1, "chart", null, null],
+    ]);
+  });
+
+  it("allows the native chart summary action chain with chart and structure capabilities", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({ canEditStructure: true, canCreateCharts: true }),
+    );
+
+    assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+      ["CreateViewSection", 1, 1, "chart", null, null],
+      ["UpdateSummaryViewSection", 1, [2], { groupBy: [2] }],
+      ["AddRecord", "_grist_Tables", null, { tableId: "GristSummary_1" }],
+      [
+        "BulkAddRecord",
+        "_grist_Tables_column",
+        [101, 102],
+        { parentId: [7, 7], colId: ["Schema", "count"], type: ["Text", "Int"] },
+      ],
+      [
+        "UpdateRecord",
+        "_grist_Views_section",
+        7,
+        { parentKey: "chart", chartType: "bar" },
+      ],
+      ["RemoveViewSection", 4],
+    ]);
   });
 
   it("allows custom-widget layout creation when custom-widget and structure capabilities are granted", function() {
@@ -1427,6 +1883,7 @@ function runtimeConfig(
   capabilities: Partial<typeof DENIED_IKADOC_CAPABILITIES>,
   blockedCapabilityUrl?: string,
   expiresAt = "2099-01-01T00:00:00.000Z",
+  mode: "editor" | "viewer" = "editor",
 ) {
   return {
     enabled: true,
@@ -1439,7 +1896,7 @@ function runtimeConfig(
       email: "alice@example.test",
     },
     sourceType: "document-file",
-    mode: "editor",
+    mode,
     expiresAt,
     documentId: "doc-1",
     documentUrlId: "doc-url-1",
@@ -1616,9 +2073,10 @@ function clientForActiveDoc(
   docName: string,
   methodName: string,
   onCall: (this: { docName: string }) => void,
+  authSession: unknown = { isApiKeyAuth: false },
 ) {
   return {
-    authSession: { isApiKeyAuth: false },
+    authSession,
     getDocSession() {
       return {
         activeDoc: {

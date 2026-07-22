@@ -47,7 +47,7 @@ export class IkaDocBackendAdmissionClient implements IkaDocEditorAdmissionClient
         status: response.status,
         statusText: response.statusText,
       });
-      return deny("backend-unavailable", "IkaDoc editor admission is unavailable.");
+      return deny("backend-unavailable", "Spreadsheet editor admission is unavailable.");
     }
 
     return await this._parseAdmissionResponse(response);
@@ -98,7 +98,7 @@ export class IkaDocBackendAdmissionClient implements IkaDocEditorAdmissionClient
       return new FetchResponse(JSON.stringify({
         kind: "denied",
         code: "backend-unavailable",
-        safeMessage: "IkaDoc editor admission is unavailable.",
+        safeMessage: "Spreadsheet editor admission is unavailable.",
       }), { status: 503 });
     }
   }
@@ -246,18 +246,18 @@ function originProtocol(origin: string): string {
 
 function fallbackDenialForHttpStatus(status: number): IkaDocEditorAdmissionResult | undefined {
   if (status === 401 || status === 403) {
-    return deny("permission-denied", "IkaDoc editor admission was denied.");
+    return deny("permission-denied", "Spreadsheet editor admission was denied.");
   }
 
   if (status === 404) {
-    return deny("session-not-found", "IkaDoc editor session was not found.");
+    return deny("session-not-found", "Spreadsheet editor session was not found.");
   }
 
   return undefined;
 }
 
 function malformedResponse(): IkaDocEditorAdmissionResult {
-  return deny("malformed-response", "IkaDoc editor admission returned an invalid response.");
+  return deny("malformed-response", "Spreadsheet editor admission returned an invalid response.");
 }
 
 function deny(

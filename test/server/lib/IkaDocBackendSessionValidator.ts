@@ -15,11 +15,20 @@ describe("IkaDoc backend session validator", function() {
     });
 
     try {
-      const validator = new IkaDocBackendSessionValidator("validation-token", 1000);
-      await validator.validate(runtimeSession(server.url), "apply document edits");
+      const validator = new IkaDocBackendSessionValidator(
+        "validation-token",
+        1000,
+      );
+      await validator.validate(
+        runtimeSession(server.url),
+        "apply document edits",
+      );
 
       assert.lengthOf(receivedRequests, 1);
-      assert.equal(receivedRequests[0].headers.authorization, "Bearer validation-token");
+      assert.equal(
+        receivedRequests[0].headers.authorization,
+        "Bearer validation-token",
+      );
       assert.deepEqual(receivedRequests[0].body, {
         sessionId: "session-1",
         documentId: "doc-1",
@@ -38,10 +47,48 @@ describe("IkaDoc backend session validator", function() {
     }));
 
     try {
-      const validator = new IkaDocBackendSessionValidator("validation-token", 1000);
-      const error = await captureError(() => validator.validate(runtimeSession(server.url), "apply document edits"));
+      const validator = new IkaDocBackendSessionValidator(
+        "validation-token",
+        1000,
+      );
+      const error = await captureError(() =>
+        validator.validate(runtimeSession(server.url), "apply document edits"),
+      );
 
-      assert.match(error?.message ?? "", /IkaDoc editor session rejected apply document edits/);
+      assert.match(
+        error?.message ?? "",
+        /Spreadsheet editor session rejected apply document edits/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("uses the configured internal validation URL instead of the browser runtime URL", async function() {
+    const receivedRequests: CapturedValidationRequest[] = [];
+    const server = await startValidationServer(async (req, body) => {
+      receivedRequests.push({ headers: req.headers, body });
+      return { status: 204, body: "" };
+    });
+
+    try {
+      const validator = new IkaDocBackendSessionValidator(
+        "validation-token",
+        1000,
+        server.url,
+      );
+      await validator.validate(
+        runtimeSession(
+          "https://records.owarelin.localhost/api/grist/editor/session-validation",
+        ),
+        "apply document edits",
+      );
+
+      assert.lengthOf(receivedRequests, 1);
+      assert.equal(
+        receivedRequests[0].headers.authorization,
+        "Bearer validation-token",
+      );
     } finally {
       await server.close();
     }
@@ -64,12 +111,14 @@ async function startValidationServer(
     body: unknown,
   ) => Promise<{ status: number; body: string }>,
 ): Promise<ValidationServer> {
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const body = await readRequestBody(req);
-    const response = await handler(req, body);
-    res.statusCode = response.status;
-    res.end(response.body);
-  });
+  const server = createServer(
+    async (req: IncomingMessage, res: ServerResponse) => {
+      const body = await readRequestBody(req);
+      const response = await handler(req, body);
+      res.statusCode = response.status;
+      res.end(response.body);
+    },
+  );
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as AddressInfo;
   return {
@@ -139,7 +188,9 @@ function runtimeSession(validationUrl: string): IkaDocRuntimeSession {
   };
 }
 
-async function captureError(action: () => Promise<void>): Promise<Error | undefined> {
+async function captureError(
+  action: () => Promise<void>,
+): Promise<Error | undefined> {
   try {
     await action();
     return undefined;

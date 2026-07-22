@@ -48,7 +48,7 @@ describe("IkaDoc app endpoint", function() {
     const response = await requestApp(app, "/grist/editor/session-1");
 
     assert.equal(response.status, 503);
-    assert.deepEqual(response.data, { error: "IkaDoc editor runtime is not configured." });
+    assert.deepEqual(response.data, { error: "Spreadsheet editor runtime is not configured." });
     assert.deepEqual(sentPages, []);
   });
 
@@ -105,6 +105,7 @@ describe("IkaDoc app endpoint", function() {
     });
     assert.deepEqual(sentPages[0].config, {
       assignmentId: "doc-1",
+      assistant: undefined,
       enableWidgetRepository: false,
       experimentalPlugins: false,
       getWorker: { "doc-1": "/ikadoc/sessions/session-1/worker" },
@@ -122,15 +123,19 @@ describe("IkaDoc app endpoint", function() {
   });
 
   for (const admissionDenial of [
-    { code: "session-expired", safeMessage: "The IkaDoc spreadsheet session expired.", status: 403 },
-    { code: "session-revoked", safeMessage: "The IkaDoc spreadsheet session was revoked.", status: 403 },
-    { code: "tenant-mismatch", safeMessage: "The IkaDoc spreadsheet session belongs to another tenant.", status: 403 },
-    { code: "actor-mismatch", safeMessage: "The IkaDoc spreadsheet session belongs to another user.", status: 403 },
+    { code: "session-expired", safeMessage: "The spreadsheet session expired.", status: 403 },
+    { code: "session-revoked", safeMessage: "The spreadsheet session was revoked.", status: 403 },
+    { code: "tenant-mismatch", safeMessage: "The spreadsheet session belongs to another tenant.", status: 403 },
+    { code: "actor-mismatch", safeMessage: "The spreadsheet session belongs to another user.", status: 403 },
     { code: "module-disabled", safeMessage: "The Grist module is disabled.", status: 403 },
     { code: "permission-denied", safeMessage: "Permission denied.", status: 403 },
-    { code: "session-not-found", safeMessage: "The IkaDoc spreadsheet session was not found.", status: 404 },
-    { code: "backend-unavailable", safeMessage: "IkaDoc editor admission is unavailable.", status: 503 },
-    { code: "malformed-response", safeMessage: "IkaDoc editor admission returned an invalid response.", status: 502 },
+    { code: "session-not-found", safeMessage: "The spreadsheet session was not found.", status: 404 },
+    { code: "backend-unavailable", safeMessage: "Spreadsheet editor admission is unavailable.", status: 503 },
+    {
+      code: "malformed-response",
+      safeMessage: "Spreadsheet editor admission returned an invalid response.",
+      status: 502,
+    },
   ] as const) {
     it(`maps ${admissionDenial.code} admission denial without serving Grist`, async function() {
       const app = express();

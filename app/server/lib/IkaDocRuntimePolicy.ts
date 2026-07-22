@@ -20,6 +20,27 @@ export interface IkaDocRuntimeSessionValidator {
 
 const BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS = 5000;
 
+const EDITOR_ONLY_CAPABILITIES = new Set<IkaDocCapabilityName>([
+  "canEditCells",
+  "canEditStructure",
+  "canUseFormulas",
+  "canCreateCharts",
+  "canRefreshSource",
+  "canSaveToIkaDoc",
+  "canDiscard",
+  "canUseComments",
+  "canUseAttachments",
+  "canUseExternalData",
+  "canImportLocalFiles",
+  "canUseCustomWidgets",
+  "canInviteCollaborators",
+  "canShare",
+  "canFork",
+  "canPublish",
+  "canManageAccess",
+  "canUsePlugins",
+]);
+
 const CELL_EDIT_ACTIONS = new Set([
   "AddRecord",
   "BulkAddRecord",
@@ -40,7 +61,15 @@ export function requireIkaDocCapability(
     if (resolution.kind === "expired") {
       return next(
         deniedIkaDocRuntimeOperation(
-          "use expired IkaDoc runtime session",
+          "use expired runtime session",
+          resolution.session,
+        ),
+      );
+    }
+    if (resolution.kind === "forbidden") {
+      return next(
+        deniedIkaDocRuntimeOperation(
+          "use this runtime session for another document",
           resolution.session,
         ),
       );
@@ -49,10 +78,10 @@ export function requireIkaDocCapability(
       resolution.kind === "active" ? resolution.session : undefined;
     if (!session && hasIkaDocRuntimeSessionCookie(req)) {
       return next(
-        deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+        deniedIkaDocRuntimeOperation("use expired runtime session"),
       );
     }
-    if (!session || session.config.capabilities[capability]) {
+    if (!session || isIkaDocCapabilityAllowed(session, capability)) {
       return next();
     }
     reportBlockedCapability(
@@ -74,7 +103,15 @@ export function denyIkaDocRuntimeOperation(
     if (resolution.kind === "expired") {
       return next(
         deniedIkaDocRuntimeOperation(
-          "use expired IkaDoc runtime session",
+          "use expired runtime session",
+          resolution.session,
+        ),
+      );
+    }
+    if (resolution.kind === "forbidden") {
+      return next(
+        deniedIkaDocRuntimeOperation(
+          "use this runtime session for another document",
           resolution.session,
         ),
       );
@@ -84,7 +121,7 @@ export function denyIkaDocRuntimeOperation(
     if (!session) {
       return hasIkaDocRuntimeSessionCookie(req) ?
         next(
-          deniedIkaDocRuntimeOperation("use expired IkaDoc runtime session"),
+          deniedIkaDocRuntimeOperation("use expired runtime session"),
         ) :
         next();
     }
@@ -114,16 +151,35 @@ function resolveIkaDocRuntimeSessionForRequest(
     return { kind: "missing" };
   }
   const docId = req.params?.docId;
+  const cookieSession = ikadocRuntimeSessionFromCookie(registry, req);
+  if (cookieSession) {
+    if (
+      typeof docId === "string" &&
+      docId.length > 0 &&
+      !sessionMatchesDocumentId(cookieSession, docId)
+    ) {
+      return { kind: "forbidden", session: cookieSession };
+    }
+    return { kind: "active", session: cookieSession };
+  }
   if (typeof docId !== "string" || docId.length === 0) {
-    const session = ikadocRuntimeSessionFromCookie(registry, req);
-    return session ? { kind: "active", session } : { kind: "missing" };
+    return { kind: "missing" };
   }
   const documentResolution = registry.resolveByDocumentId(docId);
   if (documentResolution.kind !== "missing") {
     return documentResolution;
   }
-  const session = ikadocRuntimeSessionFromCookie(registry, req);
-  return session ? { kind: "active", session } : { kind: "missing" };
+  return { kind: "missing" };
+}
+
+function sessionMatchesDocumentId(
+  session: IkaDocRuntimeSession,
+  documentId: string,
+): boolean {
+  return (
+    documentId === session.documentId ||
+    documentId === session.documentUrlId
+  );
 }
 
 export function requireIkaDocRuntimeCapabilityForDocument(
@@ -138,12 +194,30 @@ export function requireIkaDocRuntimeCapabilityForDocument(
   );
   if (resolution.kind === "expired") {
     throw deniedIkaDocRuntimeOperation(
-      "use expired IkaDoc runtime session",
+      "use expired runtime session",
+      resolution.session,
+    );
+  }
+  if (resolution.kind === "forbidden") {
+    throw deniedIkaDocRuntimeOperation(
+      "use this runtime session for another document",
       resolution.session,
     );
   }
   const session = resolution.kind === "active" ? resolution.session : undefined;
-  if (!session || session.config.capabilities[capability]) {
+  if (!session || isIkaDocCapabilityAllowed(session, capability)) {
+    return;
+  }
+  reportBlockedCapability(session, operation, blockedReason(operation));
+  throw deniedIkaDocRuntimeOperation(operation, session);
+}
+
+export function requireIkaDocRuntimeCapabilityForSession(
+  session: IkaDocRuntimeSession,
+  capability: IkaDocCapabilityName,
+  operation: string,
+): void {
+  if (isIkaDocCapabilityAllowed(session, capability)) {
     return;
   }
   reportBlockedCapability(session, operation, blockedReason(operation));
@@ -162,7 +236,13 @@ export async function validateIkaDocRuntimeSessionForDocument(
   );
   if (resolution.kind === "expired") {
     throw deniedIkaDocRuntimeOperation(
-      "use expired IkaDoc runtime session",
+      "use expired runtime session",
+      resolution.session,
+    );
+  }
+  if (resolution.kind === "forbidden") {
+    throw deniedIkaDocRuntimeOperation(
+      "use this runtime session for another document",
       resolution.session,
     );
   }
@@ -176,6 +256,29 @@ export async function validateIkaDocRuntimeSessionForDocument(
   return session;
 }
 
+export async function validateIkaDocRuntimeSession(
+  validator: IkaDocRuntimeSessionValidator | undefined,
+  session: IkaDocRuntimeSession,
+  documentId: string,
+  operation: string,
+): Promise<void> {
+  if (!sessionMatchesDocumentId(session, documentId)) {
+    throw deniedIkaDocRuntimeOperation(
+      "use this runtime session for another document",
+      session,
+    );
+  }
+  if (isIkaDocRuntimeSessionExpired(session)) {
+    throw deniedIkaDocRuntimeOperation(
+      "use expired runtime session",
+      session,
+    );
+  }
+  if (validator) {
+    await validator.validate(session, operation);
+  }
+}
+
 export function denyIkaDocRuntimeOperationForDocument(
   registry: IkaDocRuntimeSessionRegistry | undefined,
   documentId: string,
@@ -187,7 +290,13 @@ export function denyIkaDocRuntimeOperationForDocument(
   );
   if (resolution.kind === "expired") {
     throw deniedIkaDocRuntimeOperation(
-      "use expired IkaDoc runtime session",
+      "use expired runtime session",
+      resolution.session,
+    );
+  }
+  if (resolution.kind === "forbidden") {
+    throw deniedIkaDocRuntimeOperation(
+      "use this runtime session for another document",
       resolution.session,
     );
   }
@@ -199,16 +308,38 @@ export function denyIkaDocRuntimeOperationForDocument(
   throw deniedIkaDocRuntimeOperation(operation, session);
 }
 
+export function denyIkaDocRuntimeOperationForSession(
+  session: IkaDocRuntimeSession,
+  operation: string,
+): void {
+  reportBlockedCapability(session, operation, blockedReason(operation));
+  throw deniedIkaDocRuntimeOperation(operation, session);
+}
+
 export function requireIkaDocUserActionsForRequest(
   registry: IkaDocRuntimeSessionRegistry | undefined,
 ): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
-      assertIkaDocUserActionsAllowedForDocument(
-        registry,
-        req.params.docId,
-        req.body,
-      );
+      const resolution = resolveIkaDocRuntimeSessionForRequest(registry, req);
+      if (resolution.kind === "expired") {
+        throw deniedIkaDocRuntimeOperation(
+          "use expired runtime session",
+          resolution.session,
+        );
+      }
+      if (resolution.kind === "forbidden") {
+        throw deniedIkaDocRuntimeOperation(
+          "use this runtime session for another document",
+          resolution.session,
+        );
+      }
+      if (resolution.kind === "active") {
+        assertIkaDocUserActionsAllowedForSession(
+          resolution.session,
+          req.body,
+        );
+      }
       next();
     } catch (error) {
       next(error);
@@ -227,7 +358,13 @@ export function assertIkaDocUserActionsAllowedForDocument(
   );
   if (resolution.kind === "expired") {
     throw deniedIkaDocRuntimeOperation(
-      "use expired IkaDoc runtime session",
+      "use expired runtime session",
+      resolution.session,
+    );
+  }
+  if (resolution.kind === "forbidden") {
+    throw deniedIkaDocRuntimeOperation(
+      "use this runtime session for another document",
       resolution.session,
     );
   }
@@ -235,6 +372,13 @@ export function assertIkaDocUserActionsAllowedForDocument(
   if (!session) {
     return;
   }
+  assertIkaDocUserActionsAllowedForSession(session, actions);
+}
+
+export function assertIkaDocUserActionsAllowedForSession(
+  session: IkaDocRuntimeSession,
+  actions: unknown,
+): void {
   if (!Array.isArray(actions)) {
     throw deniedIkaDocRuntimeOperation(
       "apply malformed document edits",
@@ -264,7 +408,7 @@ function assertIkaDocUserActionAllowed(
     action,
   );
   for (const requiredCapability of requiredCapabilities) {
-    if (!session.config.capabilities[requiredCapability]) {
+    if (!isIkaDocCapabilityAllowed(session, requiredCapability)) {
       reportBlockedCapability(
         session,
         `apply ${actionName}`,
@@ -273,6 +417,16 @@ function assertIkaDocUserActionAllowed(
       throw deniedIkaDocRuntimeOperation(`apply ${actionName}`, session);
     }
   }
+}
+
+function isIkaDocCapabilityAllowed(
+  session: IkaDocRuntimeSession,
+  capability: IkaDocCapabilityName,
+): boolean {
+  if (session.config.mode !== "editor" && EDITOR_ONLY_CAPABILITIES.has(capability)) {
+    return false;
+  }
+  return session.config.capabilities[capability];
 }
 
 function capabilitiesForUserAction(
@@ -289,14 +443,17 @@ function capabilitiesForUserAction(
   if (tableId === "_grist_Attachments") {
     return ["canUseAttachments"];
   }
+  if (tableId === "_grist_Cells") {
+    return ["canUseComments"];
+  }
   if (tableId === "_grist_Triggers" || tableId === "_grist_Webhooks") {
     return ["canUseExternalData"];
   }
   if (isCustomWidgetAction(tableId, action)) {
     return ["canUseCustomWidgets", "canEditStructure"];
   }
-  if (isChartOrLayoutMetadataTable(tableId)) {
-    return ["canCreateCharts"];
+  if (isChartUserAction(actionName, tableId, action)) {
+    return ["canCreateCharts", "canEditStructure"];
   }
   if (tableId?.startsWith("_grist_")) {
     return ["canEditStructure"];
@@ -435,13 +592,33 @@ function optionsContainCustomWidget(options: string): boolean {
   }
 }
 
-function isChartOrLayoutMetadataTable(tableId: string | undefined): boolean {
-  return (
-    tableId === "_grist_Pages" ||
-    tableId === "_grist_Views" ||
-    tableId === "_grist_Views_section" ||
-    tableId === "_grist_Views_section_field"
-  );
+function isChartUserAction(
+  actionName: string,
+  tableId: string | undefined,
+  action: unknown[],
+): boolean {
+  if (actionName === "CreateViewSection") {
+    return action[3] === "chart";
+  }
+  if (tableId !== "_grist_Views_section") {
+    return false;
+  }
+  const values = action[3];
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return false;
+  }
+  return hasChartParentKey(values) || "chartType" in values;
+}
+
+function hasChartParentKey(values: object): boolean {
+  if (!("parentKey" in values)) {
+    return false;
+  }
+  const parentKey = values.parentKey;
+  if (typeof parentKey === "string") {
+    return parentKey === "chart";
+  }
+  return Array.isArray(parentKey) && parentKey.includes("chart");
 }
 
 function ikadocRuntimeSessionFromCookie(
@@ -481,10 +658,10 @@ export function deniedIkaDocRuntimeOperation(
   _session?: IkaDocRuntimeSession,
 ): ApiError {
   return new ApiError(
-    `IkaDoc Grist session does not allow ${operation}.`,
+    `This Grist session does not allow ${operation}.`,
     403,
     {
-      userError: "This action is disabled for the IkaDoc spreadsheet editor.",
+      userError: "This action is disabled for this spreadsheet editor.",
     },
   );
 }
