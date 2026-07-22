@@ -20,6 +20,10 @@ import { ViewFieldRec } from "app/client/models/entities/ViewFieldRec";
 import { ViewSectionRec } from "app/client/models/entities/ViewSectionRec";
 import { CardContextMenu } from "app/client/ui/CardContextMenu";
 import { FieldContextMenu } from "app/client/ui/FieldContextMenu";
+import {
+  canEditIkaDocRuntimeCells,
+  canEditIkaDocRuntimeStructure,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { descriptionInfoTooltip } from "app/client/ui/tooltips";
 import { isNarrowScreen } from "app/client/ui2018/cssVars";
 import { icon } from "app/client/ui2018/icons";
@@ -190,7 +194,7 @@ export default class DetailView extends BaseView {
       }
       this.recordLayout.editLayout(this.cursor.rowIndex()!);
     },
-    hideCardFields: function() { this._hideCardFields().catch(reportError); },
+    hideCardFields: function() { this._hideCardFields()?.catch(reportError); },
     copy: function() { return this.copy(this.getSelection()); },
     cut: function() { return this.cut(this.getSelection()); },
     paste: function(pasteObj: PasteData, cutCallback: CutCallback | null) {
@@ -443,10 +447,12 @@ export default class DetailView extends BaseView {
           dom("div.detail-button.detail-add-btn",
             icon("Plus"),
             dom.on("click", () => {
+              if (!canEditIkaDocRuntimeCells()) { return; }
               const addRowIndex = this.viewData.getRowIndex("new");
               this.cursor.rowIndex(addRowIndex);
             }),
-            dom.cls("disabled", use => this.viewData.getRowId(use(this.cursor.rowIndex)!) === "new"),
+            dom.cls("disabled", use =>
+              !canEditIkaDocRuntimeCells() || this.viewData.getRowId(use(this.cursor.rowIndex)!) === "new"),
           ),
         ),
       )),
@@ -454,6 +460,8 @@ export default class DetailView extends BaseView {
   }
 
   public override onNewRecordRequest() {
+    if (!canEditIkaDocRuntimeCells()) { return; }
+
     const addRowIndex = this.viewData.getRowIndex("new");
     this.cursor.rowIndex(addRowIndex);
   }
@@ -542,7 +550,7 @@ export default class DetailView extends BaseView {
   }
 
   protected _clearCardFields() {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells()) {
       return;
     }
 
@@ -559,6 +567,9 @@ export default class DetailView extends BaseView {
   }
 
   protected _hideCardFields() {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     const selection = this.getSelection();
     const actions = selection.fields.map(field => ["RemoveRecord", field.id()]);
     return this.gristDoc.docModel.viewFields.sendTableActions(
@@ -579,13 +590,16 @@ export default class DetailView extends BaseView {
 
   protected _getCardContextMenuOptions(row: DataRowModel) {
     return {
+      isReadonly: this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells() || this.isPreview,
       disableInsert: Boolean(
         this.gristDoc.isReadonly.get() ||
+        !canEditIkaDocRuntimeCells() ||
         this.viewSection.disableAddRemoveRows() ||
         this.tableModel.tableMetaRow.onDemand(),
       ),
       disableDelete: Boolean(
         this.gristDoc.isReadonly.get() ||
+        !canEditIkaDocRuntimeCells() ||
         this.viewSection.disableAddRemoveRows() ||
         row._isAddRow(),
       ),
@@ -598,7 +612,10 @@ export default class DetailView extends BaseView {
     const selection = this.getSelection();
     return {
       disableModify: Boolean(selection.fields[0]?.disableModify.peek()),
-      isReadonly: this.gristDoc.isReadonly.get() || this.isPreview,
+      isReadonly: this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells() || this.isPreview,
+      isStructureReadonly: this.gristDoc.isReadonly.get() ||
+        !canEditIkaDocRuntimeStructure() ||
+        this.isPreview,
       field: selection.fields[0],
       isAddRow: selection.onlyAddRowSelected(),
     };

@@ -33,6 +33,12 @@ import { showCustomWidgetGallery } from "app/client/ui/CustomWidgetGallery";
 import { buildDescriptionConfig } from "app/client/ui/DescriptionConfig";
 import { BuildEditorOptions } from "app/client/ui/FieldConfig";
 import { GridOptions } from "app/client/ui/GridOptions";
+import {
+  canCreateIkaDocRuntimeCharts,
+  canEditIkaDocRuntimeStructure,
+  canUseIkaDocRuntimeCustomWidgets,
+  canUseIkaDocRuntimeFormulas,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { textarea } from "app/client/ui/inputs";
 import { attachPageWidgetPicker, IPageWidget, toPageWidget } from "app/client/ui/PageWidgetPicker";
 import { PredefinedCustomSectionConfig } from "app/client/ui/PredefinedCustomSectionConfig";
@@ -136,20 +142,29 @@ export class RightPanel extends Disposable {
     this.content = this._buildContentDom();
 
     this.autoDispose(commands.createGroup({
-      fieldTabOpen: () => this._openFieldTab(),
+      fieldTabOpen: () => canEditIkaDocRuntimeStructure() && this._openFieldTab(),
       viewTabOpen: () => this._openViewTab(),
       viewTabFocus: () => this._viewTabFocus(),
-      sortFilterTabOpen: () => this._openSortFilter(),
-      dataSelectionTabOpen: () => this._openDataSelection(),
+      sortFilterTabOpen: () => canEditIkaDocRuntimeStructure() && this._openSortFilter(),
+      dataSelectionTabOpen: () => canEditIkaDocRuntimeStructure() && this._openDataSelection(),
     }, this, true));
 
     // When a page widget is changed, subType might not be valid anymore, so reset it.
     // TODO: refactor sub tabs and navigation using order of the tab.
     this.autoDispose(subscribe((use) => {
-      if (!use(this._isForm) && use(this._subTab) === "submission") {
+      const canEditStructure = canEditIkaDocRuntimeStructure();
+      const subTab = use(this._subTab);
+      if (!canEditStructure && subTab !== "widget") {
+        setImmediate(() => !this._subTab.isDisposed() && this._subTab.set("widget"));
+      } else if (!use(this._isForm) && subTab === "submission") {
         setImmediate(() => !this._subTab.isDisposed() && this._subTab.set("sortAndFilter"));
-      } else if (use(this._isForm) && use(this._subTab) === "sortAndFilter") {
+      } else if (use(this._isForm) && subTab === "sortAndFilter") {
         setImmediate(() => !this._subTab.isDisposed() && this._subTab.set("submission"));
+      }
+    }));
+    this.autoDispose(subscribe((use) => {
+      if (!canEditIkaDocRuntimeStructure() && use(this._topTab) === "field") {
+        setImmediate(() => !this._topTab.isDisposed() && this._topTab.set("pageWidget"));
       }
     }));
 
@@ -218,6 +233,7 @@ export class RightPanel extends Disposable {
     return dom.maybe(this._pageWidgetType, (type) => {
       const widgetInfo = getWidgetTypes(type);
       const fieldInfo = getFieldType(type);
+      const canEditStructure = canEditIkaDocRuntimeStructure();
       return [
         cssTopBarTabList(
           this._topTabComponents.tabList(),
@@ -227,12 +243,12 @@ export class RightPanel extends Disposable {
             widgetInfo.getLabel(),
             testId("right-tab-pagewidget"),
           ),
-          cssTopBarItem(
+          canEditStructure ? cssTopBarItem(
             this._topTabComponents.tab("field"),
             cssTopBarIcon(fieldInfo.icon),
             fieldInfo.label,
             testId("right-tab-field"),
-          ),
+          ) : null,
         ),
       ];
     });
@@ -264,9 +280,11 @@ export class RightPanel extends Disposable {
         ),
         cssTabPanel(
           this._topTabComponents.tabPanel("field",
-            isForm ?
-              dom.create(this._buildQuestionContent.bind(this)) :
-              dom.create(this._buildFieldContent.bind(this)),
+            canEditIkaDocRuntimeStructure() ?
+              isForm ?
+                dom.create(this._buildQuestionContent.bind(this)) :
+                dom.create(this._buildFieldContent.bind(this)) :
+              null,
           ),
           testId("right-tabpanel-field"),
         ),
@@ -275,6 +293,8 @@ export class RightPanel extends Disposable {
   }
 
   private _buildFieldContent(owner: MultiHolder) {
+    if (!canEditIkaDocRuntimeStructure()) { return null; }
+
     const fieldBuilder = owner.autoDispose(ko.computed(() => {
       const vsi = this._gristDoc.viewModel.activeSection?.().viewInstance();
       return vsi?.activeFieldBuilder() ?? null;
@@ -368,6 +388,8 @@ export class RightPanel extends Disposable {
 
   // Helper to activate the side-pane formula editor over the given HTML element.
   private _activateFormulaEditor(options: BuildEditorOptions) {
+    if (!canEditIkaDocRuntimeStructure() || !canUseIkaDocRuntimeFormulas()) { return; }
+
     const vsi = this._gristDoc.viewModel.activeSection().viewInstance();
     if (!vsi) { return; }
 
@@ -385,6 +407,7 @@ export class RightPanel extends Disposable {
 
   private _buildPageWidgetContent(isForm: boolean) {
     const content = (activeSection: ViewSectionRec) => {
+      const canEditStructure = canEditIkaDocRuntimeStructure();
       return [
         dom("div",
           this._subTabComponents.tabPanel("widget",
@@ -392,26 +415,29 @@ export class RightPanel extends Disposable {
           ),
           testId("right-subtabpanel-widget"),
         ),
-        isForm ?
+        canEditStructure && isForm ?
           dom("div",
             this._subTabComponents.tabPanel("submission",
               dom.create(this._buildPageSubmissionConfig.bind(this), activeSection),
             ),
             testId("right-subtabpanel-submission"),
           ) :
+          null,
+        canEditStructure && !isForm ?
           dom("div",
             this._subTabComponents.tabPanel("sortAndFilter",
               dom.create(this._buildPageSortFilterConfig.bind(this)),
             ),
             cssConfigContainer.cls("-disabled", activeSection.isRecordCard),
             testId("right-subtabpanel-sortAndFilter"),
-          ),
-        dom("div",
+          ) :
+          null,
+        canEditStructure ? dom("div",
           this._subTabComponents.tabPanel("data",
             dom.create(this._buildPageDataConfig.bind(this), activeSection),
           ),
           testId("right-subtabpanel-data"),
-        ),
+        ) : null,
       ];
     };
     return dom.maybe(this._validSection, activeSection =>
@@ -420,6 +446,7 @@ export class RightPanel extends Disposable {
   }
 
   private _buildPageFormHeader(_owner: MultiHolder) {
+    const canEditStructure = canEditIkaDocRuntimeStructure();
     return [
       cssSubTabContainer(
         this._subTabComponents.tabList(),
@@ -428,19 +455,20 @@ export class RightPanel extends Disposable {
           // the data-text attribute is necessary for a css trick to work (see cssSubTab)
           dom.attr("data-text", t("Configuration")),
           testId("config-widget")),
-        cssSubTab(t("Submission"),
+        canEditStructure ? cssSubTab(t("Submission"),
           this._subTabComponents.tab("submission"),
           dom.attr("data-text", t("Submission")),
-          testId("config-submission")),
-        cssSubTab(t("Data"),
+          testId("config-submission")) : null,
+        canEditStructure ? cssSubTab(t("Data"),
           this._subTabComponents.tab("data"),
           dom.attr("data-text", t("Data")),
-          testId("config-data")),
+          testId("config-data")) : null,
       ),
     ];
   }
 
   private _buildPageWidgetHeader(_owner: MultiHolder) {
+    const canEditStructure = canEditIkaDocRuntimeStructure();
     return [
       cssSubTabContainer(
         this._subTabComponents.tabList(),
@@ -449,14 +477,14 @@ export class RightPanel extends Disposable {
           // the data-text attribute is necessary for a css trick to work (see cssSubTab)
           dom.attr("data-text", t("Widget")),
           testId("config-widget")),
-        cssSubTab(t("Sort & filter"),
+        canEditStructure ? cssSubTab(t("Sort & filter"),
           this._subTabComponents.tab("sortAndFilter"),
           dom.attr("data-text", t("Sort & filter")),
-          testId("config-sortAndFilter")),
-        cssSubTab(t("Data"),
+          testId("config-sortAndFilter")) : null,
+        canEditStructure ? cssSubTab(t("Data"),
           this._subTabComponents.tab("data"),
           dom.attr("data-text", t("Data")),
-          testId("config-data")),
+          testId("config-data")) : null,
       ),
     ];
   }
@@ -475,6 +503,8 @@ export class RightPanel extends Disposable {
   }
 
   private _buildPageWidgetConfig(owner: MultiHolder, activeSection: ViewSectionRec) {
+    const canEditStructure = canEditIkaDocRuntimeStructure();
+
     // TODO: This uses private methods from ViewConfigTab. These methods are likely to get
     // refactored, but if not, should be made public.
     const viewConfigTab = this._createViewConfigTab(owner);
@@ -495,7 +525,7 @@ export class RightPanel extends Disposable {
 
     return dom.maybe(viewConfigTab, vct => [
       this._disableIfReadonly(),
-      dom.maybe(use => !use(activeSection.isRecordCard), () => [
+      canEditStructure ? dom.maybe(use => !use(activeSection.isRecordCard), () => [
         cssLabel(dom.text(use => use(activeSection.isRaw) ? t("DATA TABLE NAME") : t("WIDGET TITLE")),
           { for: "right-widget-title-input" },
         ),
@@ -514,29 +544,29 @@ export class RightPanel extends Disposable {
         cssSection(
           dom.create(buildDescriptionConfig, activeSection.description, { cursor, testPrefix: "right-widget" }),
         ),
-      ]),
+      ]) : null,
 
-      dom.maybe(
+      canEditStructure ? dom.maybe(
         use => !use(activeSection.isRaw) && !use(activeSection.isRecordCard),
         () => cssRow(
           primaryButton(t("Change widget"), this._createPageWidgetPicker()),
           cssRow.cls("-top-space"),
         ),
-      ),
+      ) : null,
 
-      dom.maybe(use => ["detail", "single"].includes(use(this._pageWidgetType)!), () => [
+      canEditStructure ? dom.maybe(use => ["detail", "single"].includes(use(this._pageWidgetType)!), () => [
         cssGroupLabel(t("Theme")),
         dom("div",
           vct._buildThemeDom(),
           vct._buildLayoutDom()),
-      ]),
+      ]) : null,
 
-      domComputed((use) => {
+      canEditStructure ? domComputed((use) => {
         if (use(this._pageWidgetType) !== "record") { return null; }
         return dom.create(GridOptions, activeSection);
-      }),
+      }) : null,
 
-      domComputed((use) => {
+      canEditStructure ? domComputed((use) => {
         if (use(this._pageWidgetType) !== "record") { return null; }
         return dom("div", { "role": "group", "aria-labelledby": "row-style-label" },
           cssSeparator(),
@@ -546,16 +576,16 @@ export class RightPanel extends Disposable {
             dom.create(ViewPane.ConditionalStyle, t("Row style"), activeSection, this._gristDoc),
           )),
         );
-      }),
+      }) : null,
 
-      dom.maybe(use => use(this._pageWidgetType) === "chart", () =>
+      dom.maybe(use => use(this._pageWidgetType) === "chart" && canCreateIkaDocRuntimeCharts(), () =>
         dom("div", { "role": "group", "aria-label": t("Chart options") },
           cssGroupLabel(t("CHART TYPE")),
           vct._buildChartConfigDom(),
         ),
       ),
 
-      dom.maybe(use => use(this._pageWidgetType) === "custom", () => {
+      dom.maybe(use => use(this._pageWidgetType) === "custom" && canUseIkaDocRuntimeCustomWidgets(), () => {
         const parts = vct._buildCustomTypeItems() as any[];
         return [
           cssSeparator(),
@@ -572,13 +602,16 @@ export class RightPanel extends Disposable {
             () => dom.create(CustomSectionConfig, activeSection, this._gristDoc)),
         ];
       }),
-      dom.maybe(use =>  use(this._pageWidgetType)?.startsWith("custom."), () => {
+      dom.maybe(use => (
+        use(this._pageWidgetType)?.startsWith("custom.") &&
+        canUseIkaDocRuntimeCustomWidgets()
+      ), () => {
         return [
           dom.create(PredefinedCustomSectionConfig, activeSection, this._gristDoc),
         ];
       }),
 
-      dom.maybe(
+      canEditStructure ? dom.maybe(
         use => !(
           use(hasCustomMapping) ||
           use(this._pageWidgetType) === "chart" ||
@@ -587,16 +620,18 @@ export class RightPanel extends Disposable {
         () => [
           cssSeparator(),
           dom.create(VisibleFieldsConfig, this._gristDoc, activeSection),
-        ]),
+        ]) : null,
 
-      dom.maybe(this._isForm, () => [
+      canEditStructure ? dom.maybe(this._isForm, () => [
         cssSeparator(),
         dom.create(MappedFieldsConfig, activeSection),
-      ]),
+      ]) : null,
     ]);
   }
 
   private _buildPageSortFilterConfig(owner: MultiHolder) {
+    if (!canEditIkaDocRuntimeStructure()) { return null; }
+
     const viewConfigTab = this._createViewConfigTab(owner);
     return dom.maybe(viewConfigTab, vct => vct.buildSortFilterDom());
   }
@@ -802,6 +837,8 @@ export class RightPanel extends Disposable {
   }
 
   private _buildPageDataConfig(owner: MultiHolder, activeSection: ViewSectionRec) {
+    if (!canEditIkaDocRuntimeStructure()) { return null; }
+
     const viewConfigTab = this._createViewConfigTab(owner);
     const viewModel = this._gristDoc.viewModel;
     const table = activeSection.table;
@@ -927,6 +964,8 @@ export class RightPanel extends Disposable {
       }
     };
     return (elem) => {
+      if (!canEditIkaDocRuntimeStructure()) { return; }
+
       attachPageWidgetPicker(elem, gristDoc, onSave, {
         buttonLabel: t("Save"),
         value: () => toPageWidget(activeSection.peek()),
@@ -1024,6 +1063,8 @@ export class RightPanel extends Disposable {
   }
 
   private _buildQuestionContent(owner: MultiHolder) {
+    if (!canEditIkaDocRuntimeStructure()) { return null; }
+
     const fieldBuilder = owner.autoDispose(ko.computed(() => {
       const vsi = this._gristDoc.viewModel.activeSection?.().viewInstance();
       return vsi?.activeFieldBuilder() ?? null;

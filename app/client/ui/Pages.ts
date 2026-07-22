@@ -8,6 +8,7 @@ import { urlState } from "app/client/models/gristUrlState";
 import MetaTableModel from "app/client/models/MetaTableModel";
 import { find as findInTree, fromTableData, TreeItemRecord, TreeRecord,
   TreeTableData } from "app/client/models/TreeModel";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { TreeViewComponent } from "app/client/ui/TreeViewComponent";
 import { cssRadioCheckboxOptions, radioCheckboxOption } from "app/client/ui2018/checkbox";
 import { theme } from "app/client/ui2018/cssVars";
@@ -23,7 +24,9 @@ const t = makeT("Pages");
 // build dom for the tree view of pages
 export function buildPagesDom(owner: Disposable, activeDoc: GristDoc, isOpen: Observable<boolean>) {
   const pagesTable = activeDoc.docModel.pages;
-  const buildDom = buildDomFromTable.bind(null, pagesTable, activeDoc);
+  // IkaDoc viewer mode should expose page navigation only, not page reordering or rename controls.
+  const pageTreeReadonly = Computed.create(owner, use => use(activeDoc.isReadonly) || !canEditIkaDocRuntimeStructure());
+  const buildDom = buildDomFromTable.bind(null, pagesTable, activeDoc, pageTreeReadonly);
 
   const records = Computed.create<TreeRecord[]>(owner, use =>
     use(activeDoc.docModel.menuPages).map(page => ({
@@ -59,7 +62,7 @@ export function buildPagesDom(owner: Disposable, activeDoc: GristDoc, isOpen: Ob
   // dom
   return dom("nav",
     { "aria-label": t("Document pages") },
-    dom.create(TreeViewComponent, model, { isOpen, selected, isReadonly: activeDoc.isReadonly }),
+    dom.create(TreeViewComponent, model, { isOpen, selected, isReadonly: pageTreeReadonly }),
   );
 }
 
@@ -68,6 +71,7 @@ const testId = makeTestId("test-removepage-");
 function buildDomFromTable(
   pagesTable: MetaTableModel<PageRec>,
   activeDoc: GristDoc,
+  isReadonly: Observable<boolean>,
   pageId: number,
   item: TreeItemRecord,
 ) {
@@ -75,7 +79,6 @@ function buildDomFromTable(
     return buildCensoredPage();
   }
 
-  const { isReadonly } = activeDoc;
   const pageRec = pagesTable.rowModels[pageId];
   const viewRec = pageRec.view.peek();
   const pageName = viewRec.name;

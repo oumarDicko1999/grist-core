@@ -1,4 +1,8 @@
 import { makeT } from "app/client/lib/localization";
+import {
+  canBuildIkaDocRuntimeProposal,
+  canRefreshIkaDocRuntimeSource,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { basicButton } from "app/client/ui2018/buttons";
 import { testId, theme } from "app/client/ui2018/cssVars";
 import { parseIkaDocGuidedWorkspaceDescriptor } from "app/ikadoc/IkaDocGuidedWorkspace";
@@ -53,7 +57,7 @@ export function buildIkaDocEditorControls(
           testId("ikadoc-guided-workspace-status"),
         );
     }),
-    config.refreshUrl && config.capabilities.canRefreshSource ?
+    config.refreshUrl && canRefreshIkaDocRuntimeSource(config) ?
       basicButton(
         t("Refresh"),
         dom.prop("disabled", busy),
@@ -61,7 +65,7 @@ export function buildIkaDocEditorControls(
         testId("ikadoc-editor-refresh"),
       ) :
       null,
-    config.proposalUrl && config.capabilities.canEditCells ?
+    canBuildIkaDocRuntimeProposal(config) ?
       basicButton(
         t("Build proposal"),
         dom.prop("disabled", busy),

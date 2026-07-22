@@ -162,11 +162,14 @@ export function buildPageDom(name: Observable<string>, options: PageOptions, ...
               cssPageName(
                 dom.text(use => use(splitName).displayName),
                 testId("label"),
-                dom.on("click", ev => isTargetSelected(ev.target as HTMLElement) && isRenaming.set(true)),
+                // IkaDoc viewer mode must not expose page rename through native Grist readonly gaps.
+                dom.on("click", ev =>
+                  !isReadonly.get() && isTargetSelected(ev.target as HTMLElement) && isRenaming.set(true)),
                 overflowTooltip(),
               ),
             ),
             cssPageMenuTrigger(
+              dom.hide(isReadonly),
               dom.attr("aria-label", use => t("context menu - {{- pageName }}", { pageName: use(name) })),
               cssPageMenuIcon("Dots"),
               menu(pageMenu, { placement: "bottom-start", parentSelectorToMark: "." + itemHeader.className }),

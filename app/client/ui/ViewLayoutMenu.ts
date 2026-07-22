@@ -32,6 +32,10 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
   const rowId = (cursorRow !== null ? viewInstance.viewData.getRowId(cursorRow) : null) as string | null | number;
   const isAddRow = rowId === "new";
 
+  if (!canConfigureView) {
+    return canExportFromBrowser ? buildExportMenuItems(gristDoc) : [];
+  }
+
   const contextMenu = [
     menuItemCmd(allCommands.deleteRecords,
       t("Delete record"),
@@ -91,22 +95,7 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
       ),
     ),
     menuItemCmd(allCommands.printSection, t("Print widget"), testId("print-section")),
-    canExportFromBrowser ? [
-      menuItemLink(
-        hooks.maybeModifyLinkAttrs({ href: gristDoc.getCsvLink(), target: "_blank", download: "" }),
-        t("Download as CSV"),
-        testId("download-section"),
-      ),
-      menuItemLink(
-        hooks.maybeModifyLinkAttrs({
-          href: gristDoc.getXlsxActiveViewLink(),
-          target: "_blank",
-          download: "",
-        }),
-        t("Download as XLSX"),
-        testId("download-section"),
-      ),
-    ] : null,
+    canExportFromBrowser ? buildExportMenuItems(gristDoc) : null,
     dom.maybe(use => ["detail", "single"].includes(use(viewSection.parentKey)), () =>
       menuItemCmd(allCommands.editLayout, t("Edit card layout"),
         dom.hide(!canConfigureView))),
@@ -147,6 +136,8 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
 export function makeCollapsedLayoutMenu(viewSection: ViewSectionRec, gristDoc: GristDoc) {
   const isReadonly = gristDoc.isReadonly.get();
   const canConfigureView = !isReadonly && canEditIkaDocRuntimeStructure();
+  if (!canConfigureView) { return []; }
+
   const sectionId = viewSection.table.peek().rawViewSectionRef.peek();
   const anchorUrlState = { hash: { sectionId, popup: true } };
   const rawUrl = urlState().makeUrl(anchorUrlState);
@@ -170,5 +161,24 @@ export function makeCollapsedLayoutMenu(viewSection: ViewSectionRec, gristDoc: G
       dom.cls("disabled", !canConfigureView),
       dom.hide(!canConfigureView),
       testId("section-delete")),
+  ];
+}
+
+function buildExportMenuItems(gristDoc: GristDoc) {
+  return [
+    menuItemLink(
+      hooks.maybeModifyLinkAttrs({ href: gristDoc.getCsvLink(), target: "_blank", download: "" }),
+      t("Download as CSV"),
+      testId("download-section"),
+    ),
+    menuItemLink(
+      hooks.maybeModifyLinkAttrs({
+        href: gristDoc.getXlsxActiveViewLink(),
+        target: "_blank",
+        download: "",
+      }),
+      t("Download as XLSX"),
+      testId("download-section"),
+    ),
   ];
 }

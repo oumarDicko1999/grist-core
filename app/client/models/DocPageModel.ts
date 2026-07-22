@@ -9,7 +9,10 @@ import { getDoc } from "app/client/models/gristConfigCache";
 import { docUrl, urlState } from "app/client/models/gristUrlState";
 import { addNewButton, cssAddNewButton } from "app/client/ui/AddNewButton";
 import { App } from "app/client/ui/App";
-import { shouldShowIkaDocRuntimeAuthoringSurfaces } from "app/client/ui/IkaDocRuntimeAccess";
+import {
+  canImportIkaDocRuntimeLocalFiles,
+  shouldShowIkaDocRuntimeAuthoringSurfaces,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { cssLeftPanel, cssScrollPane } from "app/client/ui/LeftPanelCommon";
 import { buildPagesDom } from "app/client/ui/Pages";
 import { openPageWidgetPicker } from "app/client/ui/PageWidgetPicker";
@@ -583,6 +586,7 @@ contact the document owners to attempt a document recovery. [{{error}}]", { erro
 
 function addMenu(importSources: ImportSource[], gristDoc: GristDoc, isReadonly: boolean): DomElementArg[] {
   const selectBy = gristDoc.selectBy.bind(gristDoc);
+  const canImportLocalFiles = canImportIkaDocRuntimeLocalFiles();
   return [
     menuItem(
       elem => openPageWidgetPicker(elem, gristDoc, val => gristDoc.addNewPage(val).catch(reportError),
@@ -603,11 +607,14 @@ function addMenu(importSources: ImportSource[], gristDoc: GristDoc, isReadonly: 
     ),
     menuDivider(),
     ...importSources.map((importSource, i) =>
-      menuItem(importSource.action,
-        menuIcon("Import"),
-        importSource.label,
-        testId(`dp-import-option`),
-        dom.cls("disabled", isReadonly),
+      menuItem(() => {
+        if (isReadonly || !canImportLocalFiles) { return; }
+        return importSource.action();
+      },
+      menuIcon("Import"),
+      importSource.label,
+      testId(`dp-import-option`),
+      dom.cls("disabled", isReadonly || !canImportLocalFiles),
       ),
     ),
     isReadonly ? menuText(t("You do not have edit access to this document")) : null,

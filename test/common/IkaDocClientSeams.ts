@@ -23,7 +23,21 @@ const CLIENT_SEAMS = [
     file: "app/client/models/DocPageModel.ts",
     anchors: [
       "shouldShowIkaDocRuntimeAuthoringSurfaces",
+      "canImportIkaDocRuntimeLocalFiles",
       "showAuthoringSurfaces ? addNewButton",
+      "const canImportLocalFiles = canImportIkaDocRuntimeLocalFiles();",
+      "if (isReadonly || !canImportLocalFiles) { return; }",
+    ],
+  },
+  {
+    file: "app/client/ui/IkaDocRuntimeAccess.ts",
+    anchors: [
+      "isIkaDocRuntimeEditor",
+      "canUseIkaDocRuntimeFormulas",
+      "canUseIkaDocRuntimeComments",
+      "canUseIkaDocRuntimeCustomWidgets",
+      "canManageIkaDocRuntimeAccess",
+      "hasIkaDocRuntimeCapability",
     ],
   },
   {
@@ -40,14 +54,169 @@ const CLIENT_SEAMS = [
       "canExportFromIkaDocRuntimeBrowser",
       "const canConfigureView = !isReadonly && canEditIkaDocRuntimeStructure();",
       "const canExportFromBrowser = canExportFromIkaDocRuntimeBrowser();",
+      "return canExportFromBrowser ? buildExportMenuItems(gristDoc) : [];",
       "dom.hide(!canConfigureView)",
     ],
+  },
+  {
+    file: "app/client/ui/ViewSectionMenu.ts",
+    anchors: [
+      "canEditIkaDocRuntimeStructure",
+      "canExportFromIkaDocRuntimeBrowser",
+      "const canConfigureView = canEditIkaDocRuntimeStructure();",
+      "const canExportFromBrowser = canExportFromIkaDocRuntimeBrowser();",
+      "!canExportFromBrowser && (use(isReadonly) || !canConfigureView)",
+    ],
+  },
+  {
+    file: "app/client/components/ViewLayout.ts",
+    anchors: [
+      "canEditIkaDocRuntimeStructure",
+      "LayoutEditor.create(",
+      "this.layout,",
+      "enabled: this.canEditStructure()",
+      "LayoutTray.create(this, this, { enabled: this.canEditStructure() })",
+      "public canEditStructure()",
+    ],
+  },
+  {
+    file: "app/client/components/LayoutEditor.ts",
+    anchors: [
+      "enabled: boolean",
+      "options: { enabled?: boolean } = {}",
+      "IkaDoc viewer mode keeps the layout readable but disables layout write affordances.",
+    ],
+  },
+  {
+    file: "app/client/components/buildViewSectionDom.ts",
+    anchors: [
+      "canEditIkaDocRuntimeStructure",
+      "const canEditStructure = canEditIkaDocRuntimeStructure();",
+      "IkaDoc viewer mode must not expose layout drag affordances.",
+    ],
+  },
+  {
+    file: "app/client/components/BaseView.ts",
+    anchors: [
+      "canEditIkaDocRuntimeCells",
+      "canUseIkaDocRuntimeComments",
+      "|| !canEditIkaDocRuntimeCells()",
+      "if (!canUseIkaDocRuntimeComments())",
+    ],
+  },
+  {
+    file: "app/client/components/GridView.ts",
+    anchors: [
+      "canEditIkaDocRuntimeCells",
+      "canEditIkaDocRuntimeStructure",
+      "private _isStructureReadonly: boolean;",
+      "!canEditIkaDocRuntimeCells()",
+      "!canEditIkaDocRuntimeStructure()",
+      "isReadonly: this.isReadonly,",
+      "isReadonly: this._isStructureReadonly || this.isPreview",
+    ],
+  },
+  {
+    file: "app/client/ui/CellContextMenu.ts",
+    anchors: [
+      "canUseIkaDocRuntimeComments",
+      "isReadonly: boolean;",
+      "isReadonly: isColumnReadonly",
+      "if (isReadonly && isColumnReadonly)",
+      "const canUseComments = canUseIkaDocRuntimeComments();",
+    ],
+  },
+  {
+    file: "app/client/ui/RowContextMenu.ts",
+    anchors: [
+      "isReadonly: boolean;",
+      "if (isReadonly)",
+    ],
+  },
+  {
+    file: "app/client/components/DetailView.ts",
+    anchors: [
+      "canEditIkaDocRuntimeCells",
+      "canEditIkaDocRuntimeStructure",
+      "!canEditIkaDocRuntimeCells()",
+      "!canEditIkaDocRuntimeStructure()",
+      "isStructureReadonly:",
+    ],
+  },
+  {
+    file: "app/client/ui/FieldContextMenu.ts",
+    anchors: [
+      "canUseIkaDocRuntimeComments",
+      "isStructureReadonly: boolean;",
+      "if (isReadonly && isStructureReadonly)",
+      "disableForReadonlyStructure",
+      "const canUseComments = canUseIkaDocRuntimeComments();",
+    ],
+  },
+  {
+    file: "app/client/ui/Pages.ts",
+    anchors: [
+      "canEditIkaDocRuntimeStructure",
+      "const pageTreeReadonly = Computed.create(owner, use =>",
+      "buildDomFromTable.bind(null, pagesTable, activeDoc, pageTreeReadonly)",
+      "use(activeDoc.isReadonly) || !canEditIkaDocRuntimeStructure()",
+    ],
+  },
+  {
+    file: "app/client/ui2018/pages.ts",
+    anchors: ["!isReadonly.get()", "dom.hide(isReadonly)"],
   },
   {
     file: "app/client/components/DataTables.ts",
     anchors: [
       "canEditIkaDocRuntimeStructure",
+      "const canEditStructure = canEditIkaDocRuntimeStructure();",
       "!canEditStructure || use(isReadonly)",
+      "this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()",
+      "dom.hide(use => use(this._gristDoc.isReadonly) || !canEditStructure)",
+    ],
+  },
+  {
+    file: "app/client/ui/GridViewMenus.ts",
+    anchors: [
+      "canUseIkaDocRuntimeFormulas",
+      "if (!canUseIkaDocRuntimeFormulas())",
+      "buildShortcutsMenuItems(gridView, index)",
+    ],
+  },
+  {
+    file: "app/client/ui/PageWidgetPicker.ts",
+    anchors: [
+      "canCreateIkaDocRuntimeCharts",
+      "canUseIkaDocRuntimeCustomWidgets",
+      "filterIkaDocWidgetTypes",
+      "sectionTypes: IWidgetType[] = filterIkaDocWidgetTypes",
+    ],
+  },
+  {
+    file: "app/client/ui/RightPanel.ts",
+    anchors: [
+      "canEditIkaDocRuntimeStructure",
+      "canCreateIkaDocRuntimeCharts",
+      "canUseIkaDocRuntimeFormulas",
+      "canUseIkaDocRuntimeCustomWidgets",
+      "fieldTabOpen: () => canEditIkaDocRuntimeStructure() && this._openFieldTab()",
+      "sortFilterTabOpen: () => canEditIkaDocRuntimeStructure() && this._openSortFilter()",
+      "dataSelectionTabOpen: () => canEditIkaDocRuntimeStructure() && this._openDataSelection()",
+      "canEditStructure ? cssSubTab(t(\"Sort & filter\")",
+      "canEditStructure ? cssSubTab(t(\"Data\")",
+      "if (!canEditIkaDocRuntimeStructure()) { return null; }",
+      "use(this._pageWidgetType) === \"chart\" && canCreateIkaDocRuntimeCharts()",
+      "canUseIkaDocRuntimeCustomWidgets()",
+      "!canEditIkaDocRuntimeStructure() || !canUseIkaDocRuntimeFormulas()",
+    ],
+  },
+  {
+    file: "app/client/widgets/FieldBuilder.ts",
+    anchors: [
+      "canUseIkaDocRuntimeComments",
+      "if (!canUseIkaDocRuntimeComments()) { return false; }",
+      "if (!canUseIkaDocRuntimeComments())",
     ],
   },
   {
@@ -157,7 +326,7 @@ describe("IkaDoc client seams", function() {
     assert.isAtLeast(ikadocBranchIndex, 0);
     assert.isAbove(normalAssistantIndex, ikadocBranchIndex);
     assert.include(source, 'cssLinkText(t("Document history"))');
-    assert.include(source, "ikadocConfig.capabilities?.canViewHistory");
+    assert.include(source, "canViewIkaDocRuntimeHistory(ikadocConfig)");
     assert.include(source, 'testId("log")');
   });
 

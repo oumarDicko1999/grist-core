@@ -21,6 +21,7 @@ import { logTelemetryEvent } from "app/client/lib/telemetry";
 import { ViewRec, ViewSectionRec } from "app/client/models/DocModel";
 import { reportError } from "app/client/models/errors";
 import { urlState } from "app/client/models/gristUrlState";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { getTelemetryWidgetTypeFromVS } from "app/client/ui/widgetTypesMap";
 import { cssRadioCheckboxOptions, radioCheckboxOption } from "app/client/ui2018/checkbox";
 import { isNarrowScreen, mediaSmall, testId, theme } from "app/client/ui2018/cssVars";
@@ -146,8 +147,11 @@ export class ViewLayout extends DisposableWithEvents implements IDomComponent {
       this.isResizing.set(true);
     });
 
-    this.layoutEditor = this.autoDispose(LayoutEditor.create(this.layout));
-    this.layoutTray = LayoutTray.create(this, this);
+    this.layoutEditor = this.autoDispose(LayoutEditor.create(
+      this.layout,
+      { enabled: this.canEditStructure() },
+    ));
+    this.layoutTray = LayoutTray.create(this, this, { enabled: this.canEditStructure() });
 
     // Add disposal of this._layout after layoutEditor, so that it gets disposed first, and
     // layoutEditor doesn't attempt to update it in its own disposal logic.
@@ -197,12 +201,19 @@ export class ViewLayout extends DisposableWithEvents implements IDomComponent {
     }));
 
     const commandGroup = {
-      deleteSection: () => { this.removeViewSection(this.viewModel.activeSectionId()).catch(reportError); },
+      deleteSection: () => {
+        if (!this.canEditStructure()) { return; }
+        this.removeViewSection(this.viewModel.activeSectionId()).catch(reportError);
+      },
       duplicateSection: () => {
+        if (!this.canEditStructure()) { return; }
         buildDuplicateWidgetModal(this.gristDoc, this.viewModel.activeSectionId()).catch(reportError);
       },
       printSection: () => { printViewSection(this.layout, this.viewModel.activeSection()).catch(reportError); },
-      sortFilterMenuOpen: (sectionId?: number) => { this._openSortFilterMenu(sectionId); },
+      sortFilterMenuOpen: (sectionId?: number) => {
+        if (!this.canEditStructure()) { return; }
+        this._openSortFilterMenu(sectionId);
+      },
       expandSection: () => { this._expandSection(); },
     };
     // Register the cancel command only when necessary to prevent collapsing with other common "escape" usages.
@@ -298,8 +309,9 @@ export class ViewLayout extends DisposableWithEvents implements IDomComponent {
     // Cancel the automatic delay.
     this.layoutSaveDelay.cancel();
     if (!this.layout) { return Promise.resolve(); }
-    // Only save layout changes when the document isn't read-only.
-    if (!this.gristDoc.isReadonly.get()) {
+    // IkaDoc viewer mode uses an internal Grist identity to render documents, so native
+    // Grist readonly is not enough to decide whether layout writes are allowed.
+    if (this.canEditStructure()) {
       specs ??= this.getFullLayoutSpec();
       return this.viewModel.layoutSpecObj.setAndSave(specs).catch(reportError);
     }
@@ -315,6 +327,9 @@ export class ViewLayout extends DisposableWithEvents implements IDomComponent {
    */
   public async removeViewSection(viewSectionRowId: number) {
     this.maximized.set(null);
+    if (!this.canEditStructure()) {
+      return false;
+    }
     const viewSection = this.viewModel.viewSections().all().find(s => s.getRowId() === viewSectionRowId);
     if (!viewSection) {
       throw new Error(`Section not found: ${viewSectionRowId}`);
@@ -371,6 +386,10 @@ export class ViewLayout extends DisposableWithEvents implements IDomComponent {
       Promise.resolve(DELETE_WIDGET as PromptAction);
 
     return possibleActions[await decision]();
+  }
+
+  public canEditStructure() {
+    return !this.gristDoc.isReadonly.get() && canEditIkaDocRuntimeStructure();
   }
 
   public rebuildLayout(layoutSpec: BoxSpec) {

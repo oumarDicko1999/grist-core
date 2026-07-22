@@ -12,6 +12,10 @@ import { makeT } from "app/client/lib/localization";
 import { reportError } from "app/client/models/AppModel";
 import { ColumnRec, TableRec, ViewSectionRec } from "app/client/models/DocModel";
 import { PERMITTED_CUSTOM_WIDGETS } from "app/client/models/features";
+import {
+  canCreateIkaDocRuntimeCharts,
+  canUseIkaDocRuntimeCustomWidgets,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { linkId, NoLink } from "app/client/ui/selectBy";
 import { overflowTooltip, withInfoTooltip } from "app/client/ui/tooltips";
 import { getWidgetTypes } from "app/client/ui/widgetTypesMap";
@@ -132,7 +136,20 @@ function getCompatibleTypes(tableId: TableRef,
     // The type 'chart' makes little sense when creating a new table.
     compatibleTypes = ["record", "single", "detail", "form"];
   }
-  return summarize ? compatibleTypes.filter(el => isSummaryCompatible(el)) : compatibleTypes;
+  const permittedTypes = filterIkaDocWidgetTypes(compatibleTypes);
+  return summarize ? permittedTypes.filter(el => isSummaryCompatible(el)) : permittedTypes;
+}
+
+function filterIkaDocWidgetTypes(types: IWidgetType[]): IWidgetType[] {
+  return types.filter((type) => {
+    if (type === "chart") {
+      return canCreateIkaDocRuntimeCharts();
+    }
+    if (type === "custom" || type.startsWith("custom.")) {
+      return canUseIkaDocRuntimeCustomWidgets();
+    }
+    return true;
+  });
 }
 
 // The Picker disables some choices that do not make much sense.
@@ -332,9 +349,9 @@ const permittedCustomWidgets: IAttachedCustomWidget[] = PERMITTED_CUSTOM_WIDGETS
 // the list of widget types in the order they should be listed by the widget.
 const finalListOfCustomWidgetToShow =  permittedCustomWidgets.filter(a =>
   registeredCustomWidgets.includes(a));
-const sectionTypes: IWidgetType[] = [
+const sectionTypes: IWidgetType[] = filterIkaDocWidgetTypes([
   "record", "single", "detail", "form", "chart", ...finalListOfCustomWidgetToShow, "custom",
-];
+]);
 
 // Returns dom that let a user select a page widget. User can select a widget type (id: 'grid',
 // 'card', ...), one of `tables` and optionally some of the `columns` of the selected table if she

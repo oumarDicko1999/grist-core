@@ -7,6 +7,10 @@ import { createAutomationsPageEntry } from "app/client/ui/AutomationsPageEntry";
 import { showExampleCard } from "app/client/ui/ExampleCard";
 import { buildExamples } from "app/client/ui/ExampleInfo";
 import {
+  canViewIkaDocRuntimeHistory,
+  getIkaDocRuntimeConfig,
+} from "app/client/ui/IkaDocRuntimeAccess";
+import {
   createAccessibilityTools,
   createHelpTools,
   cssChangeDot,
@@ -32,7 +36,6 @@ import { stretchedLink } from "app/client/ui2018/stretchedLink";
 import { unstyledButton } from "app/client/ui2018/unstyled";
 import { buildOpenAssistantButton } from "app/client/widgets/AssistantPopup";
 import { isOwner } from "app/common/roles";
-import { getGristConfig } from "app/common/urlUtils";
 
 import { Computed, computed, Disposable, dom, makeTestId,
   Observable, observable, styled } from "grainjs";
@@ -43,7 +46,7 @@ const t = makeT("Tools");
 
 export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Observable<boolean>): Element {
   const docPageModel = gristDoc.docPageModel;
-  const ikadocConfig = getGristConfig().ikadoc;
+  const ikadocConfig = getIkaDocRuntimeConfig();
   const isDocOwner = isOwner(docPageModel.currentDoc.get());
   const isOverridden = Boolean(docPageModel.userOverride.get());
   const canMakeProposal = Computed.create(owner, (use) => {
@@ -66,7 +69,7 @@ export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Obse
       { "aria-labelledby": "grist-tools-heading" },
       cssTools.cls("-collapsed", use => !use(leftPanelOpen)),
       cssSectionHeader(cssSectionHeaderText(t("TOOLS"), { id: "grist-tools-heading" })),
-      ikadocConfig.capabilities?.canViewHistory ? cssPageEntry(
+      canViewIkaDocRuntimeHistory(ikadocConfig) ? cssPageEntry(
         cssPageButton(cssPageIcon("Log"), cssLinkText(t("Document history")), testId("log"),
           dom.on("click", () => gristDoc.showTool("docHistory"))),
       ) : null,
