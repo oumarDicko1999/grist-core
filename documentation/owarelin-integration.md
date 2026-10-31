@@ -145,6 +145,17 @@ High-risk surfaces include:
 Client-side hiding is only UX. Server, REST, websocket, and user-action policy
 gates are the security boundary.
 
+IkaDoc-owned columns (`lockedColumns` in the runtime config, per table) are
+read-only for users: the policy refuses value writes, renames and removals that
+touch them, and the grid marks them with a lock (GW-RFR-03).
+
+IkaDoc's service account materializes and refreshes source data with its API
+key and the session's validation token in `X-IkaDoc-Session-Token`
+(GW-SRC-06). Such a request skips user capabilities but may only add tables and
+add, update or remove rows in user tables. A wrong token is refused; an API call
+without the token is held to the session's user policy; a browser session cookie
+is never treated as the service.
+
 ## Formula Sandbox
 
 Grist formulas are Python code evaluated by the document data engine. Existing
@@ -237,6 +248,15 @@ When adding a new command:
 2. Add tests for parsing, session matching, and rejected malformed events.
 3. Document the seam or owned handler.
 4. Keep security-sensitive actions backed by backend policy, not only events.
+
+Sources (GW-SRC-10, GW-RFR-05): the runtime config's `sources` list
+(`app/ikadoc/IkaDocSessionSources.ts`: source id, table id, label, origin,
+scope, row count, snapshot time) feeds the left panel. The host replaces it with
+`owarelin:sourcesChanged` (`detail.sources`) and reports changed records with
+`owarelin:sourceRecordsChanged` (`detail.sourceId`, `detail.changedCount`). The
+panel's « Actualiser » only sends `owarelin:refreshRequested` with `sourceId`;
+the IkaDoc page chooses the refresh mode and refreshes. Grist never refreshes on
+its own.
 
 ## Search Integration
 
