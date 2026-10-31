@@ -235,6 +235,44 @@ const IKA_DOC_SHAPES = `
     border-radius: 28px;
   }
 
+  /* Date picker like IkaDoc's (mat-datepicker): 16px panel, 36px round days, today outlined. */
+  html[data-ikadoc-visual-style] .datepicker {
+    border-radius: 16px;
+    padding: 8px;
+  }
+
+  html[data-ikadoc-visual-style] .datepicker td.day,
+  html[data-ikadoc-visual-style] .datepicker span.month,
+  html[data-ikadoc-visual-style] .datepicker span.year {
+    border-radius: 9999px;
+  }
+
+  html[data-ikadoc-visual-style] .datepicker td.day {
+    width: 36px;
+    height: 36px;
+  }
+
+  html[data-ikadoc-visual-style] .datepicker td.day.today:not(.active) {
+    box-shadow: inset 0 0 0 1px var(--grist-theme-primary);
+  }
+
+  html[data-ikadoc-visual-style] .datepicker th {
+    font-weight: 500;
+  }
+
+  html[data-ikadoc-visual-style] .datepicker th.dow {
+    color: var(--grist-theme-text-light);
+  }
+
+  /* Popups shaped like IkaDoc menus: the widget picker and Grist's tips (their card wraps the
+     prompt, hence :has). */
+  html[data-ikadoc-visual-style] .test-wselect-container,
+  html[data-ikadoc-visual-style] :has(> .test-behavioral-prompt) {
+    border-radius: var(--ikadoc-menu-radius);
+    box-shadow: var(--ikadoc-menu-shadow);
+    overflow: hidden;
+  }
+
   html[data-ikadoc-visual-style] button {
     font-weight: var(--ikadoc-control-weight);
   }

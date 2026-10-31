@@ -23,7 +23,6 @@ const ON_PRIMARY_COMPONENTS = [
   "siteSwitcherActiveFg",
   "breadcrumbsTagFg",
   "importerActiveFileFg",
-  "datePickerTodayFg",
   "datePickerSelectedFg",
 ] as const;
 
@@ -68,6 +67,9 @@ function ikaDocTheme(
 
   // Material menus sit on a container surface; Owarelin menus on the plain surface.
   const menuBg = style === "material" ? colors.surfaceContainer : colors.surface;
+
+  // Outlined buttons: Material 3 outlines with `outline`, Owarelin with its soft border.
+  const outlinedButtonBorder = style === "material" ? colors.outline : colors.outlineVariant;
 
   // IkaDoc darkens the primary on hover in light mode and lightens it in dark mode.
   const primaryHover = mixHex(colors.primary, isDark ? "#ffffff" : "#000000", 0.15);
@@ -161,6 +163,11 @@ function ikaDocTheme(
       controlPrimaryBg: colors.primary,
       controlPrimaryHoverBg: primaryHover,
       controlSecondaryHoverBg: colors.surfaceContainerHigh,
+      controlBorder: `1px solid ${outlinedButtonBorder}`,
+
+      // IkaDoc dialogs are flat surfaces, without Grist's drop shadow.
+      modalInnerShadow: "transparent",
+      modalOuterShadow: "transparent",
       buttonGroupBgHover: colors.surfaceContainerHigh,
 
       // IkaDoc's add button shows a plain "+", without Grist's darker circle.
@@ -193,6 +200,10 @@ function ikaDocTheme(
       importerActiveFileBg: colors.primary,
       importerInactiveFileBg: colors.outline,
 
+      // IkaDoc marks today with an outline (IkaDocThemeBridge) and fills only the selected day.
+      datePickerTodayBg: "transparent",
+      datePickerTodayBgHover: colors.surfaceContainerHigh,
+      datePickerTodayFg: colors.onSurface,
       datePickerSelectedBg: colors.primary,
       datePickerSelectedBgHover: primaryHover,
       datePickerRangeStartEndBg: colors.primary,
