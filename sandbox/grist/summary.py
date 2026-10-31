@@ -360,9 +360,15 @@ class SummaryActions(object):
 
     section = self.docmodel.add(view.viewSections, tableRef=summary_table.id,
                                 parentKey=section_type)[0]
-    self.docmodel.add(section.fields,
-                      colRef=[c.id for c in groupby_columns + formula_columns
-                              if c.colId != "group"])
+
+    shown_columns = [c for c in formula_columns if c.colId != "group"]
+
+    # Owarelin/IkaDoc: a chart plots every numeric field as a series, so 'count' next to a sum
+    # makes an unreadable chart. Leave 'count' out of new summary charts that have a sum.
+    if section_type == 'chart' and any(c.colId != "count" for c in shown_columns):
+      shown_columns = [c for c in shown_columns if c.colId != "count"]
+
+    self.docmodel.add(section.fields, colRef=[c.id for c in groupby_columns + shown_columns])
     return section
 
 
