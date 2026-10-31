@@ -3,9 +3,13 @@ import {
   IkaDocEditorAdmissionClient,
   IkaDocEditorAdmissionDenialCode,
 } from "app/ikadoc/IkaDocEditorAdmission";
+import { toIkaDocBrowserRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 import { expressWrap } from "app/server/lib/expressWrap";
 import { DocTemplate } from "app/server/lib/GristServer";
-import { IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimePolicy";
+import {
+  IKADOC_RUNTIME_PARTICIPANT_COOKIE,
+  IKADOC_RUNTIME_SESSION_COOKIE,
+} from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import { getEndUserProtocol } from "app/server/lib/requestUtils";
 import { ISendAppPageOptions } from "app/server/lib/sendAppPage";
@@ -47,22 +51,33 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
     });
 
     if (result.kind === "denied") {
-      res.status(getIkaDocAdmissionDeniedStatus(result.code)).type("text/plain").send(result.safeMessage);
+      // GW-SHL-02: the IkaDoc refusal page, never raw text; the code picks the explanation shown.
+      await sendAppPage(req, res, {
+        path: "error.html",
+        status: getIkaDocAdmissionDeniedStatus(result.code),
+        config: {
+          errPage: "access-denied",
+          errMessage: result.safeMessage,
+          errDetails: { ikadocRefusal: result.code },
+        },
+      });
       return;
     }
 
     const body = await getDocTemplate();
     const runtimeConfig = result.admission.runtimeConfig;
-    runtimeSessionRegistry?.register(
-      runtimeConfig,
-      Date.now(),
-    );
-    res.cookie(IKADOC_RUNTIME_SESSION_COOKIE, runtimeConfig.sessionId, {
+    const cookieOptions = {
       httpOnly: true,
       path: "/",
-      sameSite: "lax",
+      sameSite: "lax" as const,
       secure: getEndUserProtocol(req) === "https",
-    });
+    };
+    // This browser's own entry: several people may be in the session, each validated as themselves.
+    const participant = runtimeSessionRegistry?.register(runtimeConfig, Date.now());
+    res.cookie(IKADOC_RUNTIME_SESSION_COOKIE, runtimeConfig.sessionId, cookieOptions);
+    if (participant) {
+      res.cookie(IKADOC_RUNTIME_PARTICIPANT_COOKIE, participant.participantHandle, cookieOptions);
+    }
     await sendAppPage(req, res, {
       path: "",
       content: body.page,
@@ -75,7 +90,7 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
         enableWidgetRepository: false,
         experimentalPlugins: false,
         getWorker: { [runtimeConfig.documentId]: runtimeConfig.workerUrl },
-        ikadoc: runtimeConfig,
+        ikadoc: toIkaDocBrowserRuntimeConfig(runtimeConfig),
         permittedCustomWidgets: [],
         pluginUrl: IKADOC_RUNTIME_PLUGIN_URL,
         plugins: [],

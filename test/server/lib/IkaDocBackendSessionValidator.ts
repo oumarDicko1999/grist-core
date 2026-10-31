@@ -7,7 +7,7 @@ import { AddressInfo } from "net";
 import { assert } from "chai";
 
 describe("IkaDoc backend session validator", function() {
-  it("posts session, document, and operation proof with the configured bearer token", async function() {
+  it("posts session, document, operation proof, and the session validation token", async function() {
     const receivedRequests: CapturedValidationRequest[] = [];
     const server = await startValidationServer(async (req, body) => {
       receivedRequests.push({ headers: req.headers, body });
@@ -15,10 +15,7 @@ describe("IkaDoc backend session validator", function() {
     });
 
     try {
-      const validator = new IkaDocBackendSessionValidator(
-        "validation-token",
-        1000,
-      );
+      const validator = new IkaDocBackendSessionValidator(1000);
       await validator.validate(
         runtimeSession(server.url),
         "apply document edits",
@@ -28,6 +25,10 @@ describe("IkaDoc backend session validator", function() {
       assert.equal(
         receivedRequests[0].headers.authorization,
         "Bearer validation-token",
+      );
+      assert.equal(
+        receivedRequests[0].headers["x-ikadoc-grist-session"],
+        "session-1",
       );
       assert.deepEqual(receivedRequests[0].body, {
         sessionId: "session-1",
@@ -47,10 +48,7 @@ describe("IkaDoc backend session validator", function() {
     }));
 
     try {
-      const validator = new IkaDocBackendSessionValidator(
-        "validation-token",
-        1000,
-      );
+      const validator = new IkaDocBackendSessionValidator(1000);
       const error = await captureError(() =>
         validator.validate(runtimeSession(server.url), "apply document edits"),
       );
@@ -72,11 +70,7 @@ describe("IkaDoc backend session validator", function() {
     });
 
     try {
-      const validator = new IkaDocBackendSessionValidator(
-        "validation-token",
-        1000,
-        server.url,
-      );
+      const validator = new IkaDocBackendSessionValidator(1000, server.url);
       await validator.validate(
         runtimeSession(
           "https://records.owarelin.localhost/api/grist/editor/session-validation",
@@ -139,6 +133,8 @@ async function readRequestBody(req: IncomingMessage): Promise<unknown> {
 function runtimeSession(validationUrl: string): IkaDocRuntimeSession {
   return {
     sessionId: "session-1",
+    participantHandle: "participant-handle-1",
+    userId: "user-1",
     documentId: "doc-1",
     documentUrlId: "doc-url-1",
     registeredAtMs: Date.now(),
@@ -159,6 +155,7 @@ function runtimeSession(validationUrl: string): IkaDocRuntimeSession {
       workerUrl: "/api/docs/doc-1",
       statusUrl: "/api/grist/sessions/session-1",
       validationUrl,
+      validationToken: "validation-token",
       discardUrl: "/api/grist/sessions/session-1/cancel",
       capabilities: {
         canEditCells: true,

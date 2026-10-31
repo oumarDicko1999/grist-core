@@ -143,10 +143,21 @@ export class DocWorker {
       applyUserActions: method("editors", "applyUserActions", {
         operation: "apply document edits",
         classifyUserActions: true,
+        recordsActions: true,
       }),
       applyUserActionsById: method("editors", "applyUserActionsById", {
-        capability: "canEditCells",
+        capabilities: [
+          "canEditCells",
+          "canEditStructure",
+          "canUseFormulas",
+          "canCreateCharts",
+          "canUseCustomWidgets",
+          "canUseAttachments",
+          "canUseExternalData",
+          "canManageAccess",
+        ],
         operation: "apply document edits by id",
+        recordsActions: true,
       }),
       findColFromValues: method("viewers", "findColFromValues"),
       getFormulaError: method("viewers", "getFormulaError"),
@@ -204,8 +215,12 @@ export class DocWorker {
         capability: "canShare",
         operation: "read share link",
       }),
-      startTiming: method("owners", "startTiming"),
-      stopTiming: method("owners", "stopTiming"),
+      startTiming: method("owners", "startTiming", {
+        operation: "use document timing diagnostics",
+      }),
+      stopTiming: method("owners", "stopTiming", {
+        operation: "use document timing diagnostics",
+      }),
       getAssistantState: method("owners", "getAssistantState", {
         operation: "use assistant",
       }),

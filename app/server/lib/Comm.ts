@@ -46,7 +46,10 @@ import { Hosts, RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristLoginMiddleware, GristServer } from "app/server/lib/GristServer";
 import { GristServerSocket } from "app/server/lib/GristServerSocket";
 import { GristSocketServer } from "app/server/lib/GristSocketServer";
-import { createIkaDocRuntimeAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
+import {
+  createIkaDocRuntimeAuthSession,
+  ikaDocRuntimeSessionFromAuthSession,
+} from "app/server/lib/IkaDocRuntimeAuth";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import { IPermitStore } from "app/server/lib/Permit";
@@ -108,6 +111,15 @@ export class Comm extends EventEmitter {
   ) {
     super();
     this._wss = this._startServer();
+    // GR-03: a person who leaves the registry (removed, refused, expired) loses their connections.
+    this._options.ikadocRuntimeSessionRegistry?.onUnregistered((session) => {
+      for (const client of Array.from(this._clients.values())) {
+        if (ikaDocRuntimeSessionFromAuthSession(client.authSession) === session) {
+          client.interruptConnection();
+          client.destroy();
+        }
+      }
+    });
   }
 
   /**

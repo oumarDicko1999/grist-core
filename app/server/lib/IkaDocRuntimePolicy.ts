@@ -1,6 +1,7 @@
 import { ApiError } from "app/common/ApiError";
 import { IkaDocCapabilities } from "app/ikadoc/IkaDocCapabilities";
 import {
+  attachedIkaDocRuntimeSession,
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
   IkaDocRuntimeSessionResolution,
@@ -12,10 +13,33 @@ import fetch from "node-fetch";
 
 type IkaDocCapabilityName = keyof IkaDocCapabilities;
 
+interface IkaDocBlockedCapabilityContext {
+  missingCapability?: IkaDocCapabilityName;
+  actionName?: string;
+  tableId?: string;
+}
+
 export const IKADOC_RUNTIME_SESSION_COOKIE = "IKADOC_GRIST_GATEWAY_SESSION";
+/** Names this browser's own entry in a session several people share (GR-02); see the registry. */
+export const IKADOC_RUNTIME_PARTICIPANT_COOKIE = "IKADOC_GRIST_PARTICIPANT";
+
+/**
+ * GR-07: the user actions an operation applies, identified without their content. IkaDoc chains
+ * this into the person's evidence before the actions apply, so none apply unrecorded.
+ */
+export interface IkaDocValidatedAction {
+  /** SHA-256, hex, of the actions exactly as received. */
+  digest: string;
+  /** Action names in order (`UpdateRecord`, `AddColumn`, ...), at most a bounded number. */
+  names: string[];
+}
 
 export interface IkaDocRuntimeSessionValidator {
-  validate(session: IkaDocRuntimeSession, operation: string): Promise<void>;
+  validate(
+    session: IkaDocRuntimeSession,
+    operation: string,
+    action?: IkaDocValidatedAction,
+  ): Promise<void>;
 }
 
 const BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS = 5000;
@@ -50,6 +74,12 @@ const CELL_EDIT_ACTIONS = new Set([
   "BulkRemoveRecord",
   "ReplaceTableData",
 ]);
+
+/**
+ * SR-13: Grist's own sharing of a document (its access list, and moving it to another
+ * workspace). IkaDoc alone decides who may open a document, so a runtime session never uses them.
+ */
+export const IKADOC_NATIVE_SHARING_ROUTES = ["/api/docs/:did/access", "/api/docs/:did/move"];
 
 export function requireIkaDocCapability(
   registry: IkaDocRuntimeSessionRegistry | undefined,
@@ -89,6 +119,7 @@ export function requireIkaDocCapability(
       operation,
       blockedReason(operation),
       req.headers.cookie,
+      { missingCapability: capability },
     );
     next(deniedIkaDocRuntimeOperation(operation, session));
   };
@@ -151,7 +182,8 @@ function resolveIkaDocRuntimeSessionForRequest(
     return { kind: "missing" };
   }
   const docId = req.params?.docId;
-  const cookieSession = ikadocRuntimeSessionFromCookie(registry, req);
+  const cookieSession =
+    attachedIkaDocRuntimeSession(req) ?? ikadocRuntimeSessionFromCookie(registry, req);
   if (cookieSession) {
     if (
       typeof docId === "string" &&
@@ -161,6 +193,10 @@ function resolveIkaDocRuntimeSessionForRequest(
       return { kind: "forbidden", session: cookieSession };
     }
     return { kind: "active", session: cookieSession };
+  }
+  // A request that names its own session never borrows someone else's entry for the document.
+  if (hasIkaDocRuntimeSessionCookie(req)) {
+    return { kind: "missing" };
   }
   if (typeof docId !== "string" || docId.length === 0) {
     return { kind: "missing" };
@@ -261,6 +297,7 @@ export async function validateIkaDocRuntimeSession(
   session: IkaDocRuntimeSession,
   documentId: string,
   operation: string,
+  action?: IkaDocValidatedAction,
 ): Promise<void> {
   if (!sessionMatchesDocumentId(session, documentId)) {
     throw deniedIkaDocRuntimeOperation(
@@ -275,7 +312,7 @@ export async function validateIkaDocRuntimeSession(
     );
   }
   if (validator) {
-    await validator.validate(session, operation);
+    await validator.validate(session, operation, action);
   }
 }
 
@@ -413,6 +450,8 @@ function assertIkaDocUserActionAllowed(
         session,
         `apply ${actionName}`,
         blockedReason(`apply ${actionName}`),
+        undefined,
+        { missingCapability: requiredCapability, actionName, tableId },
       );
       throw deniedIkaDocRuntimeOperation(`apply ${actionName}`, session);
     }
@@ -625,15 +664,25 @@ function ikadocRuntimeSessionFromCookie(
   registry: IkaDocRuntimeSessionRegistry,
   req: Request,
 ): IkaDocRuntimeSession | undefined {
+  const handle = ikaDocRuntimeParticipantCookie(req);
+  const session = handle ? registry.getByHandle(handle) : undefined;
   const sessionId = ikaDocRuntimeSessionCookie(req);
-  return sessionId ? registry.getBySessionId(sessionId) : undefined;
+  return session && (!sessionId || sessionId === session.sessionId) ? session : undefined;
 }
 
 export function hasIkaDocRuntimeSessionCookie(req: Request): boolean {
-  return ikaDocRuntimeSessionCookie(req) !== undefined;
+  return ikaDocRuntimeSessionCookie(req) !== undefined || ikaDocRuntimeParticipantCookie(req) !== undefined;
 }
 
 export function ikaDocRuntimeSessionCookie(req: Request): string | undefined {
+  return ikaDocCookie(req, IKADOC_RUNTIME_SESSION_COOKIE);
+}
+
+export function ikaDocRuntimeParticipantCookie(req: Request): string | undefined {
+  return ikaDocCookie(req, IKADOC_RUNTIME_PARTICIPANT_COOKIE);
+}
+
+function ikaDocCookie(req: Request, cookieName: string): string | undefined {
   const cookieHeader = req.headers.cookie;
   if (typeof cookieHeader !== "string" || cookieHeader.length === 0) {
     return undefined;
@@ -644,7 +693,7 @@ export function ikaDocRuntimeSessionCookie(req: Request): string | undefined {
       continue;
     }
     const name = rawCookie.slice(0, separator).trim();
-    if (name !== IKADOC_RUNTIME_SESSION_COOKIE) {
+    if (name !== cookieName) {
       continue;
     }
     const value = rawCookie.slice(separator + 1).trim();
@@ -653,15 +702,27 @@ export function ikaDocRuntimeSessionCookie(req: Request): string | undefined {
   return undefined;
 }
 
+/**
+ * GW-SHL-03: refusal text in the language of the IkaDoc session (English without a session).
+ * Most refusals happen where no request language is at hand, but the session carries one.
+ */
+const IKADOC_RUNTIME_DENIAL_MESSAGES = {
+  fr: "Cette action n'est pas disponible dans cet éditeur de tableur.",
+  en: "This action is disabled for this spreadsheet editor.",
+} as const;
+
 export function deniedIkaDocRuntimeOperation(
   operation: string,
-  _session?: IkaDocRuntimeSession,
+  session?: IkaDocRuntimeSession,
 ): ApiError {
+  const isFrench = session?.config.locale.toLowerCase().startsWith("fr") ?? false;
+  const language = isFrench ? "fr" : "en";
+
   return new ApiError(
     `This Grist session does not allow ${operation}.`,
     403,
     {
-      userError: "This action is disabled for this spreadsheet editor.",
+      userError: IKADOC_RUNTIME_DENIAL_MESSAGES[language],
     },
   );
 }
@@ -682,6 +743,7 @@ function reportBlockedCapability(
   capability: string,
   reason: string,
   cookieHeader?: string,
+  context: IkaDocBlockedCapabilityContext = {},
 ): void {
   const url = session.config.blockedCapabilityUrl;
   if (!url) {
@@ -698,13 +760,31 @@ function reportBlockedCapability(
   fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({ capability, reason }),
+    body: JSON.stringify({
+      capability,
+      reason,
+      sessionId: session.sessionId,
+      documentId: session.documentId,
+      documentUrlId: session.documentUrlId,
+      mode: session.config.mode,
+      sourceType: session.config.sourceType,
+      missingCapability: context.missingCapability,
+      actionName: context.actionName,
+      tableId: context.tableId,
+    }),
     timeout: BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS,
   })
     .then((response) => {
       if (!response.ok) {
         log.warn("IkaDoc blocked capability audit callback failed", {
           sessionId: session.sessionId,
+          documentId: session.documentId,
+          mode: session.config.mode,
+          sourceType: session.config.sourceType,
+          capability,
+          missingCapability: context.missingCapability,
+          actionName: context.actionName,
+          tableId: context.tableId,
           status: response.status,
           statusText: response.statusText,
         });
@@ -715,6 +795,13 @@ function reportBlockedCapability(
         "IkaDoc blocked capability audit callback could not reach backend",
         {
           sessionId: session.sessionId,
+          documentId: session.documentId,
+          mode: session.config.mode,
+          sourceType: session.config.sourceType,
+          capability,
+          missingCapability: context.missingCapability,
+          actionName: context.actionName,
+          tableId: context.tableId,
           message: error instanceof Error ? error.message : String(error),
         },
       );

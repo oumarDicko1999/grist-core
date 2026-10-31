@@ -171,7 +171,12 @@ WORKDIR /grist
 # with this setting. If you don't want these, set NODE_ENV to
 # development.
 #
+# Owarelin/IkaDoc (GW-SEC-03): formulas run in gVisor unless the deployment explicitly picks
+# another sandbox; upstream otherwise falls back to "unsandboxed". If runsc cannot start,
+# sandbox/run.sh refuses to boot instead of running formulas unprotected.
+#
 ENV \
+  GRIST_SANDBOX_FLAVOR=gvisor \
   GRIST_ORG_IN_PATH=true \
   GRIST_HOST=0.0.0.0 \
   GRIST_SINGLE_PORT=true \

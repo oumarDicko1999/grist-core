@@ -119,6 +119,7 @@ import {
   IkaDocRuntimeSessionValidator,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
+import { IkaDocRuntimeSessionRevalidator } from "app/server/lib/IkaDocRuntimeSessionRevalidator";
 import { EmitNotifier, INotifier } from "app/server/lib/INotifier";
 import { InstallAdmin } from "app/server/lib/InstallAdmin";
 import { IOAuthValidator } from "app/server/lib/IOAuthValidator";
@@ -301,6 +302,7 @@ export class FlexServer implements GristServer {
     IkaDocRuntimeSessionValidator | undefined;
 
   private readonly _ikadocForwardAuthSecret: string | undefined;
+  private _ikadocRuntimeSessionRevalidator: IkaDocRuntimeSessionRevalidator | undefined;
   private _internalPermitStore: IPermitStore; // store for permits that stay within our servers
   private _externalPermitStore: IPermitStore; // store for permits that pass through outside servers
   private _disabled: boolean = false;
@@ -408,12 +410,18 @@ export class FlexServer implements GristServer {
     );
     this._ikadocRuntimeSessionValidator = ikadocAdmissionConfig ?
       new IkaDocBackendSessionValidator(
-        ikadocAdmissionConfig.bearerToken,
         ikadocAdmissionConfig.timeoutMs,
         ikadocAdmissionConfig.validationUrl,
       ) :
       undefined;
     this._ikadocForwardAuthSecret = ikadocAdmissionConfig?.forwardAuthSecret;
+    if (this._ikadocRuntimeSessionValidator) {
+      this._ikadocRuntimeSessionRevalidator = new IkaDocRuntimeSessionRevalidator(
+        this._ikadocRuntimeSessionRegistry,
+        this._ikadocRuntimeSessionValidator,
+      );
+      this._ikadocRuntimeSessionRevalidator.start();
+    }
 
     this._deploymentType = this.create.deploymentType();
     if (process.env.GRIST_TEST_SERVER_DEPLOYMENT_TYPE) {
@@ -1563,6 +1571,7 @@ export class FlexServer implements GristServer {
 
   public async close() {
     this._processMonitorStop?.();
+    this._ikadocRuntimeSessionRevalidator?.stop();
     await this._updateManager?.clear();
     if (this.usage) {
       await this.usage.close();

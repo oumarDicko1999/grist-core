@@ -261,6 +261,10 @@ export class DocWorkerApi {
     );
     const denyIkaDocProposal = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use proposals");
     const denyIkaDocAssistant = denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use assistant");
+    const denyIkaDocTiming = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry,
+      "use document timing diagnostics",
+    );
     const denyIkaDocDocumentCreation = denyIkaDocRuntimeOperation(
       this._ikadocRuntimeSessionRegistry,
       "create or import Grist documents",
@@ -1649,7 +1653,7 @@ export class DocWorkerApi {
 
     // GET /api/docs/:docId/timings
     // Checks if timing is on for the document.
-    this._app.get("/api/docs/:docId/timing", isOwner, withDoc(async (activeDoc, req, res) => {
+    this._app.get("/api/docs/:docId/timing", isOwner, denyIkaDocTiming, withDoc(async (activeDoc, req, res) => {
       if (!activeDoc.isTimingOn) {
         res.json({ status: "disabled" });
       } else {
@@ -1661,7 +1665,7 @@ export class DocWorkerApi {
 
     // POST /api/docs/:docId/timings/start
     // Start a timing for the document.
-    this._app.post("/api/docs/:docId/timing/start", isOwner, withDoc(async (activeDoc, req, res) => {
+    this._app.post("/api/docs/:docId/timing/start", isOwner, denyIkaDocTiming, withDoc(async (activeDoc, req, res) => {
       if (activeDoc.isTimingOn) {
         res.status(400).json({ error: `Timing already started for ${activeDoc.docName}` });
         return;
@@ -1673,7 +1677,7 @@ export class DocWorkerApi {
 
     // POST /api/docs/:docId/timings/stop
     // Stop a timing for the document.
-    this._app.post("/api/docs/:docId/timing/stop", isOwner, withDoc(async (activeDoc, req, res) => {
+    this._app.post("/api/docs/:docId/timing/stop", isOwner, denyIkaDocTiming, withDoc(async (activeDoc, req, res) => {
       if (!activeDoc.isTimingOn) {
         res.status(400).json({ error: `Timing not started for ${activeDoc.docName}` });
         return;

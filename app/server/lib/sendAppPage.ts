@@ -28,6 +28,7 @@ import {
   getTemplateOrg,
   getUserPresenceMaxUsers,
 } from "app/server/lib/gristSettings";
+import { readIkaDocDeploymentPageConfig } from "app/server/lib/IkaDocAdmissionConfig";
 import { getSupportedEngineChoices } from "app/server/lib/serverUtils";
 import { readLoadedLngs, readLoadedNamespaces } from "app/server/localization";
 
@@ -131,6 +132,8 @@ export function makeGristConfig(options: MakeGristConfigOptions): GristLoadConfi
     assistant: getAssistantConfig(server),
     permittedCustomWidgets: getPermittedCustomWidgets(server),
     supportEmail: SUPPORT_EMAIL,
+    // Owarelin/IkaDoc: lets refusal and sign-in pages look like IkaDoc (GW-SHL-02).
+    ikadocDeployment: readIkaDocDeploymentPageConfig(),
     userLocale: (req as RequestWithLogin | undefined)?.user?.options?.locale,
     telemetry: server?.getTelemetry().getTelemetryConfig(req as RequestWithLogin | undefined),
     deploymentType: server?.getDeploymentType(),

@@ -36,6 +36,7 @@ describe("IkaDoc GristWSConnection", function() {
           workerUrl: IKA_DOC_WORKER_URL,
           statusUrl: "/ikadoc/sessions/session-1/status",
           validationUrl: "/ikadoc/editor/session-validation",
+          validationToken: "validation-token",
           discardUrl: "/ikadoc/sessions/session-1/discard",
           capabilities: DENIED_IKADOC_CAPABILITIES,
           locale: "en",

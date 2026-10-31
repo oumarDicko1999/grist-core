@@ -1,12 +1,13 @@
-import { IkaDocRuntimeSessionValidator } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionValidator, IkaDocValidatedAction } from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSession } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 
 import fetch, { RequestInit } from "node-fetch";
 
+const IKADOC_GRIST_SESSION_HEADER = "X-IkaDoc-Grist-Session";
+
 export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValidator {
   public constructor(
-    private readonly _bearerToken: string | undefined,
     private readonly _timeoutMs: number,
     private readonly _validationUrl?: string,
   ) {}
@@ -14,8 +15,10 @@ export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValida
   public async validate(
     session: IkaDocRuntimeSession,
     operation: string,
+    action?: IkaDocValidatedAction,
   ): Promise<void> {
-    if (!this._bearerToken) {
+    const validationToken = session.config.validationToken;
+    if (!validationToken) {
       throw new Error("Spreadsheet editor validation is not configured.");
     }
 
@@ -23,14 +26,16 @@ export class IkaDocBackendSessionValidator implements IkaDocRuntimeSessionValida
       method: "POST",
       headers: {
         "Accept": "application/json",
-        "Authorization": `Bearer ${this._bearerToken}`,
+        "Authorization": `Bearer ${validationToken}`,
         "Content-Type": "application/json",
+        [IKADOC_GRIST_SESSION_HEADER]: session.sessionId,
       },
       body: JSON.stringify({
         sessionId: session.sessionId,
         documentId: session.documentId,
         documentUrlId: session.documentUrlId,
         operation,
+        action,
       }),
       timeout: this._timeoutMs,
     };

@@ -14,32 +14,32 @@ const SERVER_SEAMS = [
         this._ikadocEditorAdmissionClient,
         this._ikadocForwardAuthSecret,
       )`,
-      "this._app.use(\n      \"/api/docs/:docId\"",
-      "\"canEditCells\"",
-      "\"canUseAttachments\"",
-      "\"canExportFromBrowser\"",
-      "\"canViewHistory\"",
+      'this._app.use(\n      "/api/docs/:docId"',
+      '"canEditCells"',
+      '"canUseAttachments"',
+      '"canExportFromBrowser"',
+      '"canViewHistory"',
       "requireIkaDocHistoryView",
-      "\"canManageAccess\"",
-      "\"canUseExternalData\"",
-      "denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, \"fork document\")",
-      "denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, \"copy document\")",
-      "denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, \"use proposals\")",
-      "denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, \"use assistant\")",
+      '"canManageAccess"',
+      '"canUseExternalData"',
+      'denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "fork document")',
+      'denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "copy document")',
+      'denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use proposals")',
+      'denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use assistant")',
       "requireIkaDocUserActionsForRequest(this._ikadocRuntimeSessionRegistry)",
-      "this._app.get(\"/api/docs/:docId/download\", canView, requireIkaDocBrowserExport",
-      "this._app.post(\"/api/docs/:docId/uploads\", canView, requireIkaDocAttachmentUse",
-      "this._app.get(\"/api/docs/:docId/attachments\", canView, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/attachments/transferAll\", isOwner, requireIkaDocAttachmentUse",
-      "this._app.get(\"/api/docs/:docId/attachments/transferStatus\", canView, requireIkaDocAttachmentUse",
-      "this._app.get(\"/api/docs/:docId/attachments/store\", canView, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/attachments/store\", isOwner, requireIkaDocAttachmentUse",
-      "this._app.get(\"/api/docs/:docId/attachments/stores\", isOwner, requireIkaDocAttachmentUse",
-      "this._app.get(\"/api/docs/:docId/attachments/:attId\", canView, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/attachments/updateUsed\", canEdit, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/attachments/removeUnused\", isOwner, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/attachments/verifyFiles\", isOwner, requireIkaDocAttachmentUse",
-      "this._app.post(\"/api/docs/:docId/fork\", canView, denyIkaDocFork",
+      'this._app.get("/api/docs/:docId/download", canView, requireIkaDocBrowserExport',
+      'this._app.post("/api/docs/:docId/uploads", canView, requireIkaDocAttachmentUse',
+      'this._app.get("/api/docs/:docId/attachments", canView, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/attachments/transferAll", isOwner, requireIkaDocAttachmentUse',
+      'this._app.get("/api/docs/:docId/attachments/transferStatus", canView, requireIkaDocAttachmentUse',
+      'this._app.get("/api/docs/:docId/attachments/store", canView, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/attachments/store", isOwner, requireIkaDocAttachmentUse',
+      'this._app.get("/api/docs/:docId/attachments/stores", isOwner, requireIkaDocAttachmentUse',
+      'this._app.get("/api/docs/:docId/attachments/:attId", canView, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/attachments/updateUsed", canEdit, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/attachments/removeUnused", isOwner, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/attachments/verifyFiles", isOwner, requireIkaDocAttachmentUse',
+      'this._app.post("/api/docs/:docId/fork", canView, denyIkaDocFork',
     ],
   },
   {
@@ -49,8 +49,8 @@ const SERVER_SEAMS = [
       "timeout: BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS",
       "sessionMatchesDocumentId",
       "assertIkaDocUserActionsAllowedForSession",
-      "tableId === \"_grist_Cells\"",
-      "return [\"canUseComments\"]",
+      'tableId === "_grist_Cells"',
+      'return ["canUseComments"]',
     ],
   },
   {
@@ -71,12 +71,19 @@ const SERVER_SEAMS = [
     ],
   },
   {
+    file: "Dockerfile",
+    anchors: [
+      "Owarelin/IkaDoc (GW-SEC-03)",
+      "GRIST_SANDBOX_FLAVOR=gvisor",
+    ],
+  },
+  {
     file: "app/server/lib/AppEndpoint.ts",
     anchors: [
       "denyIkaDocRuntimeOperation(",
-      "\"browse Grist home, template, or workspace pages\"",
-      "app.get([\"/\", \"/ws/:wsId\", \"/p/:page\"], denyIkaDocHomeSurface",
-      "app.get(\"/apiconsole\", denyIkaDocHomeSurface",
+      '"browse Grist home, template, or workspace pages"',
+      'app.get(["/", "/ws/:wsId", "/p/:page"], denyIkaDocHomeSurface',
+      'app.get("/apiconsole", denyIkaDocHomeSurface',
       "attachIkaDocEditorEndpoint({",
     ],
   },
@@ -86,24 +93,27 @@ const SERVER_SEAMS = [
       "activeDocMethod.bind(",
       "this._ikadocRuntimeSessionRegistry",
       "this._ikadocRuntimeSessionValidator",
-      "\"applyUserActions\"",
+      '"applyUserActions"',
       "classifyUserActions: true",
-      "\"addAttachments\"",
-      "\"importFiles\"",
-      "\"fetchURL\"",
-      "\"getActionSummaries\"",
-      "\"fork\"",
-      "\"getUsersForViewAs\"",
-      "\"checkAclFormula\"",
+      '"applyUserActionsById"',
+      "capabilities: [",
+      '"canUseCustomWidgets"',
+      '"addAttachments"',
+      '"importFiles"',
+      '"fetchURL"',
+      '"getActionSummaries"',
+      '"fork"',
+      '"getUsersForViewAs"',
+      '"checkAclFormula"',
       "check access formula",
-      "\"getAclResources\"",
+      '"getAclResources"',
       "list access resources",
-      "\"getAssistantState\"",
-      "\"applyProposal\"",
-      "\"getAssistance\"",
-      "\"getAccessToken\"",
-      "\"getShare\"",
-      "\"forwardPluginRpc\"",
+      '"getAssistantState"',
+      '"applyProposal"',
+      '"getAssistance"',
+      '"getAccessToken"',
+      '"getShare"',
+      '"forwardPluginRpc"',
     ],
   },
 ] as const;
@@ -111,11 +121,16 @@ const SERVER_SEAMS = [
 describe("IkaDoc server seams", function() {
   for (const seam of SERVER_SEAMS) {
     it(`keeps IkaDoc runtime policy anchors in ${seam.file}`, function() {
-      const source = readFileSync(resolve(process.cwd(), seam.file), "utf8");
+      const source = withoutLineWrapping(readFileSync(resolve(process.cwd(), seam.file), "utf8"));
 
       for (const anchor of seam.anchors) {
-        assert.include(source, anchor);
+        assert.include(source, withoutLineWrapping(anchor));
       }
     });
   }
 });
+
+/** The same call reads the same whether the formatter wraps its arguments or not. */
+function withoutLineWrapping(code: string): string {
+  return code.replace(/\(\s+/g, "(").replace(/,\s*\)/g, ")").replace(/,\s+/g, ", ");
+}

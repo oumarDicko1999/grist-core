@@ -53,6 +53,7 @@ describe("gristUrls", function() {
         workerUrl: "/ikadoc/sessions/session-1/worker",
         statusUrl: "/ikadoc/sessions/session-1/status",
         validationUrl: "/ikadoc/editor/session-validation",
+        validationToken: "validation-token",
         discardUrl: "/ikadoc/sessions/session-1/discard",
         locale: "en",
       },

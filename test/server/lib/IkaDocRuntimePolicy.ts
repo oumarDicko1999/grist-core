@@ -9,11 +9,13 @@ import {
 } from "app/ikadoc/IkaDocEditorAdmission";
 import { DocAuthorizerImpl } from "app/server/lib/DocAuthorizer";
 import { activeDocMethod } from "app/server/lib/IkaDocActiveDocMethod";
+import { readIkaDocRuntimeOnly } from "app/server/lib/IkaDocAdmissionConfig";
 import {
   IKADOC_FORWARD_AUTH_PATH_HEADER,
   IKADOC_FORWARD_AUTH_SESSION_HEADER,
   IKADOC_FORWARD_AUTH_SIGNATURE_HEADER,
   IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER,
+  IKADOC_FORWARD_AUTH_USER_HEADER,
   ikaDocForwardAuthSignature,
 } from "app/server/lib/IkaDocForwardAuthAssertion";
 import {
@@ -23,14 +25,22 @@ import {
 } from "app/server/lib/IkaDocRuntimeAuth";
 import {
   assertIkaDocUserActionsAllowedForDocument,
+  deniedIkaDocRuntimeOperation,
   denyIkaDocRuntimeOperation,
   denyIkaDocRuntimeOperationForDocument,
+  IKADOC_NATIVE_SHARING_ROUTES,
+  IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   IKADOC_RUNTIME_SESSION_COOKIE,
+  IkaDocValidatedAction,
   requireIkaDocCapability,
   requireIkaDocRuntimeCapabilityForDocument,
 } from "app/server/lib/IkaDocRuntimePolicy";
-import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
+import {
+  IkaDocRuntimeSession,
+  IkaDocRuntimeSessionRegistry,
+} from "app/server/lib/IkaDocRuntimeSessionRegistry";
 
+import { createHash } from "crypto";
 import * as http from "http";
 
 import axios from "axios";
@@ -85,6 +95,15 @@ describe("IkaDoc runtime policy", function() {
     });
   });
 
+  it("explains a refusal in the language of the IkaDoc session (GW-SHL-03)", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const french = registry.register({ ...runtimeConfig({}), locale: "fr-FR" });
+
+    const error = deniedIkaDocRuntimeOperation("export document", french);
+
+    assert.equal(error.details?.userError, "Cette action n'est pas disponible dans cet éditeur de tableur.");
+  });
+
   it("denies editor-only browser capabilities in viewer mode even when granted", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(
@@ -98,11 +117,7 @@ describe("IkaDoc runtime policy", function() {
     const app = express();
     app.post(
       "/api/docs/:docId/save",
-      requireIkaDocCapability(
-        registry,
-        "canSaveToIkaDoc",
-        "save document",
-      ),
+      requireIkaDocCapability(registry, "canSaveToIkaDoc", "save document"),
       (_req, res) => res.status(200).json({ ok: true }),
     );
     attachJsonErrorHandler(app);
@@ -183,6 +198,12 @@ describe("IkaDoc runtime policy", function() {
       assert.deepEqual(audit.requests[0].body, {
         capability: "export document",
         reason: "Forked Grist runtime denied export document.",
+        sessionId: "session-1",
+        documentId: "doc-1",
+        documentUrlId: "doc-url-1",
+        mode: "editor",
+        sourceType: "document-file",
+        missingCapability: "canExportFromBrowser",
       });
     } finally {
       await audit.close();
@@ -230,6 +251,12 @@ describe("IkaDoc runtime policy", function() {
       assert.deepEqual(audit.requests[0].body, {
         capability: "export document",
         reason: "Forked Grist runtime denied export document.",
+        sessionId: "session-1",
+        documentId: "doc-1",
+        documentUrlId: "doc-url-1",
+        mode: "editor",
+        sourceType: "document-file",
+        missingCapability: "canExportFromBrowser",
       });
     } finally {
       await audit.close();
@@ -276,7 +303,7 @@ describe("IkaDoc runtime policy", function() {
     attachJsonErrorHandler(app);
 
     const response = await requestApp(app, "/api/docs/doc-1/download", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 403);
@@ -308,7 +335,7 @@ describe("IkaDoc runtime policy", function() {
     attachJsonErrorHandler(app);
 
     const response = await requestApp(app, "/api/docs/doc-2/download", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 403);
@@ -316,6 +343,89 @@ describe("IkaDoc runtime policy", function() {
       response.data.error,
       "This Grist session does not allow use this runtime session for another document.",
     );
+  });
+
+  describe("IkaDoc-only runtime (GW-SEC-01)", function() {
+    function runtimeOnlyApp(runtimeOnly: boolean) {
+      const app = express();
+      const registry = new IkaDocRuntimeSessionRegistry();
+      const runtimeAuth = createIkaDocRuntimeAuthMiddleware(
+        fakeRuntimeAuthDbManager(),
+        registry,
+        undefined,
+        undefined,
+        runtimeOnly,
+      );
+      app.use("/api", runtimeAuth);
+      app.get("/api/orgs", (_req, res) => res.status(200).json({ reached: "native Grist API" }));
+      app.get("/grist/editor/:sessionId", runtimeAuth, (_req, res) =>
+        res.status(200).json({ reached: "editor entry" }));
+      app.get("/o/docs", runtimeAuth, (_req, res) => res.status(200).json({ reached: "native Grist page" }));
+      attachJsonErrorHandler(app);
+      return app;
+    }
+
+    it("refuses native Grist API requests that carry no IkaDoc session", async function() {
+      const response = await requestApp(runtimeOnlyApp(true), "/api/orgs");
+
+      assert.equal(response.status, 403);
+    });
+
+    it("refuses native Grist pages that carry no IkaDoc session", async function() {
+      const response = await requestApp(runtimeOnlyApp(true), "/o/docs");
+
+      assert.equal(response.status, 403);
+    });
+
+    it("keeps the editor entry reachable so admission can run", async function() {
+      const response = await requestApp(runtimeOnlyApp(true), "/grist/editor/session-1");
+
+      assert.equal(response.status, 200);
+      assert.equal(response.data.reached, "editor entry");
+    });
+
+    it("lets API-key calls through to Grist's own authentication (IkaDoc service account)", async function() {
+      const response = await requestApp(runtimeOnlyApp(true), "/api/orgs", "get", {
+        Authorization: "Bearer service-account-key",
+      });
+
+      assert.equal(response.status, 200);
+    });
+
+    it("is on by default in IkaDoc deployments and off for plain Grist", function() {
+      const saved = {
+        admission: process.env.IKADOC_EDITOR_ADMISSION_URL,
+        runtimeOnly: process.env.IKADOC_GRIST_RUNTIME_ONLY,
+      };
+      const restore = (name: string, value: string | undefined) => {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      };
+      try {
+        delete process.env.IKADOC_GRIST_RUNTIME_ONLY;
+        delete process.env.IKADOC_EDITOR_ADMISSION_URL;
+        assert.isFalse(readIkaDocRuntimeOnly(), "plain Grist");
+
+        process.env.IKADOC_EDITOR_ADMISSION_URL = "http://ikadoc.test/api/grist/editor/admission";
+        assert.isTrue(readIkaDocRuntimeOnly(), "IkaDoc deployment");
+
+        process.env.IKADOC_GRIST_RUNTIME_ONLY = "false";
+        assert.isFalse(readIkaDocRuntimeOnly(), "explicit development opt-out");
+      } finally {
+        restore("IKADOC_EDITOR_ADMISSION_URL", saved.admission);
+        restore("IKADOC_GRIST_RUNTIME_ONLY", saved.runtimeOnly);
+      }
+    });
+
+    it("leaves native Grist untouched when the runtime is not IkaDoc-only", async function() {
+      const response = await requestApp(runtimeOnlyApp(false), "/api/orgs");
+
+      assert.equal(response.status, 200);
+      assert.equal(response.data.reached, "native Grist API");
+    });
   });
 
   it("restores runtime credentials after Grist user auth rewrites document REST requests", async function() {
@@ -343,13 +453,13 @@ describe("IkaDoc runtime policy", function() {
     });
 
     const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 200);
     assert.deepEqual(response.data, {
       hasCredential: true,
-      altSessionId: "session-1",
+      altSessionId: "session-1:user-1",
     });
   });
 
@@ -375,11 +485,13 @@ describe("IkaDoc runtime policy", function() {
     const timestampMillis = Date.now();
     const response = await requestApp(app, path, "get", {
       [IKADOC_FORWARD_AUTH_SESSION_HEADER]: "session-1",
+      [IKADOC_FORWARD_AUTH_USER_HEADER]: "user-1",
       [IKADOC_FORWARD_AUTH_PATH_HEADER]: path,
       [IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER]: timestampMillis.toString(),
       [IKADOC_FORWARD_AUTH_SIGNATURE_HEADER]: ikaDocForwardAuthSignature(
         secret,
         "session-1",
+        "user-1",
         path,
         timestampMillis,
       ),
@@ -388,8 +500,26 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 200);
     assert.deepEqual(response.data, {
       hasCredential: true,
-      altSessionId: "session-1",
+      altSessionId: "session-1:user-1",
     });
+  });
+
+  it("refuses Grist's own sharing to a runtime session, and leaves others alone (SR-13)", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({}));
+    const app = express();
+    app.use(IKADOC_NATIVE_SHARING_ROUTES, denyIkaDocRuntimeOperation(registry, "share document"));
+    app.get("/api/docs/:did/access", (_req, res) => res.status(200).json({ nativeHandlerReached: true }));
+    app.post("/api/docs/:did/move", (_req, res) => res.status(200).json({ nativeHandlerReached: true }));
+    attachJsonErrorHandler(app);
+
+    const listing = await requestApp(app, "/api/docs/doc-1/access", "get", { Cookie: browserCookie(registry) });
+    const moving = await requestApp(app, "/api/docs/doc-1/move", "post", { Cookie: browserCookie(registry) });
+    const native = await requestApp(app, "/api/docs/doc-1/access", "get");
+
+    assert.equal(listing.status, 403);
+    assert.equal(moving.status, 403);
+    assert.equal(native.status, 200);
   });
 
   it("serves active session details from the admitted IkaDoc runtime session", async function() {
@@ -408,7 +538,7 @@ describe("IkaDoc runtime policy", function() {
       "/api/session/access/active",
       "get",
       {
-        Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+        Cookie: browserCookie(registry),
       },
     );
 
@@ -434,7 +564,7 @@ describe("IkaDoc runtime policy", function() {
     attachJsonErrorHandler(app);
 
     const response = await requestApp(app, "/api/session/access/all", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 200);
@@ -474,11 +604,13 @@ describe("IkaDoc runtime policy", function() {
         url: `${path}?clientId=0&counter=1`,
         headers: {
           [IKADOC_FORWARD_AUTH_SESSION_HEADER]: "session-1",
+          [IKADOC_FORWARD_AUTH_USER_HEADER]: "user-1",
           [IKADOC_FORWARD_AUTH_PATH_HEADER]: path,
           [IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER]: timestampMillis.toString(),
           [IKADOC_FORWARD_AUTH_SIGNATURE_HEADER]: ikaDocForwardAuthSignature(
             secret,
             "session-1",
+            "user-1",
             path,
             timestampMillis,
           ),
@@ -489,7 +621,7 @@ describe("IkaDoc runtime policy", function() {
       secret,
     );
 
-    assert.equal(authSession?.altSessionId, "session-1");
+    assert.equal(authSession?.altSessionId, "session-1:user-1");
     assert.equal(authSession?.org, "ikadoc");
     assert.equal(authSession?.identifiedUser?.email, "alice@example.test");
     assert.equal(
@@ -531,7 +663,7 @@ describe("IkaDoc runtime policy", function() {
     });
 
     const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 200);
@@ -572,7 +704,7 @@ describe("IkaDoc runtime policy", function() {
     });
 
     const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 200);
@@ -611,7 +743,7 @@ describe("IkaDoc runtime policy", function() {
     });
 
     const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 200);
@@ -643,6 +775,7 @@ describe("IkaDoc runtime policy", function() {
     const path = "/api/docs/doc-url-1";
     const response = await requestApp(app, path, "get", {
       [IKADOC_FORWARD_AUTH_SESSION_HEADER]: "session-1",
+      [IKADOC_FORWARD_AUTH_USER_HEADER]: "user-1",
       [IKADOC_FORWARD_AUTH_PATH_HEADER]: path,
       [IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER]: Date.now().toString(),
       [IKADOC_FORWARD_AUTH_SIGNATURE_HEADER]: "0".repeat(64),
@@ -691,10 +824,10 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(response.status, 200);
     assert.deepEqual(response.data, {
       hasCredential: true,
-      altSessionId: "session-1",
+      altSessionId: "session-1:user-1",
     });
     assert.equal(
-      registry.getBySessionId("session-1")?.documentUrlId,
+      registry.getByParticipant("session-1", "user-1")?.documentUrlId,
       "doc-url-1",
     );
     assert.deepEqual(admissionRequests, [
@@ -705,6 +838,39 @@ describe("IkaDoc runtime policy", function() {
         origin: "https://records.owarelin.localhost",
       },
     ]);
+  });
+
+  it("re-admits a browser whose participant cookie predates a runtime restart (GW-SEC-05)", async function() {
+    // A restarted runtime has an empty registry; the browser still carries its old handle.
+    const registry = new IkaDocRuntimeSessionRegistry();
+    let admissions = 0;
+    const admissionClient: IkaDocEditorAdmissionClient = {
+      async admitEditor() {
+        admissions += 1;
+        return { kind: "accepted", admission: runtimeAdmission(runtimeConfig({})) };
+      },
+    };
+    const app = express();
+    app.use(
+      "/api/docs/:docId",
+      createIkaDocRuntimeAuthMiddleware(fakeRuntimeAuthDbManager(), registry, admissionClient),
+    );
+    app.get("/api/docs/:docId", (_req, res) => res.status(200).json({ ok: true }));
+    attachJsonErrorHandler(app);
+
+    const response = await requestApp(app, "/api/docs/doc-url-1", "get", {
+      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1; ${IKADOC_RUNTIME_PARTICIPANT_COOKIE}=handle-from-before-restart`,
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(admissions, 1);
+    const renewed = registry.getByParticipant("session-1", "user-1");
+    assert.isDefined(renewed);
+    assert.notEqual(renewed?.participantHandle, "handle-from-before-restart");
+    assert.include(
+      String(response.headers["set-cookie"]),
+      `${IKADOC_RUNTIME_PARTICIPANT_COOKIE}=${renewed?.participantHandle}`,
+    );
   });
 
   it("fails closed when IkaDoc rejects revalidation for a missing local runtime session", async function() {
@@ -741,7 +907,7 @@ describe("IkaDoc runtime policy", function() {
       response.data.error,
       "This Grist session does not allow use expired runtime session.",
     );
-    assert.isUndefined(registry.getBySessionId("session-1"));
+    assert.isUndefined(registry.getByParticipant("session-1", "user-1"));
     assert.deepEqual(admissionRequests, [
       {
         sessionId: "session-1",
@@ -814,7 +980,7 @@ describe("IkaDoc runtime policy", function() {
     attachJsonErrorHandler(app);
 
     const response = await requestApp(app, "/api/docs", "post", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 403);
@@ -857,7 +1023,7 @@ describe("IkaDoc runtime policy", function() {
     attachJsonErrorHandler(app);
 
     const response = await requestApp(app, "/api/templates/", "get", {
-      Cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      Cookie: browserCookie(registry),
     });
 
     assert.equal(response.status, 403);
@@ -902,9 +1068,9 @@ describe("IkaDoc runtime policy", function() {
       ),
     );
 
-    assert.isUndefined(registry.getBySessionId("session-1"));
-    assert.isUndefined(registry.getByDocumentId("doc-1"));
-    assert.isUndefined(registry.getByDocumentId("doc-url-1"));
+    assert.isUndefined(registry.getByParticipant("session-1", "user-1"));
+    assert.isUndefined(activeForDocument(registry, "doc-1"));
+    assert.isUndefined(activeForDocument(registry, "doc-url-1"));
   });
 
   it("prunes expired runtime sessions without removing active sessions", function() {
@@ -925,9 +1091,9 @@ describe("IkaDoc runtime policy", function() {
 
     registry.pruneExpired(Date.parse("2026-01-01T00:00:00.000Z"));
 
-    assert.isUndefined(registry.getBySessionId("session-1"));
-    assert.equal(registry.getBySessionId("session-2")?.documentId, "doc-2");
-    assert.equal(registry.getByDocumentId("doc-url-2")?.sessionId, "session-2");
+    assert.isUndefined(registry.getByParticipant("session-1", "user-1"));
+    assert.equal(registry.getByParticipant("session-2", "user-1")?.documentId, "doc-2");
+    assert.equal(activeForDocument(registry, "doc-url-2")?.sessionId, "session-2");
   });
 
   it("removes stale document indexes when a runtime session is replaced", function() {
@@ -939,10 +1105,10 @@ describe("IkaDoc runtime policy", function() {
       documentUrlId: "doc-url-2",
     });
 
-    assert.isUndefined(registry.getByDocumentId("doc-1"));
-    assert.isUndefined(registry.getByDocumentId("doc-url-1"));
-    assert.equal(registry.getByDocumentId("doc-2")?.sessionId, "session-1");
-    assert.equal(registry.getBySessionId("session-1")?.documentId, "doc-2");
+    assert.isUndefined(activeForDocument(registry, "doc-1"));
+    assert.isUndefined(activeForDocument(registry, "doc-url-1"));
+    assert.equal(activeForDocument(registry, "doc-2")?.sessionId, "session-1");
+    assert.equal(registry.getByParticipant("session-1", "user-1")?.documentId, "doc-2");
   });
 
   it("denies websocket-style operations by registered document id", function() {
@@ -988,6 +1154,11 @@ describe("IkaDoc runtime policy", function() {
       assert.deepEqual(audit.requests[0].body, {
         capability: "use plugin RPC",
         reason: "Forked Grist runtime denied use plugin RPC.",
+        sessionId: "session-1",
+        documentId: "doc-1",
+        documentUrlId: "doc-url-1",
+        mode: "editor",
+        sourceType: "document-file",
       });
     } finally {
       await audit.close();
@@ -1087,7 +1258,7 @@ describe("IkaDoc runtime policy", function() {
       registry,
       {
         headers: {
-          cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+          cookie: browserCookie(registry),
         },
       } as unknown as http.IncomingMessage,
       "ikadoc",
@@ -1126,6 +1297,77 @@ describe("IkaDoc runtime policy", function() {
     assert.isFalse(called);
   });
 
+  it("validates a person's edits with their digest and action names before applying them (GR-07)", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canEditCells: true }));
+    const authSession = await createIkaDocRuntimeAuthSession(
+      fakeRuntimeAuthDbManager(),
+      registry,
+      { headers: { cookie: browserCookie(registry) } } as unknown as http.IncomingMessage,
+      "ikadoc",
+    );
+    const actions = [["UpdateRecord", "Table1", 1, { Name: "Updated" }]];
+    const validated: (IkaDocValidatedAction | undefined)[] = [];
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      {
+        async validate(_session, _operation, action) {
+          validated.push(action);
+        },
+      },
+      "editors",
+      "applyUserActions",
+      {
+        operation: "apply document edits",
+        classifyUserActions: true,
+        recordsActions: true,
+      },
+    );
+
+    await method(
+      clientForActiveDoc("doc-1", "applyUserActions", () => { called = true; }, authSession),
+      1,
+      actions,
+    );
+
+    assert.isTrue(called);
+    assert.deepEqual(validated, [{
+      digest: createHash("sha256").update(JSON.stringify([actions])).digest("hex"),
+      names: ["UpdateRecord"],
+    }]);
+  });
+
+  it("refuses edits on an IkaDoc document from a client IkaDoc did not admit (GR-07)", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(runtimeConfig({ canEditCells: true }));
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      { async validate() { /* would credit the edit to someone else */ } },
+      "editors",
+      "applyUserActions",
+      {
+        operation: "apply document edits",
+        classifyUserActions: true,
+        recordsActions: true,
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc("doc-1", "applyUserActions", () => { called = true; }),
+        1,
+        [["UpdateRecord", "Table1", 1, { Name: "Updated" }]],
+      ),
+    );
+
+    assert.equal(error?.message, "This Grist session does not allow apply document edits.");
+    assert.isFalse(called);
+  });
+
   it("revalidates registered IkaDoc runtime sessions before websocket document execution", async function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditCells: true }));
@@ -1161,6 +1403,109 @@ describe("IkaDoc runtime policy", function() {
     assert.equal(error?.message, "IkaDoc session was revoked");
     assert.deepEqual(validatedOperations, ["apply document edits"]);
     assert.isFalse(called);
+  });
+
+  it("blocks websocket replay when any replay capability is missing", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({
+        canEditCells: true,
+        canEditStructure: false,
+        canUseFormulas: true,
+        canCreateCharts: true,
+        canUseCustomWidgets: true,
+        canUseAttachments: true,
+        canUseExternalData: true,
+        canManageAccess: true,
+      }),
+    );
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "editors",
+      "applyUserActionsById",
+      {
+        capabilities: [
+          "canEditCells",
+          "canEditStructure",
+          "canUseFormulas",
+          "canCreateCharts",
+          "canUseCustomWidgets",
+          "canUseAttachments",
+          "canUseExternalData",
+          "canManageAccess",
+        ],
+        operation: "apply document edits by id",
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc("doc-1", "applyUserActionsById", () => {
+          called = true;
+        }),
+        1,
+        12,
+      ),
+    );
+
+    assert.equal(
+      error?.message,
+      "This Grist session does not allow apply document edits by id.",
+    );
+    assert.isFalse(called);
+  });
+
+  it("allows websocket replay only when the full replay capability set is present", async function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    registry.register(
+      runtimeConfig({
+        canEditCells: true,
+        canEditStructure: true,
+        canUseFormulas: true,
+        canCreateCharts: true,
+        canUseCustomWidgets: true,
+        canUseAttachments: true,
+        canUseExternalData: true,
+        canManageAccess: true,
+      }),
+    );
+    let called = false;
+    const method = activeDocMethod(
+      undefined,
+      registry,
+      undefined,
+      "editors",
+      "applyUserActionsById",
+      {
+        capabilities: [
+          "canEditCells",
+          "canEditStructure",
+          "canUseFormulas",
+          "canCreateCharts",
+          "canUseCustomWidgets",
+          "canUseAttachments",
+          "canUseExternalData",
+          "canManageAccess",
+        ],
+        operation: "apply document edits by id",
+      },
+    );
+
+    const error = await captureError(() =>
+      method(
+        clientForActiveDoc("doc-1", "applyUserActionsById", () => {
+          called = true;
+        }),
+        1,
+        12,
+      ),
+    );
+
+    assert.isUndefined(error);
+    assert.isTrue(called);
   });
 
   it("blocks websocket ACL helper calls without access-management capability", async function() {
@@ -1806,6 +2151,42 @@ describe("IkaDoc runtime policy", function() {
     );
   });
 
+  it("reports sanitized user-action denial context to the audit callback", async function() {
+    const audit = await startAuditServer();
+    try {
+      const registry = new IkaDocRuntimeSessionRegistry();
+      registry.register(
+        runtimeConfig(
+          { canCreateCharts: true },
+          `${audit.baseUrl}/api/grist/sessions/session-1/blocked-capability`,
+        ),
+      );
+
+      assert.throws(
+        () =>
+          assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+            ["UpdateRecord", "_grist_Views_section", 1, { title: "Renamed" }],
+          ]),
+        "This Grist session does not allow apply UpdateRecord.",
+      );
+      await audit.waitForRequest();
+      assert.deepEqual(audit.requests[0].body, {
+        capability: "apply UpdateRecord",
+        reason: "Forked Grist runtime denied apply UpdateRecord.",
+        sessionId: "session-1",
+        documentId: "doc-1",
+        documentUrlId: "doc-url-1",
+        mode: "editor",
+        sourceType: "document-file",
+        missingCapability: "canEditStructure",
+        actionName: "UpdateRecord",
+        tableId: "_grist_Views_section",
+      });
+    } finally {
+      await audit.close();
+    }
+  });
+
   it("denies chart metadata edits when chart creation is missing", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(runtimeConfig({ canEditStructure: true }));
@@ -1903,6 +2284,7 @@ function runtimeConfig(
     workerUrl: "/api/docs/doc-1",
     statusUrl: "/api/grist/sessions/session-1",
     validationUrl: "/api/grist/editor/session-validation",
+    validationToken: "validation-token",
     discardUrl: "/api/grist/sessions/session-1/cancel",
     blockedCapabilityUrl,
     capabilities: normalizeIkaDocCapabilities(capabilities),
@@ -2093,4 +2475,25 @@ function clientForActiveDoc(
       };
     },
   } as never;
+}
+
+function activeForDocument(
+  registry: IkaDocRuntimeSessionRegistry,
+  documentId: string,
+): IkaDocRuntimeSession | undefined {
+  const resolution = registry.resolveByDocumentId(documentId);
+  return resolution.kind === "active" ? resolution.session : undefined;
+}
+
+/** What the browser of [userId] carries after entering [sessionId]: the session and its own entry. */
+function browserCookie(
+  registry: IkaDocRuntimeSessionRegistry,
+  sessionId = "session-1",
+  userId = "user-1",
+): string {
+  const participant = registry.getByParticipant(sessionId, userId);
+  if (!participant) {
+    throw new Error(`No registered participant ${userId} in ${sessionId}`);
+  }
+  return `${IKADOC_RUNTIME_SESSION_COOKIE}=${sessionId}; ${IKADOC_RUNTIME_PARTICIPANT_COOKIE}=${participant.participantHandle}`;
 }

@@ -51,6 +51,7 @@ import {
   getTemplateOrg,
 } from "app/server/lib/gristSettings";
 import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
+import { denyIkaDocRuntimeOperation, IKADOC_NATIVE_SHARING_ROUTES } from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
@@ -219,6 +220,10 @@ export class ApiServer {
           this._ikadocEditorAdmissionClient,
           this._ikadocForwardAuthSecret,
         ),
+      );
+      this._app.use(
+        IKADOC_NATIVE_SHARING_ROUTES,
+        denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "share document"),
       );
     }
 

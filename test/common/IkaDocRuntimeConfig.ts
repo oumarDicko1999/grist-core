@@ -21,6 +21,7 @@ const VALID_IKADOC_CONFIG = {
   workerUrl: "/ikadoc/sessions/session-1/worker",
   statusUrl: "/ikadoc/sessions/session-1/status",
   validationUrl: "/ikadoc/editor/session-validation",
+  validationToken: "validation-token",
   discardUrl: "/ikadoc/sessions/session-1/discard",
   locale: "en",
 };
@@ -93,12 +94,24 @@ describe("IkaDocRuntimeConfig", function() {
   it("accepts backend-issued guided workspace markers", function() {
     const result = parseIkaDocRuntimeConfig({
       ...VALID_IKADOC_CONFIG,
+      guidedWorkspaceUrls: {
+        descriptorUrl: "/ikadoc/sessions/session-1/guided-workspace/descriptor",
+        allocateRowsUrl: "/ikadoc/sessions/session-1/guided-workspace/rows",
+        admitRowsUrl: "/ikadoc/sessions/session-1/guided-workspace/rows/admit",
+        referenceSearchUrl:
+          "/ikadoc/sessions/session-1/guided-workspace/reference-lookup/search",
+        referenceResolveUrl:
+          "/ikadoc/sessions/session-1/guided-workspace/reference-lookup/resolve",
+        validateUrl: "/ikadoc/sessions/session-1/guided-workspace/validate",
+        applyUrl: "/ikadoc/sessions/session-1/guided-workspace/apply",
+      },
       guidedWorkspace: {
         intent: "RECORD_IMPORT",
         targetCollectionCode: "records",
         targetSchemaType: "document",
         targetSchemaCode: "document_default",
         finalAction: "APPLY_TO_IKADOC",
+        tableBindings: [],
       },
     });
 
@@ -107,13 +120,41 @@ describe("IkaDocRuntimeConfig", function() {
       return;
     }
 
+    assert.deepEqual(result.config.guidedWorkspaceUrls, {
+      descriptorUrl: "/ikadoc/sessions/session-1/guided-workspace/descriptor",
+      allocateRowsUrl: "/ikadoc/sessions/session-1/guided-workspace/rows",
+      admitRowsUrl: "/ikadoc/sessions/session-1/guided-workspace/rows/admit",
+      referenceSearchUrl:
+        "/ikadoc/sessions/session-1/guided-workspace/reference-lookup/search",
+      referenceResolveUrl:
+        "/ikadoc/sessions/session-1/guided-workspace/reference-lookup/resolve",
+      validateUrl: "/ikadoc/sessions/session-1/guided-workspace/validate",
+      applyUrl: "/ikadoc/sessions/session-1/guided-workspace/apply",
+    });
     assert.deepEqual(result.config.guidedWorkspace, {
       intent: "RECORD_IMPORT",
       targetCollectionCode: "records",
       targetSchemaType: "document",
       targetSchemaCode: "document_default",
       finalAction: "APPLY_TO_IKADOC",
+      tableBindings: [],
     });
+  });
+
+  it("rejects malformed guided workspace URL contracts", function() {
+    assert.deepEqual(
+      parseIkaDocRuntimeConfig({
+        ...VALID_IKADOC_CONFIG,
+        guidedWorkspaceUrls: {
+          descriptorUrl:
+            "/ikadoc/sessions/session-1/guided-workspace/descriptor",
+        },
+      }),
+      {
+        kind: "invalid",
+        reason: "invalid-guided-workspace-urls",
+      },
+    );
   });
 
   it("rejects malformed guided workspace markers", function() {

@@ -6,12 +6,15 @@ import {
   denyIkaDocRuntimeOperationForDocument,
   denyIkaDocRuntimeOperationForSession,
   IkaDocRuntimeSessionValidator,
+  IkaDocValidatedAction,
   requireIkaDocRuntimeCapabilityForDocument,
   requireIkaDocRuntimeCapabilityForSession,
   validateIkaDocRuntimeSession,
   validateIkaDocRuntimeSessionForDocument,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import log from "app/server/lib/log";
+
+import { createHash } from "crypto";
 
 import type { Client } from "app/server/lib/Client";
 import type { DocApiUsageTracker } from "app/server/lib/DocApiUsageTracker";
@@ -21,8 +24,13 @@ import type { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeS
 export interface IkaDocActiveDocMethodPolicy {
   operation: string;
   capability?: keyof IkaDocCapabilities;
+  capabilities?: (keyof IkaDocCapabilities)[];
   classifyUserActions?: boolean;
+  /** GR-07: the method applies user actions; IkaDoc records them as the person's evidence first. */
+  recordsActions?: boolean;
 }
+
+const MAX_RECORDED_ACTION_NAMES = 200;
 
 type ActiveDocMethod = (docSession: DocSession, ...args: unknown[]) => unknown;
 
@@ -66,13 +74,19 @@ export function activeDocMethod(
           runtimeSession,
           activeDoc.docName,
           ikadocPolicy.operation,
+          ikadocPolicy.recordsActions ? validatedAction(args) : undefined,
         );
-        if (ikadocPolicy.capability) {
-          requireIkaDocRuntimeCapabilityForSession(
-            runtimeSession,
-            ikadocPolicy.capability,
-            ikadocPolicy.operation,
-          );
+        const requiredCapabilities =
+          ikadocPolicy.capabilities ??
+          (ikadocPolicy.capability ? [ikadocPolicy.capability] : []);
+        if (requiredCapabilities.length > 0) {
+          for (const capability of requiredCapabilities) {
+            requireIkaDocRuntimeCapabilityForSession(
+              runtimeSession,
+              capability,
+              ikadocPolicy.operation,
+            );
+          }
         } else if (!ikadocPolicy.classifyUserActions) {
           denyIkaDocRuntimeOperationForSession(
             runtimeSession,
@@ -80,25 +94,35 @@ export function activeDocMethod(
           );
         }
         if (ikadocPolicy.classifyUserActions) {
-          assertIkaDocUserActionsAllowedForSession(
-            runtimeSession,
-            args[0],
-          );
+          assertIkaDocUserActionsAllowedForSession(runtimeSession, args[0]);
         }
       } else {
+        // Only a person IkaDoc admitted may change the document: their actions are their evidence.
+        if (ikadocPolicy.recordsActions) {
+          denyIkaDocRuntimeOperationForDocument(
+            ikadocRuntimeSessionRegistry,
+            activeDoc.docName,
+            ikadocPolicy.operation,
+          );
+        }
         await validateIkaDocRuntimeSessionForDocument(
           ikadocRuntimeSessionRegistry,
           ikadocRuntimeSessionValidator,
           activeDoc.docName,
           ikadocPolicy.operation,
         );
-        if (ikadocPolicy.capability) {
-          requireIkaDocRuntimeCapabilityForDocument(
-            ikadocRuntimeSessionRegistry,
-            activeDoc.docName,
-            ikadocPolicy.capability,
-            ikadocPolicy.operation,
-          );
+        const requiredCapabilities =
+          ikadocPolicy.capabilities ??
+          (ikadocPolicy.capability ? [ikadocPolicy.capability] : []);
+        if (requiredCapabilities.length > 0) {
+          for (const capability of requiredCapabilities) {
+            requireIkaDocRuntimeCapabilityForDocument(
+              ikadocRuntimeSessionRegistry,
+              activeDoc.docName,
+              capability,
+              ikadocPolicy.operation,
+            );
+          }
         } else if (!ikadocPolicy.classifyUserActions) {
           denyIkaDocRuntimeOperationForDocument(
             ikadocRuntimeSessionRegistry,
@@ -141,5 +165,19 @@ export function activeDocMethod(
     }
 
     return method.call(activeDoc, docSession, ...args);
+  };
+}
+
+/** The applied actions' digest and names; never their content (GR-07). */
+function validatedAction(args: unknown[]): IkaDocValidatedAction {
+  const serialized = JSON.stringify(args) ?? "";
+  const actions = Array.isArray(args[0]) ? args[0] : [];
+  const names = actions
+    .map(action => (Array.isArray(action) && typeof action[0] === "string" ? action[0] : "?"))
+    .slice(0, MAX_RECORDED_ACTION_NAMES);
+
+  return {
+    digest: createHash("sha256").update(serialized).digest("hex"),
+    names,
   };
 }

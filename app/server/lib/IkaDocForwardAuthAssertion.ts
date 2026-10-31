@@ -6,6 +6,7 @@ import type { Request } from "express";
 import type { IncomingMessage } from "http";
 
 export const IKADOC_FORWARD_AUTH_SESSION_HEADER = "x-ikadoc-grist-session";
+export const IKADOC_FORWARD_AUTH_USER_HEADER = "x-ikadoc-grist-user";
 export const IKADOC_FORWARD_AUTH_PATH_HEADER = "x-ikadoc-grist-path";
 export const IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER = "x-ikadoc-grist-timestamp";
 export const IKADOC_FORWARD_AUTH_SIGNATURE_HEADER = "x-ikadoc-grist-signature";
@@ -14,8 +15,10 @@ const FORWARD_AUTH_ASSERTION_MAX_AGE_MS = 60_000;
 const HMAC_ALGORITHM = "sha256";
 const HEX_SIGNATURE_PATTERN = /^[0-9a-f]{64}$/;
 
+/** IkaDoc vouches that this person, signed in to IkaDoc, may use this session for this path. */
 export interface IkaDocForwardAuthAssertion {
   sessionId: string;
+  userId: string;
   path: string;
   timestampMillis: number;
 }
@@ -30,13 +33,14 @@ export function ikaDocForwardAuthAssertionForRequest(
   }
 
   const sessionId = singleHeader(req, IKADOC_FORWARD_AUTH_SESSION_HEADER);
+  const userId = singleHeader(req, IKADOC_FORWARD_AUTH_USER_HEADER);
   const path = singleHeader(req, IKADOC_FORWARD_AUTH_PATH_HEADER);
   const timestamp = singleHeader(req, IKADOC_FORWARD_AUTH_TIMESTAMP_HEADER);
   const signature = singleHeader(req, IKADOC_FORWARD_AUTH_SIGNATURE_HEADER);
-  if (!sessionId && !path && !timestamp && !signature) {
+  if (!sessionId && !userId && !path && !timestamp && !signature) {
     return undefined;
   }
-  if (!sessionId || !path || !timestamp || !signature) {
+  if (!sessionId || !userId || !path || !timestamp || !signature) {
     throw new ApiError("Invalid IkaDoc forward-auth assertion", 403);
   }
 
@@ -54,6 +58,7 @@ export function ikaDocForwardAuthAssertionForRequest(
   const expectedSignature = ikaDocForwardAuthSignature(
     secret,
     sessionId,
+    userId,
     path,
     timestampMillis,
   );
@@ -61,17 +66,18 @@ export function ikaDocForwardAuthAssertionForRequest(
     throw new ApiError("Invalid IkaDoc forward-auth assertion signature", 403);
   }
 
-  return { sessionId, path, timestampMillis };
+  return { sessionId, userId, path, timestampMillis };
 }
 
 export function ikaDocForwardAuthSignature(
   secret: string,
   sessionId: string,
+  userId: string,
   path: string,
   timestampMillis: number,
 ): string {
   return createHmac(HMAC_ALGORITHM, secret)
-    .update(`${sessionId}\n${path}\n${timestampMillis}`)
+    .update(`${sessionId}\n${userId}\n${path}\n${timestampMillis}`)
     .digest("hex");
 }
 

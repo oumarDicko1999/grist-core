@@ -23,6 +23,16 @@ export interface IkaDocRuntimeUser {
   email?: string | null;
 }
 
+export interface IkaDocGuidedWorkspaceUrls {
+  descriptorUrl: string;
+  allocateRowsUrl: string;
+  admitRowsUrl: string;
+  referenceSearchUrl: string;
+  referenceResolveUrl: string;
+  validateUrl: string;
+  applyUrl: string;
+}
+
 export interface IkaDocRuntimeConfig {
   enabled: true;
   sessionId: string;
@@ -37,16 +47,54 @@ export interface IkaDocRuntimeConfig {
   workerUrl: string;
   statusUrl: string;
   validationUrl: string;
+  validationToken?: string;
   saveUrl?: string;
   discardUrl: string;
   blockedCapabilityUrl?: string;
   refreshUrl?: string;
   proposalUrl?: string;
+  guidedWorkspaceUrls?: IkaDocGuidedWorkspaceUrls;
   guidedWorkspace?: IkaDocGuidedWorkspaceMarker;
   capabilities: IkaDocCapabilities;
   locale: string;
   theme?: string;
   appearance: "light" | "dark";
+}
+
+export type IkaDocBrowserRuntimeConfig = Omit<
+  IkaDocRuntimeConfig,
+  "validationToken"
+>;
+
+export function toIkaDocBrowserRuntimeConfig(
+  config: IkaDocRuntimeConfig,
+): IkaDocBrowserRuntimeConfig {
+  return {
+    enabled: config.enabled,
+    sessionId: config.sessionId,
+    user: config.user,
+    collectionCode: config.collectionCode,
+    sourceType: config.sourceType,
+    sourceSummary: config.sourceSummary,
+    mode: config.mode,
+    expiresAt: config.expiresAt,
+    documentId: config.documentId,
+    documentUrlId: config.documentUrlId,
+    workerUrl: config.workerUrl,
+    statusUrl: config.statusUrl,
+    validationUrl: config.validationUrl,
+    saveUrl: config.saveUrl,
+    discardUrl: config.discardUrl,
+    blockedCapabilityUrl: config.blockedCapabilityUrl,
+    refreshUrl: config.refreshUrl,
+    proposalUrl: config.proposalUrl,
+    guidedWorkspaceUrls: config.guidedWorkspaceUrls,
+    guidedWorkspace: config.guidedWorkspace,
+    capabilities: config.capabilities,
+    locale: config.locale,
+    theme: config.theme,
+    appearance: config.appearance,
+  };
 }
 
 export interface IkaDocRuntimeConfigWire extends Omit<
@@ -64,7 +112,8 @@ export type IkaDocRuntimeConfigParseFailure =
   "invalid-editor-mode" |
   "invalid-user" |
   "invalid-capabilities" |
-  "invalid-guided-workspace";
+  "invalid-guided-workspace" |
+  "invalid-guided-workspace-urls";
 
 export type IkaDocRuntimeConfigParseResult =
   | { kind: "disabled" } |
@@ -91,6 +140,7 @@ const REQUIRED_STRING_FIELDS = [
   "workerUrl",
   "statusUrl",
   "validationUrl",
+  "validationToken",
   "discardUrl",
   "expiresAt",
   "locale",
@@ -149,6 +199,12 @@ export function parseIkaDocRuntimeConfig(
   if (guidedWorkspace === "invalid") {
     return { kind: "invalid", reason: "invalid-guided-workspace" };
   }
+  const guidedWorkspaceUrls = normalizeGuidedWorkspaceUrls(
+    raw.guidedWorkspaceUrls,
+  );
+  if (guidedWorkspaceUrls === "invalid") {
+    return { kind: "invalid", reason: "invalid-guided-workspace-urls" };
+  }
 
   const sessionId = raw.sessionId as string;
   const collectionCode = raw.collectionCode as string;
@@ -157,6 +213,7 @@ export function parseIkaDocRuntimeConfig(
   const workerUrl = raw.workerUrl as string;
   const statusUrl = raw.statusUrl as string;
   const validationUrl = raw.validationUrl as string;
+  const validationToken = raw.validationToken as string;
   const discardUrl = raw.discardUrl as string;
   const expiresAt = raw.expiresAt as string;
   const locale = raw.locale as string;
@@ -179,6 +236,7 @@ export function parseIkaDocRuntimeConfig(
       workerUrl,
       statusUrl,
       validationUrl,
+      validationToken,
       saveUrl: typeof raw.saveUrl === "string" ? raw.saveUrl : undefined,
       discardUrl,
       blockedCapabilityUrl:
@@ -189,6 +247,7 @@ export function parseIkaDocRuntimeConfig(
         typeof raw.refreshUrl === "string" ? raw.refreshUrl : undefined,
       proposalUrl:
         typeof raw.proposalUrl === "string" ? raw.proposalUrl : undefined,
+      guidedWorkspaceUrls,
       guidedWorkspace,
       capabilities: normalizeIkaDocCapabilities(
         raw.capabilities as IkaDocCapabilityOverrides | undefined,
@@ -207,6 +266,45 @@ function normalizeGuidedWorkspace(
     return undefined;
   }
   return parseIkaDocGuidedWorkspaceMarker(input) ?? "invalid";
+}
+
+function normalizeGuidedWorkspaceUrls(
+  input: unknown,
+): IkaDocGuidedWorkspaceUrls | undefined | "invalid" {
+  if (input === undefined || input === null) {
+    return undefined;
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return "invalid";
+  }
+  const raw = input as Record<string, unknown>;
+  if (
+    typeof raw.descriptorUrl !== "string" ||
+    raw.descriptorUrl.length === 0 ||
+    typeof raw.allocateRowsUrl !== "string" ||
+    raw.allocateRowsUrl.length === 0 ||
+    typeof raw.admitRowsUrl !== "string" ||
+    raw.admitRowsUrl.length === 0 ||
+    typeof raw.referenceSearchUrl !== "string" ||
+    raw.referenceSearchUrl.length === 0 ||
+    typeof raw.referenceResolveUrl !== "string" ||
+    raw.referenceResolveUrl.length === 0 ||
+    typeof raw.validateUrl !== "string" ||
+    raw.validateUrl.length === 0 ||
+    typeof raw.applyUrl !== "string" ||
+    raw.applyUrl.length === 0
+  ) {
+    return "invalid";
+  }
+  return {
+    descriptorUrl: raw.descriptorUrl,
+    allocateRowsUrl: raw.allocateRowsUrl,
+    admitRowsUrl: raw.admitRowsUrl,
+    referenceSearchUrl: raw.referenceSearchUrl,
+    referenceResolveUrl: raw.referenceResolveUrl,
+    validateUrl: raw.validateUrl,
+    applyUrl: raw.applyUrl,
+  };
 }
 
 function isIkaDocRuntimeUser(input: unknown): input is Record<string, unknown> {

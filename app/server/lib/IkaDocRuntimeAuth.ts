@@ -8,6 +8,7 @@ import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { AuthCredential } from "app/server/lib/AuthCredential";
 import { RequestWithLogin } from "app/server/lib/Authorizer";
 import { AuthSession } from "app/server/lib/AuthSession";
+import { readIkaDocRuntimeOnly } from "app/server/lib/IkaDocAdmissionConfig";
 import {
   IkaDocForwardAuthAssertion,
   ikaDocForwardAuthAssertionForRequest,
@@ -15,11 +16,13 @@ import {
 import {
   deniedIkaDocRuntimeOperation,
   hasIkaDocRuntimeSessionCookie,
+  IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   ikaDocRuntimeSessionCookie,
   ikadocRuntimeSessionForRequest,
   isIkaDocRuntimeSessionExpired,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import {
+  attachIkaDocRuntimeSession,
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
@@ -30,23 +33,38 @@ import type {
   HomeDBAuth,
   HomeDBDocAuth,
 } from "app/gen-server/lib/homedb/Interfaces";
-import type { Request, RequestHandler } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import type { IncomingMessage } from "http";
+
+/** The editor entry admits its own session, so it is reachable before any IkaDoc cookie exists. */
+const IKADOC_EDITOR_ENTRY_PATH_PREFIX = "/grist/editor/";
 
 export function createIkaDocRuntimeAuthMiddleware(
   dbManager: HomeDBAuth,
   registry: IkaDocRuntimeSessionRegistry,
   admissionClient?: IkaDocEditorAdmissionClient,
   forwardAuthSecret?: string,
+  runtimeOnly: boolean = readIkaDocRuntimeOnly(),
 ): RequestHandler {
-  return async (req, _res, next) => {
+  return async (req, res, next) => {
     let assertion: IkaDocForwardAuthAssertion | undefined;
     try {
       assertion = ikaDocForwardAuthAssertionForRequest(req, forwardAuthSecret);
     } catch (error) {
       return next(error);
     }
-    if (!hasIkaDocRuntimeSessionCookie(req) && !assertion) {
+    const hasIkaDocSession = hasIkaDocRuntimeSessionCookie(req) || Boolean(assertion);
+
+    if (!hasIkaDocSession && runtimeOnly && !reachableWithoutIkaDocSession(req)) {
+      log.warn("IkaDoc runtime refused a request without an IkaDoc session", {
+        method: req.method,
+        path: req.path,
+      });
+
+      return next(deniedIkaDocRuntimeOperation("use Grist outside an IkaDoc session"));
+    }
+
+    if (!hasIkaDocSession) {
       return next();
     }
 
@@ -55,6 +73,7 @@ export function createIkaDocRuntimeAuthMiddleware(
       req,
       admissionClient,
       assertion,
+      res,
     );
     if (!session) {
       log.warn(
@@ -94,13 +113,14 @@ export function createIkaDocRuntimeAuthMiddleware(
     mreq.user = anonymousUser;
     mreq.userId = anonymousUser.id;
     mreq.userIsAuthorized = false;
-    mreq.altSessionId = session.sessionId;
+    mreq.altSessionId = runtimeParticipantSessionId(session);
     mreq.fullUser = runtimeTransportUser(
       dbManager.makeFullUser(anonymousUser),
       session,
     );
     mreq.users = [credential.identifiedUser];
     mreq.authSession = AuthSession.fromReq(mreq, credential);
+    attachIkaDocRuntimeSession(req, session);
     log.info("IkaDoc runtime auth attached request session", {
       method: req.method,
       path: req.path,
@@ -133,6 +153,7 @@ export function createIkaDocRuntimeProfileHandler(
       req,
       admissionClient,
       assertion,
+      res,
     );
     if (!session) {
       return next(
@@ -180,6 +201,7 @@ export function createIkaDocRuntimeSessionAccessHandler(
       req,
       admissionClient,
       assertion,
+      res,
     );
     if (!session) {
       return next(
@@ -238,6 +260,7 @@ export async function createIkaDocRuntimeAuthSession(
     req as Request,
     admissionClient,
     assertion,
+    undefined,
   );
   if (!session) {
     throw deniedIkaDocRuntimeOperation("use expired runtime session");
@@ -257,7 +280,7 @@ export async function createIkaDocRuntimeAuthSession(
   return AuthSession.fromUser(
     credential.identifiedUser,
     org,
-    session.sessionId,
+    runtimeParticipantSessionId(session),
     credential,
     false,
   );
@@ -272,15 +295,21 @@ export function ikaDocRuntimeSessionFromAuthSession(
     undefined;
 }
 
+/**
+ * The person this request comes from, in the session it names (GR-03): the entry the signed
+ * forward-auth assertion names, or the one this browser's participant cookie names. Without one,
+ * IkaDoc is asked to admit the person behind the request's own IkaDoc sign-in, and only that
+ * person's entry is used. A request is never given someone else's entry.
+ */
 async function getIkaDocRuntimeSessionForRequest(
   registry: IkaDocRuntimeSessionRegistry,
   req: Request,
   admissionClient: IkaDocEditorAdmissionClient | undefined,
   assertion: IkaDocForwardAuthAssertion | undefined,
+  res: Response | undefined,
 ): Promise<IkaDocRuntimeSession | undefined> {
   const session = assertion ?
-    (registry.getBySessionId(assertion.sessionId) ??
-      ikadocRuntimeSessionForRequest(registry, req)) :
+    registry.getByParticipant(assertion.sessionId, assertion.userId) :
     ikadocRuntimeSessionForRequest(registry, req);
   if (session || !admissionClient) {
     return session;
@@ -312,7 +341,28 @@ async function getIkaDocRuntimeSessionForRequest(
     });
     return undefined;
   }
-  return registry.register(result.admission.runtimeConfig, Date.now());
+  const admittedUserId = result.admission.runtimeConfig.user.userId;
+  if (assertion && assertion.userId !== admittedUserId) {
+    log.warn("IkaDoc runtime auth admitted another person than the assertion names", {
+      method: req.method,
+      path: req.path,
+      sessionId,
+    });
+    return undefined;
+  }
+  const registered = registry.register(result.admission.runtimeConfig, Date.now());
+  res?.cookie(IKADOC_RUNTIME_PARTICIPANT_COOKIE, registered.participantHandle, {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax",
+    secure: req.protocol === "https",
+  });
+  return registered;
+}
+
+/** Grist tells sessions apart by this id; each person in a shared session gets their own. */
+function runtimeParticipantSessionId(session: IkaDocRuntimeSession): string {
+  return `${session.sessionId}:${session.userId}`;
 }
 
 class IkaDocRuntimeCredential implements AuthCredential {
@@ -462,4 +512,18 @@ function runtimeOrganization(session: IkaDocRuntimeSession): Organization {
     host: null,
     access: "editors",
   };
+}
+
+/**
+ * GW-SEC-01: what an IkaDoc-only runtime still serves without an IkaDoc session — the editor
+ * entry, which runs admission itself, and server-to-server calls that carry an API key (the
+ * IkaDoc backend's service account). Grist rejects an unknown API key with 401, so the header
+ * opens nothing on its own.
+ */
+function reachableWithoutIkaDocSession(req: Request): boolean {
+  const path = req.originalUrl.split("?")[0];
+  const isEditorEntry = path.startsWith(IKADOC_EDITOR_ENTRY_PATH_PREFIX);
+  const carriesApiKey = Boolean(req.headers.authorization);
+
+  return isEditorEntry || carriesApiKey;
 }

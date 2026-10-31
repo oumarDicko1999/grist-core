@@ -60,11 +60,60 @@ describe("IkaDoc runtime health endpoint", function() {
 
     assert.equal(response.status, 401);
   });
+
+  it("reports the outbound and plugin settings the process actually runs with (GW-SEC-04)", async function() {
+    const names = [
+      "GRIST_ENABLE_REQUEST_FUNCTION",
+      "ALLOWED_WEBHOOK_DOMAINS",
+      "GRIST_EXPERIMENTAL_PLUGINS",
+      "GRIST_TRUST_PLUGINS",
+      "GRIST_WIDGET_LIST_URL",
+    ];
+    const saved = new Map(names.map(name => [name, process.env[name]]));
+    try {
+      process.env.GRIST_ENABLE_REQUEST_FUNCTION = "1";
+      process.env.ALLOWED_WEBHOOK_DOMAINS = "hooks.ikadoc.test";
+      process.env.GRIST_EXPERIMENTAL_PLUGINS = "0";
+      delete process.env.GRIST_TRUST_PLUGINS;
+      delete process.env.GRIST_WIDGET_LIST_URL;
+
+      const response = await requestSandboxProof({
+        auth: true,
+        path: "/api/ikadoc/runtime/posture",
+        sandboxInfo: {
+          flavor: "gvisor",
+          configured: true,
+          functional: true,
+          effective: true,
+          lastSuccessfulStep: "all",
+        },
+      });
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(response.data, {
+        sandbox: { flavor: "gvisor", effective: true },
+        requestFunctionEnabled: true,
+        webhookDomains: { wildcard: false, allowed: ["hooks.ikadoc.test"] },
+        experimentalPluginsEnabled: false,
+        trustedPlugins: false,
+        widgetRepositoryConfigured: false,
+      });
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
 });
 
 async function requestSandboxProof(options: {
   auth: boolean;
   sandboxInfo: SandboxInfo;
+  path?: string;
 }) {
   const app = express();
   if (options.auth) {
@@ -89,7 +138,7 @@ async function requestSandboxProof(options: {
   try {
     const port = (address as { port: number }).port;
     return await axios.get(
-      `http://127.0.0.1:${port}/api/ikadoc/runtime/formula-sandbox-proof`,
+      `http://127.0.0.1:${port}${options.path ?? "/api/ikadoc/runtime/formula-sandbox-proof"}`,
       { validateStatus: () => true },
     );
   } finally {

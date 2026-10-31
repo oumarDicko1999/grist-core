@@ -56,6 +56,14 @@ export interface IkaDocRuntimeConfigWire {
   appearance?: "light" | "dark";
 }
 
+/** GW-THM-03 / GW-SHL-02: what a page served without an IkaDoc session needs to look like IkaDoc. */
+export interface IkaDocDeploymentPageConfig {
+  /** The deployment's visual style; Owarelin unless the tenant uses the Material style. */
+  theme: string;
+  /** Where "Retour à IkaDoc" leads, when the deployment sets it. */
+  returnUrl?: string;
+}
+
 export interface IkaDocRuntimeUser {
   userId: string;
   username: string;
@@ -1106,6 +1114,10 @@ export interface GristLoadConfig {
 
   // IkaDoc runtime config. Present only when Grist is loaded as an IkaDoc spreadsheet runtime.
   ikadoc?: IkaDocRuntimeConfigWire;
+
+  // IkaDoc deployment settings for pages served without an IkaDoc session (refusals, sign-in).
+  // Present only in IkaDoc deployments.
+  ikadocDeployment?: IkaDocDeploymentPageConfig;
 
   // The timestamp when this gristConfig was generated.
   timestampMs: number;

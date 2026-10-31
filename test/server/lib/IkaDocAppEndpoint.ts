@@ -3,6 +3,7 @@ import {
   IkaDocEditorAdmissionClient,
   IkaDocEditorAdmissionRequest,
 } from "app/ikadoc/IkaDocEditorAdmission";
+import { toIkaDocBrowserRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 import { attachIkaDocEditorEndpoint } from "app/server/lib/IkaDocEditorEndpoint";
 import { IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimePolicy";
 import { ISendAppPageOptions } from "app/server/lib/sendAppPage";
@@ -31,6 +32,7 @@ const RUNTIME_CONFIG = {
   workerUrl: "/ikadoc/sessions/session-1/worker",
   statusUrl: "/ikadoc/sessions/session-1/status",
   validationUrl: "/ikadoc/editor/session-validation",
+  validationToken: "validation-token",
   discardUrl: "/ikadoc/sessions/session-1/discard",
   blockedCapabilityUrl: "/ikadoc/sessions/session-1/blocked-capability",
   capabilities: DENIED_IKADOC_CAPABILITIES,
@@ -109,11 +111,12 @@ describe("IkaDoc app endpoint", function() {
       enableWidgetRepository: false,
       experimentalPlugins: false,
       getWorker: { "doc-1": "/ikadoc/sessions/session-1/worker" },
-      ikadoc: RUNTIME_CONFIG,
+      ikadoc: toIkaDocBrowserRuntimeConfig(RUNTIME_CONFIG),
       permittedCustomWidgets: [],
       pluginUrl: "http://plugins.invalid",
       plugins: [],
     });
+    assert.notProperty(sentPages[0].config?.ikadoc, "validationToken");
     assert.isTrue(
       response.headers["set-cookie"]?.some(cookie => cookie.startsWith(`${IKADOC_RUNTIME_SESSION_COOKIE}=session-1;`)),
     );
@@ -137,7 +140,7 @@ describe("IkaDoc app endpoint", function() {
       status: 502,
     },
   ] as const) {
-    it(`maps ${admissionDenial.code} admission denial without serving Grist`, async function() {
+    it(`maps ${admissionDenial.code} admission denial to the IkaDoc refusal page`, async function() {
       const app = express();
       const sentPages: ISendAppPageOptions[] = [];
       const admissionClient: IkaDocEditorAdmissionClient = {
@@ -155,8 +158,12 @@ describe("IkaDoc app endpoint", function() {
       const response = await requestApp(app, "/grist/editor/session-1");
 
       assert.equal(response.status, admissionDenial.status);
-      assert.equal(response.data, admissionDenial.safeMessage);
-      assert.deepEqual(sentPages, []);
+      assert.deepEqual(sentPages.map(page => page.path), ["error.html"]);
+      assert.deepEqual(response.data, {
+        errPage: "access-denied",
+        errMessage: admissionDenial.safeMessage,
+        errDetails: { ikadocRefusal: admissionDenial.code },
+      });
     });
   }
 });
