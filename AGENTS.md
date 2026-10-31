@@ -65,7 +65,7 @@ IkaDoc-owned code should live in one of these locations whenever possible:
 - `app/ikadoc/**`
 - `app/server/lib/IkaDoc*.ts`
 - `app/client/ui/IkaDoc*.ts`
-- `app/common/themes/Owarelin*.ts`, `app/common/themes/owarelinTokens.ts`
+- `app/common/themes/IkaDoc*.ts`, `app/common/themes/ikadocPalette.ts`
   (theme tokens must live in the `app/common` TypeScript project)
 - `devtools/**` (development only, never in images)
 - `static/img/ikadoc/**`, `static/fonts/ikadoc/**` (IkaDoc assets)

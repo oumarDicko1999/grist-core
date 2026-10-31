@@ -1,6 +1,8 @@
 import { components, ThemeTokens, tokens } from "app/common/ThemePrefs";
-import { ikaDocChartColorway, OwarelinDark, OwarelinLight } from "app/common/themes/OwarelinThemes";
-import { OWARELIN_COLOR_TOKENS } from "app/common/themes/owarelinTokens";
+import { IKADOC_PALETTE } from "app/common/themes/ikadocPalette";
+import {
+  ikaDocChartColorway, IkaDocMaterialDark, IkaDocMaterialLight, OwarelinDark, OwarelinLight,
+} from "app/common/themes/IkaDocThemes";
 
 import { assert } from "chai";
 
@@ -9,64 +11,87 @@ const WCAG_AA_TEXT = 4.5;
 type Rgba = [number, number, number, number];
 
 const THEMES = [
-  ["OwarelinLight", OwarelinLight],
-  ["OwarelinDark", OwarelinDark],
+  { name: "OwarelinLight", theme: OwarelinLight, palette: IKADOC_PALETTE.owarelin.light },
+  { name: "OwarelinDark", theme: OwarelinDark, palette: IKADOC_PALETTE.owarelin.dark },
+  { name: "IkaDocMaterialLight", theme: IkaDocMaterialLight, palette: IKADOC_PALETTE.material.light },
+  { name: "IkaDocMaterialDark", theme: IkaDocMaterialDark, palette: IKADOC_PALETTE.material.dark },
 ] as const;
 
-/** Text color on background color, for both themes. */
+/** Text color on background color, for every theme. */
 const TEXT_PAIRS: [string, string][] = [
   ["body", "bg"],
   ["body", "bgSecondary"],
   ["emphasis", "bg"],
   ["secondary", "bg"],
-  ["secondary", "bgSecondary"],
   ["primary", "bg"],
+  ["veryLight", "bgEmphasis"],
   ["components.cellFg", "components.cellBg"],
   ["components.tableHeaderFg", "components.tableHeaderBg"],
   ["components.choiceTokenFg", "components.choiceTokenBg"],
   ["components.controlPrimaryFg", "components.controlPrimaryBg"],
   ["components.controlPrimaryFg", "components.controlPrimaryHoverBg"],
-  ["components.menuItemSelectedFg", "components.menuItemSelectedBg"],
   ["components.iconButtonFg", "components.iconButtonPrimaryBg"],
   ["components.sidePanelOpenerActiveFg", "components.sidePanelOpenerActiveBg"],
   ["components.activePageFg", "components.activePageBg"],
-  ["veryLight", "bgEmphasis"],
+  ["components.menuItemFg", "components.menuBg"],
+  ["components.menuItemSelectedFg", "components.menuItemSelectedBg"],
 ];
 
-/** GW-THM-01/05/06: the Owarelin themes follow IkaDoc's tokens and keep text readable. */
-describe("Owarelin themes", function() {
-  it("take their surfaces, text and primary from the IkaDoc design tokens", function() {
-    assert.equal(OwarelinLight.bg, OWARELIN_COLOR_TOKENS.light.surface);
-    assert.equal(OwarelinLight.primary, OWARELIN_COLOR_TOKENS.light.primary);
-    assert.equal(OwarelinLight.body, OWARELIN_COLOR_TOKENS.light.ink);
+/** GW-THM-01/05/06/07: Grist themes follow the colors IkaDoc renders, and keep text readable. */
+describe("IkaDoc themes", function() {
+  for (const { name, theme, palette } of THEMES) {
+    describe(name, function() {
+      it("takes surfaces, text and primary from the IkaDoc palette", function() {
+        assert.equal(theme.bg, palette.colors.surface);
+        assert.equal(theme.bgSecondary, palette.colors.background);
+        assert.equal(theme.body, palette.colors.onSurface);
+        assert.equal(theme.primary, palette.colors.primary);
+      });
 
-    assert.equal(OwarelinDark.bg, OWARELIN_COLOR_TOKENS.dark.surface);
-    assert.equal(OwarelinDark.primary, OWARELIN_COLOR_TOKENS.dark.primary);
+      it("draws the grid like the IkaDoc record table", function() {
+        assert.equal(theme.components.tableHeaderBg, palette.grid.headerBg);
+        assert.equal(theme.components.tableHeaderFg, palette.grid.headerFg);
+        assert.equal(theme.components.tableBodyBorder, palette.grid.cellBorderBottom);
+        assert.equal(theme.components.choiceTokenBg, palette.chip.bg);
+      });
 
-    assert.include(String(OwarelinLight.fontFamily), "Owarelin Inter");
-  });
+      it("puts IkaDoc's on-primary color, not white, on primary controls", function() {
+        assert.equal(theme.components.controlPrimaryFg, palette.colors.onPrimary);
+        assert.equal(theme.components.iconButtonFg, palette.colors.onPrimary);
+      });
+
+      it("marks the selected page with IkaDoc's container color", function() {
+        assert.equal(theme.components.activePageBg, palette.colors.secondaryContainer);
+        assert.equal(theme.components.activePageFg, palette.colors.onSecondaryContainer);
+      });
+
+      it("uses IkaDoc's variable Inter for the interface and for cell data", function() {
+        assert.include(String(theme.fontFamily), "IkaDoc Inter");
+        assert.include(String(theme.fontFamilyData), "IkaDoc Inter");
+      });
+
+      describe(`text contrast (WCAG AA ${WCAG_AA_TEXT}:1)`, function() {
+        for (const [fg, bg] of TEXT_PAIRS) {
+          it(`${fg} on ${bg}`, function() {
+            const background = composite(parseColor(resolve(theme, bg)), parseColor(theme.bg as string));
+            const foreground = parseColor(resolve(theme, fg));
+
+            const ratio = contrast(composite(foreground, background), background);
+
+            assert.isAtLeast(ratio, WCAG_AA_TEXT, `${fg} on ${bg} is ${ratio.toFixed(2)}:1`);
+          });
+        }
+      });
+    });
+  }
 
   it("uses the Owarelin chart palette only under Owarelin themes", function() {
     assert.isAbove(ikaDocChartColorway("OwarelinLight")?.length ?? 0, 5);
     assert.isAbove(ikaDocChartColorway("OwarelinDark")?.length ?? 0, 5);
 
+    assert.isUndefined(ikaDocChartColorway("IkaDocMaterialLight"));
     assert.isUndefined(ikaDocChartColorway("GristLight"));
   });
-
-  for (const [name, theme] of THEMES) {
-    describe(`${name} text contrast (WCAG AA ${WCAG_AA_TEXT}:1)`, function() {
-      for (const [fg, bg] of TEXT_PAIRS) {
-        it(`${fg} on ${bg}`, function() {
-          const background = parseColor(resolve(theme, bg));
-          const foreground = parseColor(resolve(theme, fg));
-
-          const ratio = contrast(composite(foreground, background), background);
-
-          assert.isAtLeast(ratio, WCAG_AA_TEXT, `${fg} on ${bg} is ${ratio.toFixed(2)}:1`);
-        });
-      }
-    });
-  }
 });
 
 /** Resolves a token path, following references to other theme tokens (`tokens.primary`, ...). */

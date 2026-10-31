@@ -241,8 +241,9 @@ const CLIENT_SEAMS = [
   {
     file: "app/client/ui/IkaDocThemeBridge.ts",
     anchors: [
-      "font-family: 'Owarelin Inter';",
-      "font-family: 'Owarelin Fraunces';",
+      "font-family: 'IkaDoc Inter';",
+      "font-weight: 100 900;",
+      "--gridview-header-height: 42px;",
       "html[data-grist-appearance='dark']",
     ],
   },
@@ -317,12 +318,14 @@ describe("IkaDoc client seams", function() {
     });
   }
 
-  it("lets the native Owarelin themes own Grist's colors (GW-THM-04)", function() {
+  it("lets the native IkaDoc themes own Grist's colors (GW-THM-04)", function() {
     const source = readSource("app/client/ui/IkaDocThemeBridge.ts");
 
     const forcedGristVariables = source.match(/^\s+--grist-[a-z0-9-]+\s*:/gm) ?? [];
+    const hardCodedColors = source.match(/#[0-9a-f]{3,8}\b/gi) ?? [];
 
     assert.deepEqual(forcedGristVariables, []);
+    assert.deepEqual(hardCodedColors, [], "grid colors come from ikadocPalette.ts");
   });
 
   it("keeps the IkaDoc tools panel limited to document history", function() {

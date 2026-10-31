@@ -2,7 +2,9 @@ import { ThemeName, ThemeTokens } from "app/common/ThemePrefs";
 import { GristDark } from "app/common/themes/GristDark";
 import { GristLight } from "app/common/themes/GristLight";
 import { HighContrastLight } from "app/common/themes/HighContrastLight";
-import { OwarelinDark, OwarelinLight } from "app/common/themes/OwarelinThemes";
+import {
+  IkaDocMaterialDark, IkaDocMaterialLight, OwarelinDark, OwarelinLight,
+} from "app/common/themes/IkaDocThemes";
 
 const THEMES: Readonly<Record<ThemeName, ThemeTokens>> = {
   GristLight,
@@ -10,6 +12,8 @@ const THEMES: Readonly<Record<ThemeName, ThemeTokens>> = {
   HighContrastLight,
   OwarelinLight,
   OwarelinDark,
+  IkaDocMaterialLight,
+  IkaDocMaterialDark,
 };
 
 export function getThemeTokens(themeName: ThemeName): ThemeTokens {

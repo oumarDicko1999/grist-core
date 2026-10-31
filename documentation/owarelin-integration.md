@@ -195,20 +195,27 @@ Owarelin owns document lifecycle. Grist is an editor/viewer runtime.
 
 Grist runtime UI must visually fit the IkaDoc tenant UI.
 
-- Colors come from native Grist themes, `OwarelinLight` and `OwarelinDark`
-  (`app/common/themes/OwarelinThemes.ts`). They start from Grist's own themes and
+- Each IkaDoc visual style has its own pair of native Grist themes:
+  `OwarelinLight`/`OwarelinDark` and `IkaDocMaterialLight`/`IkaDocMaterialDark`
+  (`app/common/themes/IkaDocThemes.ts`). They start from Grist's own themes and
   replace the semantic tokens; Grist's component tokens follow from those.
-- Theme values are generated from the frontend's `--ow-color-*` tokens by
-  `devtools/owarelin-theme-tokens/generate.mjs` into
-  `app/common/themes/owarelinTokens.ts`. Never edit that file by hand.
+- Colors are the ones the IkaDoc frontend renders, not hand-picked values:
+  `devtools/ikadoc-theme-tokens/extract.js` runs in the IkaDoc page and resolves
+  `--mat-sys-*`/`--ow-*` and the record table's own formulas for both styles in
+  light and dark; `generate.mjs` writes `app/common/themes/ikadocPalette.ts`.
+  Never edit that file by hand; re-extract when the frontend's theme changes.
 - IkaDoc chooses the theme (`app/client/ui/IkaDocTheme.ts`): from the runtime
   config in a session, from `IKADOC_GRIST_DEFAULT_THEME` on pages served without
-  one. Tenants on the Material style get Grist's native themes.
-- `IkaDocThemeBridge` only serves the IkaDoc fonts. It must not set colors or
-  Grist CSS variables, and must not target internal Grist classes
-  (`test/common/IkaDocClientSeams.ts` enforces it).
-- Charts use the Owarelin palette (`ikaDocChartColorway`).
-- `test/common/OwarelinThemes.ts` checks WCAG AA text contrast in both themes.
+  one.
+- `IkaDocThemeBridge` serves the IkaDoc fonts (variable Inter, 100–900) and the
+  shapes and density theme tokens cannot express: 42px headers, 46px rows, row
+  stripes and hover, pill chips, field and menu radius per style, 28px dialogs.
+  It never sets colors or `--grist-*` variables; its grid colors come from the
+  palette (`test/common/IkaDocClientSeams.ts` enforces it). It targets Grist's
+  stable classes (`record-even`, `column_name`, `field_clip`, `test-*`) only.
+- Charts use the Owarelin palette under Owarelin (`ikaDocChartColorway`).
+- `test/common/IkaDocThemes.ts` checks palette parity and WCAG AA text contrast
+  in all four themes.
 - Copy must be translatable through locale files.
 - Runtime font assets live under `static/fonts/ikadoc/`. Keep bundled font files,
   their upstream family names, and license provenance together when refreshing

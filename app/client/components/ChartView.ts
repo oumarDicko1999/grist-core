@@ -23,7 +23,7 @@ import { gristThemeObs } from "app/client/ui2018/theme";
 import { unstyledButton } from "app/client/ui2018/unstyled";
 import { nativeCompare, unwrap } from "app/common/gutil";
 import { Sort } from "app/common/SortSpec";
-import { ikaDocChartColorway } from "app/common/themes/OwarelinThemes";
+import { ikaDocChartColorway } from "app/common/themes/IkaDocThemes";
 import { BaseFormatter } from "app/common/ValueFormatter";
 import { decodeObject } from "app/plugin/objtypes";
 
