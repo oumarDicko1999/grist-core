@@ -3,6 +3,9 @@
         "Enter email address": ""
     },
     "IkaDocEditorControls": {
+        "Admit guided workspace rows": "Admit guided workspace rows",
+        "Apply": "Apply",
+        "Applying guided workspace": "Applying guided workspace",
         "Build proposal": "Build proposal",
         "Building proposal": "Building proposal",
         "Checking session": "Checking session",
@@ -10,6 +13,9 @@
         "Discard this spreadsheet session?": "Discard this spreadsheet session?",
         "Discarding session": "Discarding session",
         "Guided workspace": "Guided workspace",
+        "Guided workspace has {{count}} issue(s)": "Guided workspace has {{count}} issue(s)",
+        "Guided workspace ready to apply": "Guided workspace ready to apply",
+        "Guided workspace response is invalid": "Guided workspace response is invalid",
         "Guided workspace unavailable": "Guided workspace unavailable",
         "Guided workspace: {{schema}}": "Guided workspace: {{schema}}",
         "No changes to save": "No changes to save",
@@ -21,8 +27,46 @@
         "Saved": "Saved",
         "Saving": "Saving",
         "Session discarded": "Session discarded",
+        "Simulate": "Simulate",
+        "Simulating guided workspace": "Simulating guided workspace",
         "Source refreshed": "Source refreshed",
+        "Update guided workspace row states": "Update guided workspace row states",
+        "row {{row}}": "row {{row}}",
+        "{{count}} more issue(s)": "{{count}} more issue(s)",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session ready",
         "{{sourceSummary}}Session: {{status}}": "{{sourceSummary}}Session: {{status}}"
+    },
+    "IkaDocRefusalPage": {
+        "Back to the spreadsheet": "Back to the spreadsheet",
+        "Back to IkaDoc": "Back to IkaDoc",
+        "Reference: {{reference}}": "Reference: {{reference}}",
+        "Your session has ended": "Your session has ended",
+        "Open the spreadsheet again from IkaDoc to continue with up-to-date data.": "Open the spreadsheet again from IkaDoc to continue with up-to-date data.",
+        "Your access has changed": "Your access has changed",
+        "Your rights on this spreadsheet changed. Ask its owner, or open it again from IkaDoc.": "Your rights on this spreadsheet changed. Ask its owner, or open it again from IkaDoc.",
+        "The spreadsheet is unavailable right now": "The spreadsheet is unavailable right now",
+        "IkaDoc could not open the spreadsheet. Try again in a moment.": "IkaDoc could not open the spreadsheet. Try again in a moment.",
+        "This page is not available here": "This page is not available here",
+        "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it.": "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it."
+    },
+    "IkaDocGuidedWorkspaceRows": {
+        "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.": "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.",
+        "The pasted values do not line up with the rows being added. Paste them again.": "The pasted values do not line up with the rows being added. Paste them again."
+    },
+    "IkaDocGuidedWorkspaceIssues": {
+        "Conflict on {{metadataCode}}": "Conflict on {{metadataCode}}",
+        "Conflict on {{metadataCode}}: values are restricted": "Conflict on {{metadataCode}}: values are restricted",
+        "current={{value}}": "current={{value}}",
+        "empty": "empty",
+        "original={{value}}": "original={{value}}",
+        "yours={{value}}": "yours={{value}}"
+    },
+    "IkaDocGuidedWorkspaceSetup": {
+        "Guided workspace setup failed.": "Guided workspace setup failed.",
+        "Prepare guided workspace pages": "Prepare guided workspace pages",
+        "Prepare guided workspace tables": "Prepare guided workspace tables"
+    },
+    "IkaDocReferenceWidget": {
+        "No matching references": "No matching references"
     }
 }

@@ -3208,6 +3208,9 @@
         "unfiltered": "non filtré"
     },
     "IkaDocEditorControls": {
+        "Admit guided workspace rows": "Admettre les lignes de l'espace guide",
+        "Apply": "Appliquer",
+        "Applying guided workspace": "Application de l'espace guide",
         "Build proposal": "Preparer une proposition",
         "Building proposal": "Preparation de la proposition",
         "Checking session": "Verification de la session",
@@ -3215,6 +3218,9 @@
         "Discard this spreadsheet session?": "Abandonner cette session de feuille de calcul ?",
         "Discarding session": "Abandon de la session",
         "Guided workspace": "Espace guide",
+        "Guided workspace has {{count}} issue(s)": "L'espace guide contient {{count}} probleme(s)",
+        "Guided workspace ready to apply": "Espace guide pret a appliquer",
+        "Guided workspace response is invalid": "La reponse de l'espace guide est invalide",
         "Guided workspace unavailable": "Espace guide indisponible",
         "Guided workspace: {{schema}}": "Espace guide : {{schema}}",
         "No changes to save": "Aucun changement a enregistrer",
@@ -3226,8 +3232,46 @@
         "Saved": "Enregistre",
         "Saving": "Enregistrement",
         "Session discarded": "Session abandonnee",
+        "Simulate": "Simuler",
+        "Simulating guided workspace": "Simulation de l'espace guide",
         "Source refreshed": "Source actualisee",
+        "Update guided workspace row states": "Mettre a jour l'etat des lignes de l'espace guide",
+        "row {{row}}": "ligne {{row}}",
+        "{{count}} more issue(s)": "{{count}} autre(s) probleme(s)",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session prete",
         "{{sourceSummary}}Session: {{status}}": "{{sourceSummary}}Session : {{status}}"
+    },
+    "IkaDocRefusalPage": {
+        "Back to the spreadsheet": "Revenir au tableur",
+        "Back to IkaDoc": "Retour à IkaDoc",
+        "Reference: {{reference}}": "Référence : {{reference}}",
+        "Your session has ended": "Votre session est terminée",
+        "Open the spreadsheet again from IkaDoc to continue with up-to-date data.": "Rouvrez le tableur depuis IkaDoc pour continuer avec des données à jour.",
+        "Your access has changed": "Votre accès a changé",
+        "Your rights on this spreadsheet changed. Ask its owner, or open it again from IkaDoc.": "Vos droits sur ce tableur ont changé. Demandez à son propriétaire, ou rouvrez-le depuis IkaDoc.",
+        "The spreadsheet is unavailable right now": "Le tableur est momentanément indisponible",
+        "IkaDoc could not open the spreadsheet. Try again in a moment.": "IkaDoc n'a pas pu ouvrir le tableur. Réessayez dans un instant.",
+        "This page is not available here": "Cette page n'est pas disponible ici",
+        "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it.": "Le tableur ne s'ouvre que depuis IkaDoc. Les pages d'accueil et de réglages de Grist n'en font pas partie."
+    },
+    "IkaDocGuidedWorkspaceRows": {
+        "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.": "IkaDoc n'a pas pu préparer les nouvelles lignes. Réessayez, puis rechargez le tableur si le problème persiste.",
+        "The pasted values do not line up with the rows being added. Paste them again.": "Les valeurs collées ne correspondent pas aux lignes ajoutées. Collez-les à nouveau."
+    },
+    "IkaDocGuidedWorkspaceIssues": {
+        "Conflict on {{metadataCode}}": "Conflit sur {{metadataCode}}",
+        "Conflict on {{metadataCode}}: values are restricted": "Conflit sur {{metadataCode}} : valeurs restreintes",
+        "current={{value}}": "actuel={{value}}",
+        "empty": "vide",
+        "original={{value}}": "original={{value}}",
+        "yours={{value}}": "votre valeur={{value}}"
+    },
+    "IkaDocGuidedWorkspaceSetup": {
+        "Guided workspace setup failed.": "La preparation de l'espace guide a echoue.",
+        "Prepare guided workspace pages": "Preparer les pages de l'espace guide",
+        "Prepare guided workspace tables": "Preparer les tables de l'espace guide"
+    },
+    "IkaDocReferenceWidget": {
+        "No matching references": "Aucune reference correspondante"
     }
 }
