@@ -14,7 +14,20 @@ const CLIENTS = [
   "Université de Ségou",
 ];
 
+const DOCUMENT_LOCALE = "fr-FR";
+
 const STATUSES = ["Brouillon", "Envoyée", "Payée", "Payée", "Payée", "En retard"];
+
+/** IkaDoc sizes columns to their content; Grist's default width (~75px) truncates everything. */
+const COLUMN_WIDTHS = {
+  ikadoc_record_id: 300,
+  ikadoc_schema_type: 130,
+  numero: 150,
+  client: 210,
+  statut: 130,
+  montant: 140,
+  date_emission: 140,
+};
 
 export async function createDemoDocument(gristOrigin) {
   const apiKey = await defaultUserApiKey(gristOrigin);
@@ -42,6 +55,9 @@ export async function createDemoDocument(gristOrigin) {
     method: "POST",
     body: [["RemoveTable", "Table1"]],
   });
+
+  await applyColumnWidths(api, documentId);
+  await applyFrenchLocale(api, documentId);
 
   return documentId;
 }
@@ -118,10 +134,57 @@ async function gristApi(gristOrigin, apiKey, path, { method = "GET", body } = {}
   });
 
   if (!response.ok) {
-    throw new Error(`Grist ${method} ${path} failed (HTTP ${response.status})`);
+    const detail = (await response.text()).slice(0, 300);
+
+    throw new Error(`Grist ${method} ${path} failed (HTTP ${response.status}): ${detail}`);
   }
 
   return response.json();
+}
+
+/**
+ * Column widths live on the view's fields, so they are set after the table exists.
+ * Only grid sections: Grist refuses changes to record card fields.
+ */
+async function applyColumnWidths(api, documentId) {
+  const table = name => api(`/api/docs/${documentId}/tables/${name}/records`);
+
+  const { records: columns } = await table("_grist_Tables_column");
+  const { records: sections } = await table("_grist_Views_section");
+  const { records: fields } = await table("_grist_Views_section_field");
+
+  const columnIds = new Map(columns.map(column => [column.id, column.fields.colId]));
+  const gridSectionIds = new Set(
+    sections.filter(section => section.fields.parentKey === "record").map(section => section.id),
+  );
+
+  const sizedFields = fields
+    .filter(field => gridSectionIds.has(field.fields.parentId))
+    .map(field => ({ id: field.id, width: COLUMN_WIDTHS[columnIds.get(field.fields.colRef)] }))
+    .filter(field => field.width !== undefined);
+
+  await api(`/api/docs/${documentId}/apply`, {
+    method: "POST",
+    body: [[
+      "BulkUpdateRecord",
+      "_grist_Views_section_field",
+      sizedFields.map(field => field.id),
+      { width: sizedFields.map(field => field.width) },
+    ]],
+  });
+}
+
+/** IkaDoc tenants are French: dates read "12 avr. 2026" and amounts "5 732 000". */
+async function applyFrenchLocale(api, documentId) {
+  const { records: [docInfo] } = await api(`/api/docs/${documentId}/tables/_grist_DocInfo/records`);
+
+  const settings = JSON.parse(docInfo.fields.documentSettings || "{}");
+  settings.locale = DOCUMENT_LOCALE;
+
+  await api(`/api/docs/${documentId}/apply`, {
+    method: "POST",
+    body: [["UpdateRecord", "_grist_DocInfo", docInfo.id, { documentSettings: JSON.stringify(settings) }]],
+  });
 }
 
 function invoiceTable() {
@@ -135,8 +198,8 @@ function invoiceTable() {
       column("statut", "Statut", "Choice", {
         choices: ["Brouillon", "Envoyée", "Payée", "En retard"],
       }),
-      column("montant", "Montant", "Numeric"),
-      column("date_emission", "Émise le", "Date"),
+      column("montant", "Montant", "Numeric", { numMode: "decimal", decimals: 0 }),
+      column("date_emission", "Émise le", "Date", { dateFormat: "D MMM YYYY" }),
     ],
   };
 }
