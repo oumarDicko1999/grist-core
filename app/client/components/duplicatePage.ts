@@ -17,11 +17,12 @@ export async function buildDuplicatePageDialog(gristDoc: GristDoc, pageId: numbe
   let inputEl: HTMLInputElement;
   setTimeout(() => { inputEl.focus(); inputEl.select(); }, 100);
 
-  confirmModal("Duplicate page", "Save", () => duplicatePage(gristDoc, pageId, inputEl.value), {
+  // Owarelin/IkaDoc: these labels were not translated (GW-SHL-03).
+  confirmModal(t("Duplicate page"), t("Save"), () => duplicatePage(gristDoc, pageId, inputEl.value), {
     explanation: dom("div", [
       cssField(
-        cssLabel("Name"),
-        inputEl = cssInput({ value: pageName + " (copy)" }),
+        cssLabel(t("Name")),
+        inputEl = cssInput({ value: t("{{name}} (copy)", { name: pageName }) }),
       ),
       t("Note that this does not copy data, but creates another view of the same data."),
     ]),
@@ -33,7 +34,7 @@ export async function buildDuplicatePageDialog(gristDoc: GristDoc, pageId: numbe
  */
 async function duplicatePage(gristDoc: GristDoc, pageId: number, pageName: string = "") {
   const sourceView = gristDoc.docModel.pages.rowModels[pageId].view.peek();
-  pageName = pageName || `${sourceView.name.peek()} (copy)`;
+  pageName = pageName || t("{{name}} (copy)", { name: sourceView.name.peek() });
   const viewSections = sourceView.viewSections.peek().peek();
   let viewRef = 0;
   await gristDoc.docData.bundleActions(

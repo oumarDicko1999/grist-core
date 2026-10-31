@@ -1097,7 +1097,11 @@
     },
     "duplicatePage": {
         "Note that this does not copy data, but creates another view of the same data.": "Notez que cette opération ne duplique pas les données, mais crée une autre page avec les mêmes données.",
-        "Duplicate page {{pageName}}": "Dupliquer la page {{pageName}}"
+        "Duplicate page {{pageName}}": "Dupliquer la page {{pageName}}",
+        "Duplicate page": "Dupliquer la page",
+        "Save": "Enregistrer",
+        "Name": "Nom",
+        "{{name}} (copy)": "{{name}} (copie)"
     },
     "errorPages": {
         "Access denied{{suffix}}": "Accès refusé{{suffix}}",

@@ -43,6 +43,10 @@ const CLIENT_SEAMS = [
     ],
   },
   {
+    file: "app/client/components/duplicatePage.ts",
+    anchors: ["confirmModal(t(\"Duplicate page\"), t(\"Save\")", "cssLabel(t(\"Name\"))"],
+  },
+  {
     file: "app/client/widgets/DateTextBox.js",
     anchors: ["cssLabel(t(\"Date Format\"))", "defaultLabel: t(\"Mixed format\")"],
   },

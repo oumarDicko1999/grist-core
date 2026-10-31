@@ -113,5 +113,11 @@
         "Query": "Query",
         "Selected records": "Selected records",
         "Document": "Document"
+    },
+    "duplicatePage": {
+        "Duplicate page": "Duplicate page",
+        "Save": "Save",
+        "Name": "Name",
+        "{{name}} (copy)": "{{name}} (copy)"
     }
 }
