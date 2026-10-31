@@ -47,6 +47,8 @@ export function buildCollapsedSectionDom(options: {
     ),
     cssMenu(
       testId("section-menu-viewLayout"),
+      // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+      { "aria-label": t("Widget options") },
       cssDotsIconWrapper(cssIcon("Dots")),
       menu(_ctl => makeCollapsedLayoutMenu(vs, gristDoc), {
         ...defaultMenuOptions,

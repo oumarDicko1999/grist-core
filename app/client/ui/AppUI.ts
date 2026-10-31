@@ -39,6 +39,9 @@ import { Computed, dom, IDisposable, IDisposableOwner, Observable, replaceConten
 const DEFAULT_DOC_LEFT_PANEL_WIDTH = 240;
 const IKADOC_VIEWER_LEFT_PANEL_WIDTH = 184;
 
+// Owarelin/IkaDoc: the creator panel fits French labels without scrolling from 320px (GW-SHL-05).
+const IKADOC_RIGHT_PANEL_WIDTH = 320;
+
 // When integrating into the old app, we might in theory switch between new-style and old-style
 // content. This function allows disposing the created content by old-style code.
 // TODO once #newui is gone, we don't need to worry about this being disposable.
@@ -165,7 +168,13 @@ function pagePanelsDoc(owner: IDisposableOwner, appModel: AppModel, appObj: App)
     isIkaDocViewerRuntime ? IKADOC_VIEWER_LEFT_PANEL_WIDTH : DEFAULT_DOC_LEFT_PANEL_WIDTH,
     isNumber,
   );
-  const rightPanelWidth = createSessionObs<number>(owner, "rightPanelWidth", DEFAULT_DOC_LEFT_PANEL_WIDTH, isNumber);
+  const isIkaDocRuntime = runtimeConfig.kind === "enabled";
+  const rightPanelWidth = createSessionObs<number>(
+    owner,
+    isIkaDocRuntime ? "ikadocRightPanelWidth" : "rightPanelWidth",
+    isIkaDocRuntime ? IKADOC_RIGHT_PANEL_WIDTH : DEFAULT_DOC_LEFT_PANEL_WIDTH,
+    isNumber,
+  );
   const showAuthoringSurfaces = shouldShowIkaDocRuntimeAuthoringSurfaces();
 
   // The RightPanel component gets created only when an instance of GristDoc is set in pageModel.

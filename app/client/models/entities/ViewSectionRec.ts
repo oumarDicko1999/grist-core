@@ -19,6 +19,7 @@ import {
 import { BEHAVIOR } from "app/client/models/entities/ColumnRec";
 import * as modelUtil from "app/client/models/modelUtil";
 import { removeRule, RuleOwner } from "app/client/models/RuleOwner";
+import { ikaDocDefaultWidgetTitle } from "app/client/ui/IkaDocWidgetTitles";
 import { LinkConfig } from "app/client/ui/LinkConfig";
 import { getWidgetTypes } from "app/client/ui/widgetTypesMap";
 import { FilterColValues } from "app/common/ActiveDocAPI";
@@ -548,6 +549,15 @@ export function createViewSectionRec(this: ViewSectionRec, docModel: DocModel): 
       `${getWidgetTypes(this.parentKey.peek() as any).getLabel()}` :
       "";
     const table = this.table();
+
+    // Owarelin/IkaDoc: IkaDoc's title wording in IkaDoc sessions (GW-SHL-06).
+    const ikadocTitle = ikaDocDefaultWidgetTitle({
+      tableName: table.tableNameDef(),
+      groupDescription: table.groupDesc(),
+      widgetType: widgetTypeDesc,
+    });
+    if (ikadocTitle !== undefined) { return ikadocTitle; }
+
     return [
       table.tableNameDef()?.toUpperCase(), // Due to ACL this can be null.
       table.groupDesc(),

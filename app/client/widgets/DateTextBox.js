@@ -10,6 +10,9 @@ const {FormFieldRulesConfig} = require("app/client/components/Forms/FormConfig")
 const {fromKoSave} = require("app/client/lib/fromKoSave");
 const {alignmentSelect, cssButtonSelect} = require("app/client/ui2018/buttonSelect");
 const {cssLabel, cssRow} = require("app/client/ui/RightPanelStyles");
+// Owarelin/IkaDoc: these labels were not translated (GW-SHL-03).
+const {makeT} = require("app/client/lib/localization");
+const t = makeT("DateTextBox");
 const {cssTextInput} = require("app/client/ui2018/editableLabel");
 const {dom: gdom, styled, fromKo} = require("grainjs");
 const {select} = require("app/client/ui2018/menus");
@@ -49,11 +52,11 @@ _.extend(DateTextBox.prototype, AbstractWidget.prototype);
 DateTextBox.prototype.buildDateConfigDom = function() {
   const disabled = this.field.config.options.disabled("dateFormat");
   return dom("div",
-    cssLabel("Date Format"),
+    cssLabel(t("Date Format")),
     cssRow(dom(select(
       fromKo(this.standardDateFormat),
-      [...dateFormatOptions, "Custom"],
-      { disabled, defaultLabel: "Mixed format" },
+      [...dateFormatOptions, { value: "Custom", label: t("Custom") }],
+      { disabled, defaultLabel: t("Mixed format") },
     ), dom.testId("Widget_dateFormat"))),
     kd.maybe(() => !this.mixedDateFormat() && this.isCustomDateFormat(), () => {
       return cssRow(dom(

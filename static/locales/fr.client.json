@@ -1060,7 +1060,8 @@
         "Custom options": "Options personnalisées",
         "SORT": "TRI",
         "FILTER": "FILTRE",
-        "Sort and filter": "Trier et filtrer"
+        "Sort and filter": "Trier et filtrer",
+        "Widget options": "Options de la vue"
     },
     "VisibleFieldsConfig": {
         "Hidden Fields cannot be reordered": "Les champs masqués ne peuvent pas être réordonnés",
@@ -1580,7 +1581,9 @@
     "GridView": {
         "Click to insert": "Cliquer pour insérer",
         "row {{rowNum}} {{colName}}": "ligne {{rowNum}} {{colName}}",
-        "row {{rowNum}} {{colName}} (new row)": "ligne {{rowNum}} {{colName}} (nouvelle ligne)"
+        "row {{rowNum}} {{colName}} (new row)": "ligne {{rowNum}} {{colName}} (nouvelle ligne)",
+        "Select all": "Tout sélectionner",
+        "Column options": "Options de la colonne"
     },
     "SupportGristPage": {
         "GitHub": "GitHub",
@@ -1608,7 +1611,8 @@
     "buildViewSectionDom": {
         "No data": "Aucune donnée",
         "No row selected in {{title}}": "Aucune ligne sélectionnée dans {{title}}",
-        "Not all data is shown": "Toute la donnée n'est pas visible"
+        "Not all data is shown": "Toute la donnée n'est pas visible",
+        "Widget options": "Options de la vue"
     },
     "UserManager": {
         "Allow anyone with the link to open.": "Permettre à toute personne possédant le lien de l'ouvrir.",
@@ -3273,5 +3277,40 @@
     },
     "IkaDocReferenceWidget": {
         "No matching references": "Aucune reference correspondante"
+    },
+    "IkaDocWidgetTitles": {
+        "totals": "totaux",
+        "by {{columns}}": "par {{columns}}"
+    },
+    "DateTextBox": {
+        "Date Format": "Format de date",
+        "Mixed format": "Format composite",
+        "Custom": "Personnalisé"
+    },
+    "DateTimeTextBox": {
+        "Timezone": "Fuseau horaire",
+        "Time Format": "Format d'heure",
+        "Mixed format": "Format composite",
+        "Custom": "Personnalisé"
+    },
+    "NumericSpinner": {
+        "Increase": "Augmenter",
+        "Decrease": "Diminuer"
+    },
+    "IkaDocLockedColumns": {
+        "IkaDoc data: updated when the source is refreshed": "Données IkaDoc : mises à jour à l'actualisation de la source"
+    },
+    "IkaDocSourcesPanel": {
+        "SOURCES": "SOURCES",
+        "{{formatted}} rows_one": "{{formatted}} ligne",
+        "{{formatted}} rows_other": "{{formatted}} lignes",
+        "snapshot {{time}}": "instantané du {{time}}",
+        "{{count}} records changed since the snapshot_one": "{{count}} fiche a changé depuis l'instantané",
+        "{{count}} records changed since the snapshot_other": "{{count}} fiches ont changé depuis l'instantané",
+        "Refresh": "Actualiser",
+        "Saved search": "Recherche sauvegardée",
+        "Query": "Requête",
+        "Selected records": "Sélection de fiches",
+        "Document": "Document"
     }
 }

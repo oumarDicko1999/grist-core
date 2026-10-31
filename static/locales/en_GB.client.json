@@ -68,5 +68,50 @@
     },
     "IkaDocReferenceWidget": {
         "No matching references": "No matching references"
+    },
+    "IkaDocWidgetTitles": {
+        "totals": "totals",
+        "by {{columns}}": "by {{columns}}"
+    },
+    "DateTextBox": {
+        "Date Format": "Date Format",
+        "Mixed format": "Mixed format",
+        "Custom": "Custom"
+    },
+    "DateTimeTextBox": {
+        "Timezone": "Timezone",
+        "Time Format": "Time Format",
+        "Mixed format": "Mixed format",
+        "Custom": "Custom"
+    },
+    "ViewSectionMenu": {
+        "Widget options": "Widget options"
+    },
+    "buildViewSectionDom": {
+        "Widget options": "Widget options"
+    },
+    "GridView": {
+        "Select all": "Select all",
+        "Column options": "Column options"
+    },
+    "NumericSpinner": {
+        "Increase": "Increase",
+        "Decrease": "Decrease"
+    },
+    "IkaDocLockedColumns": {
+        "IkaDoc data: updated when the source is refreshed": "IkaDoc data: updated when the source is refreshed"
+    },
+    "IkaDocSourcesPanel": {
+        "SOURCES": "SOURCES",
+        "{{formatted}} rows_one": "{{formatted}} row",
+        "{{formatted}} rows_other": "{{formatted}} rows",
+        "snapshot {{time}}": "snapshot {{time}}",
+        "{{count}} records changed since the snapshot_one": "{{count}} record changed since the snapshot",
+        "{{count}} records changed since the snapshot_other": "{{count}} records changed since the snapshot",
+        "Refresh": "Refresh",
+        "Saved search": "Saved search",
+        "Query": "Query",
+        "Selected records": "Selected records",
+        "Document": "Document"
     }
 }

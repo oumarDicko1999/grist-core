@@ -88,6 +88,8 @@ export function viewSectionMenu(
       cssFilterMenuWrapper.cls("-unsaved", displaySaveObs),
       testId("wrapper"),
       cssMenu(
+        // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+        { "aria-label": t("Sort and filter") },
         testId("sortAndFilter"),
         // [Filter icon]
         cssFilterIconWrapper(
@@ -164,6 +166,7 @@ export function viewSectionMenu(
         (!canExportFromBrowser && (use(isReadonly) || !canConfigureView))
       )),
       testId("viewLayout"),
+      { "aria-label": t("Widget options") },
       cssDotsIconWrapper(cssIcon("Dots")),
       menu(_ctl => makeViewLayoutMenu(viewSection, isReadonly.get()), {
         ...defaultMenuOptions,

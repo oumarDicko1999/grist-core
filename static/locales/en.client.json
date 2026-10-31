@@ -1070,7 +1070,8 @@
         "SORT": "SORT",
         "Save": "Save",
         "Update Sort&Filter settings": "Update Sort&Filter settings",
-        "Sort and filter": "Sort and filter"
+        "Sort and filter": "Sort and filter",
+        "Widget options": "Widget options"
     },
     "VisibleFieldsConfig": {
         "Cannot drop items into Hidden Fields": "Cannot drop items into Hidden Fields",
@@ -1552,7 +1553,9 @@
     "GridView": {
         "Click to insert": "Click to insert",
         "row {{rowNum}} {{colName}}": "row {{rowNum}} {{colName}}",
-        "row {{rowNum}} {{colName}} (new row)": "row {{rowNum}} {{colName}} (new row)"
+        "row {{rowNum}} {{colName}} (new row)": "row {{rowNum}} {{colName}} (new row)",
+        "Select all": "Select all",
+        "Column options": "Column options"
     },
     "WelcomeSitePicker": {
         "Welcome back": "Welcome back",
@@ -1656,7 +1659,8 @@
     "buildViewSectionDom": {
         "No data": "No data",
         "No row selected in {{title}}": "No row selected in {{title}}",
-        "Not all data is shown": "Not all data is shown"
+        "Not all data is shown": "Not all data is shown",
+        "Widget options": "Widget options"
     },
     "FloatingEditor": {
         "Collapse Editor": "Collapse Editor"
@@ -3267,5 +3271,40 @@
     },
     "IkaDocReferenceWidget": {
         "No matching references": "No matching references"
+    },
+    "IkaDocWidgetTitles": {
+        "totals": "totals",
+        "by {{columns}}": "by {{columns}}"
+    },
+    "DateTextBox": {
+        "Date Format": "Date Format",
+        "Mixed format": "Mixed format",
+        "Custom": "Custom"
+    },
+    "DateTimeTextBox": {
+        "Timezone": "Timezone",
+        "Time Format": "Time Format",
+        "Mixed format": "Mixed format",
+        "Custom": "Custom"
+    },
+    "NumericSpinner": {
+        "Increase": "Increase",
+        "Decrease": "Decrease"
+    },
+    "IkaDocLockedColumns": {
+        "IkaDoc data: updated when the source is refreshed": "IkaDoc data: updated when the source is refreshed"
+    },
+    "IkaDocSourcesPanel": {
+        "SOURCES": "SOURCES",
+        "{{formatted}} rows_one": "{{formatted}} row",
+        "{{formatted}} rows_other": "{{formatted}} rows",
+        "snapshot {{time}}": "snapshot {{time}}",
+        "{{count}} records changed since the snapshot_one": "{{count}} record changed since the snapshot",
+        "{{count}} records changed since the snapshot_other": "{{count}} records changed since the snapshot",
+        "Refresh": "Refresh",
+        "Saved search": "Saved search",
+        "Query": "Query",
+        "Selected records": "Selected records",
+        "Document": "Document"
     }
 }
