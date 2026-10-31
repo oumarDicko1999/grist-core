@@ -6,7 +6,8 @@
 //
 // Checks, for each visual style and appearance: the theme matches IkaDoc (check-grist.js).
 // Then: the sources panel lists the source, IkaDoc-owned cells cannot be changed (with an
-// editable control), the viewer cannot edit, and a native Grist page shows the IkaDoc refusal.
+// editable control), a second tab leaves the first one working, the viewer cannot edit, and a
+// native Grist page shows the IkaDoc refusal.
 // Save and discard are buttons of the IkaDoc page, outside Grist: the frontend's e2e covers them.
 
 import { readFileSync } from "node:fs";
@@ -37,6 +38,12 @@ const GRID_TIMEOUT_MS = 60_000;
 
 const REFUSAL_TIMEOUT_MS = 10_000;
 
+const EDITOR_TIMEOUT_MS = 5_000;
+
+/** How long an accepted edit may take to show: 15 × 200ms. */
+const CHANGE_ATTEMPTS = 15;
+const CHANGE_POLL_MS = 200;
+
 /** Column positions in the demo document (demo-document.mjs). */
 const CLIENT_COLUMN = 3;
 const NOTE_COLUMN = 7;
@@ -54,7 +61,9 @@ const check = (name, ok, detail = "") => {
 const browser = await chromium.launch();
 
 try {
-  const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+  // One context is one browser: its tabs share cookies, like a person's tabs do.
+  const context = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+  const page = await context.newPage();
 
   // Grist's minimal login signs in its default development user.
   await page.goto(`${gristOrigin}/login`);
@@ -81,6 +90,14 @@ try {
   // cells are not passing by accident. Undone after.
   check("control: the user's own column can be changed", await changesCell(page, NOTE_COLUMN));
   await page.keyboard.press("Control+z");
+
+  // A second tab of the same browser on the same session must not disconnect the first.
+  const secondTab = await context.newPage();
+  await openEditor(secondTab, "search-editor", MODES[0]);
+  await page.bringToFront();
+  check("a second tab leaves the first one working", await changesCell(page, NOTE_COLUMN));
+  await page.keyboard.press("Control+z");
+  await secondTab.close();
 
   await openEditor(page, "search-viewer", MODES[0]);
   check("a viewer cannot edit", !(await changesCell(page, NOTE_COLUMN)));
@@ -134,12 +151,32 @@ async function changesCell(page, column) {
     await page.keyboard.press("ArrowRight");
   }
 
+  // Open the editor first: keys typed while it opens are lost. Grist opens a read-only editor on
+  // protected cells, and none at all for a viewer: either way the cell cannot change.
+  await page.keyboard.press("Enter");
+
+  const editorOpened = await page.locator(".cell_editor")
+    .waitFor({ timeout: EDITOR_TIMEOUT_MS })
+    .then(() => true, () => false);
+  if (!editorOpened) {
+    return false;
+  }
+
+  await page.keyboard.press("Control+a");
+
   // A value the cell cannot already hold, so an accepted edit always shows.
   await page.keyboard.type(`smoke-${Date.now()}`);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
 
-  const after = await cell.innerText();
+  // Grist shows the value once the server has applied the edit.
+  for (let attempt = 0; attempt < CHANGE_ATTEMPTS; attempt++) {
+    if (await cell.innerText() !== before) {
+      return true;
+    }
 
-  return after !== before;
+    await page.waitForTimeout(CHANGE_POLL_MS);
+  }
+
+  return false;
 }
