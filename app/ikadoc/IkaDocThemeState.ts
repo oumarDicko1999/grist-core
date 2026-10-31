@@ -16,6 +16,6 @@ export function applyIkaDocThemeBridgeState(state: IkaDocThemeBridgeState): void
   document.documentElement.style.setProperty("color-scheme", state.appearance);
 }
 
-function resolveIkaDocVisualStyle(theme: string | undefined): IkaDocVisualStyle {
+export function resolveIkaDocVisualStyle(theme: string | undefined): IkaDocVisualStyle {
   return theme === "material" || theme === "default" || theme === "nexus" ? "material" : "owarelin";
 }

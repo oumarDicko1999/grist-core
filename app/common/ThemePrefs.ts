@@ -14,13 +14,16 @@ export type ThemeAppearance = typeof themeAppearances[number];
 
 export type ThemeNameOrTokens = ThemeName | ThemeTokens;
 
-export const themeNames = ["GristLight", "GristDark", "HighContrastLight"] as const;
+// Owarelin/IkaDoc: OwarelinLight/OwarelinDark are selected by the IkaDoc runtime (GW-THM-01).
+export const themeNames = ["GristLight", "GristDark", "HighContrastLight", "OwarelinLight", "OwarelinDark"] as const;
 export type ThemeName = typeof themeNames[number];
 
 export const themeNameAppearances = {
   GristLight: "light",
   GristDark: "dark",
   HighContrastLight: "light",
+  OwarelinLight: "light",
+  OwarelinDark: "dark",
 } as const;
 
 export function getDefaultThemePrefs(): ThemePrefs {

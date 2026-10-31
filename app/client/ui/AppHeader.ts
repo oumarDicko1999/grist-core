@@ -5,6 +5,7 @@ import { AppModel } from "app/client/models/AppModel";
 import { DocPageModel } from "app/client/models/DocPageModel";
 import { urlState } from "app/client/models/gristUrlState";
 import { getTheme } from "app/client/ui/CustomThemes";
+import { ikaDocLogoUrl } from "app/client/ui/IkaDocTheme";
 import { manageTeamUsersApp } from "app/client/ui/OpenUserManager";
 import { cssLeftPane } from "app/client/ui/PagePanels";
 import { maybeAddSiteSwitcherSection } from "app/client/ui/SiteSwitcher";
@@ -81,7 +82,8 @@ export class AppHeader extends Disposable {
 
   public buildDom() {
     // Check if we have a custom image.
-    const customImage = this._appModel.currentOrg?.orgPrefs?.customLogoUrl;
+    // Owarelin/IkaDoc: the Owarelin icon replaces Grist's logo under an Owarelin theme.
+    const customImage = ikaDocLogoUrl() ?? this._appModel.currentOrg?.orgPrefs?.customLogoUrl;
 
     const variant = () => [cssUserImage.cls("-border"), cssUserImage.cls("-square"), cssUserImage.cls("-inAppLogo")];
 
@@ -110,13 +112,15 @@ export class AppHeader extends Disposable {
       image();
 
     const altText = t("{{- organizationName }} - Back to home", { organizationName: this._appLogoOrg.get().name });
+    // Owarelin/IkaDoc: the runtime has no Grist home to go back to (GW-SHL-01).
+    const isIkaDocRuntime = Boolean(getGristConfig().ikadoc);
 
     return cssAppHeader(
       cssAppHeader.cls("-widelogo", productFlavor.wideLogo || false),
       cssAppHeaderBox(
         dom.domComputed(this._appLogoOrgLink, orgLink => cssAppLogo(
-          { "aria-label": altText },
-          this._setHomePageUrl(orgLink),
+          { "aria-label": isIkaDocRuntime ? this._appLogoOrg.get().name : altText },
+          isIkaDocRuntime ? null : this._setHomePageUrl(orgLink),
           content(),
           testId("logo"),
         )),

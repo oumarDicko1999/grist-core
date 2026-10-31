@@ -102,6 +102,7 @@ const CLIENT_SEAMS = [
       "canUseIkaDocRuntimeComments",
       "|| !canEditIkaDocRuntimeCells()",
       "if (!canUseIkaDocRuntimeComments())",
+      "ikaDocNewRowValues(this.schemaModel.tableId(), { manualSort: insertPos })",
     ],
   },
   {
@@ -114,6 +115,8 @@ const CLIENT_SEAMS = [
       "!canEditIkaDocRuntimeStructure()",
       "isReadonly: this.isReadonly,",
       "isReadonly: this._isStructureReadonly || this.isPreview",
+      "await ikaDocPasteActions(",
+      "ikaDocGuidedCellIssue(() => this.schemaModel.tableId(), () => row.id(), () => field.colId())",
     ],
   },
   {
@@ -128,10 +131,7 @@ const CLIENT_SEAMS = [
   },
   {
     file: "app/client/ui/RowContextMenu.ts",
-    anchors: [
-      "isReadonly: boolean;",
-      "if (isReadonly)",
-    ],
+    anchors: ["isReadonly: boolean;", "if (isReadonly)"],
   },
   {
     file: "app/client/components/DetailView.ts",
@@ -203,10 +203,10 @@ const CLIENT_SEAMS = [
       "fieldTabOpen: () => canEditIkaDocRuntimeStructure() && this._openFieldTab()",
       "sortFilterTabOpen: () => canEditIkaDocRuntimeStructure() && this._openSortFilter()",
       "dataSelectionTabOpen: () => canEditIkaDocRuntimeStructure() && this._openDataSelection()",
-      "canEditStructure ? cssSubTab(t(\"Sort & filter\")",
-      "canEditStructure ? cssSubTab(t(\"Data\")",
+      'canEditStructure ? cssSubTab(t("Sort & filter")',
+      'canEditStructure ? cssSubTab(t("Data")',
       "if (!canEditIkaDocRuntimeStructure()) { return null; }",
-      "use(this._pageWidgetType) === \"chart\" && canCreateIkaDocRuntimeCharts()",
+      'use(this._pageWidgetType) === "chart" && canCreateIkaDocRuntimeCharts()',
       "canUseIkaDocRuntimeCustomWidgets()",
       "!canEditIkaDocRuntimeStructure() || !canUseIkaDocRuntimeFormulas()",
     ],
@@ -241,40 +241,67 @@ const CLIENT_SEAMS = [
   {
     file: "app/client/ui/IkaDocThemeBridge.ts",
     anchors: [
-      "data-ikadoc-runtime='true'",
-      "--grist-theme-bg:",
-      "--ow-color-primary:",
-      "--grist-theme-control-border-radius:",
-      "--mat-sys-primary: #27496c;",
-      "--mat-sys-tertiary: #693c00;",
-      "IkaDoc M3 runtime skin",
-      "--ik-grid-header-height: 2.625rem;",
-      "--ik-grid-row-height: 2.875rem;",
-      "--ik-app-border:",
-      "--ik-menu-bg:",
-      "--ik-table-row-hover:",
-      ".searchbar-box.grist-navbar-pfx.part-toolbar-group__item",
-      ".celleditor_text_editor",
-      ".grist-floating-menu",
-      ".viewsection_content",
-      ".gridview_data_pane",
-      "data-grist-appearance='dark'",
+      "font-family: 'Owarelin Inter';",
+      "font-family: 'Owarelin Fraunces';",
+      "html[data-grist-appearance='dark']",
+    ],
+  },
+  {
+    file: "app/client/ui2018/theme.ts",
+    anchors: [
+      "const ikadocTheme = ikaDocRuntimeTheme();",
+      "if (ikadocTheme) { return ikadocTheme; }",
+    ],
+  },
+  {
+    file: "app/client/components/ChartView.ts",
+    anchors: [
+      "colorway: ikaDocChartColorway(name)?.slice() ?? [",
+    ],
+  },
+  {
+    file: "app/client/ui/errorPages.ts",
+    anchors: [
+      "const ikadocRefusal = buildIkaDocRefusalPage();",
+    ],
+  },
+  {
+    file: "app/client/ui/AppHeader.ts",
+    anchors: [
+      "isIkaDocRuntime ? null : this._setHomePageUrl(orgLink)",
+      "ikaDocLogoUrl() ?? this._appModel.currentOrg?.orgPrefs?.customLogoUrl",
+    ],
+  },
+  {
+    file: "app/common/Themes.ts",
+    anchors: [
+      "OwarelinLight,",
+      "OwarelinDark,",
     ],
   },
 ] as const;
 
 const IKADOC_EDITOR_CONTROL_KEYS = [
   "Build proposal",
+  "Simulating guided workspace",
+  "Simulate",
+  "Guided workspace ready to apply",
+  "Guided workspace has {{count}} issue(s)",
+  "Applying guided workspace",
+  "Apply",
   "Building proposal",
   "Checking session",
   "Guided workspace",
   "Guided workspace unavailable",
+  "Guided workspace response is invalid",
   "Guided workspace: {{schema}}",
   "Proposal requested",
   "Refresh",
   "Refreshing source",
   "Request failed",
   "Source refreshed",
+  "row {{row}}",
+  "{{count}} more issue(s)",
   "{{sourceSummary}}Session ready",
   "{{sourceSummary}}Session: {{status}}",
 ] as const;
@@ -290,28 +317,12 @@ describe("IkaDoc client seams", function() {
     });
   }
 
-  it("keeps the IkaDoc theme bridge aligned with the frontend Material visual contract", function() {
+  it("lets the native Owarelin themes own Grist's colors (GW-THM-04)", function() {
     const source = readSource("app/client/ui/IkaDocThemeBridge.ts");
 
-    assert.include(source, "--mat-sys-primary: #27496c;");
-    assert.include(source, "--mat-sys-tertiary: #693c00;");
-    assert.include(source, "--ik-grid-header-height: 2.625rem;");
-    assert.include(source, "--ik-grid-row-height: 2.875rem;");
-    assert.include(source, "min-height: 3rem;");
-    assert.include(source, "--ik-radius-pill: 999rem;");
-    assert.include(source, "border-radius: var(--ik-radius-pill);");
-    assert.include(source, "--ik-menu-bg: var(--mat-sys-surface-container);");
-    assert.include(
-      source,
-      "--ik-table-row-hover: var(--mat-sys-surface-container-low);",
-    );
-    assert.include(source, "--ik-menu-bg: var(--ow-color-panel);");
-    assert.include(source, "--ik-table-row-hover: var(--ow-color-row-hover);");
-    assert.include(source, "html[data-ikadoc-visual-style='owarelin']");
-    assert.include(
-      source,
-      "html[data-ikadoc-visual-style='owarelin'][data-grist-appearance='dark']",
-    );
+    const forcedGristVariables = source.match(/^\s+--grist-[a-z0-9-]+\s*:/gm) ?? [];
+
+    assert.deepEqual(forcedGristVariables, []);
   });
 
   it("keeps the IkaDoc tools panel limited to document history", function() {
@@ -343,8 +354,61 @@ describe("IkaDoc client seams", function() {
     const source = readSource("app/client/ui/IkaDocEditorControls.ts");
 
     assert.include(source, "postOwarelinRuntimeEvent");
+    assert.include(source, "config.guidedWorkspaceUrls.applyUrl");
+    assert.include(source, "config.guidedWorkspaceUrls.validateUrl");
+    assert.include(
+      source,
+      'current.descriptor.marker.finalAction === "APPLY_TO_IKADOC"',
+    );
+    assert.include(source, "pendingGuidedWorkspaceApplyIdempotencyKeys");
+    assert.include(source, "guidedWorkspaceApplyIdempotencyKey(");
+    assert.include(source, '"owarelin:guidedWorkspaceValidated"');
+    assert.include(source, '"owarelin:guidedWorkspaceApplied"');
+    assert.include(source, "guidedWorkspaceResultSummary(result)");
+    assert.include(source, 'testId("ikadoc-guided-workspace-apply")');
+    assert.include(source, 'testId("ikadoc-guided-workspace-simulate")');
     assert.notInclude(source, "postIkaDocEditorHostEvent");
     assert.notInclude(source, "ikadoc:grist:");
+  });
+
+  it("keeps guided workspace setup descriptor-driven", function() {
+    const source = readSource("app/ikadoc/IkaDocGuidedWorkspaceSetup.ts");
+
+    assert.include(source, "field.enumValues");
+    assert.include(source, "GUIDED_REFERENCE_WIDGET");
+    assert.include(source, "GUIDED_JSON_WIDGET");
+    assert.include(source, "metadataCode: field.code");
+    assert.include(source, "columnLabel: column.label");
+    assert.include(source, "label: field.columnLabel");
+  });
+
+  it("keeps IkaDoc reference lookup session-scoped and text-backed", function() {
+    const runtimeConfig = readSource("app/ikadoc/IkaDocRuntimeConfig.ts");
+    const lookup = readSource("app/ikadoc/IkaDocReferenceLookup.ts");
+    const userType = readSource("app/client/widgets/UserType.ts");
+    const userTypeImpl = readSource("app/client/widgets/UserTypeImpl.ts");
+
+    assert.include(runtimeConfig, "referenceSearchUrl");
+    assert.include(runtimeConfig, "referenceResolveUrl");
+    assert.include(lookup, "searchIkaDocGuidedReferenceOptions");
+    assert.include(lookup, "resolveIkaDocGuidedReferenceOptions");
+    assert.include(lookup, '"X-Collection": config.collectionCode');
+    assert.include(userType, "IkaDocReference");
+    assert.include(userType, 'cons: "IkaDocReferenceTextBox"');
+    assert.include(userTypeImpl, "IkaDocReferenceEditor");
+  });
+
+  it("keeps IkaDoc JSON metadata text-backed and read-only", function() {
+    const widget = readSource("app/client/ui/IkaDocReferenceWidget.ts");
+    const userType = readSource("app/client/widgets/UserType.ts");
+    const userTypeImpl = readSource("app/client/widgets/UserTypeImpl.ts");
+
+    assert.include(widget, "IkaDocJsonTextBox");
+    assert.include(widget, "IkaDocJsonEditor");
+    assert.include(widget, "formatJsonCellValue");
+    assert.include(userType, "IkaDocJson");
+    assert.include(userType, 'editCons: "IkaDocJsonEditor"');
+    assert.include(userTypeImpl, "IkaDocJsonTextBox");
   });
 
   it("keeps IkaDoc editor control translations in supported runtime locales", function() {

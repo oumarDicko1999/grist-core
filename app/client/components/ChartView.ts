@@ -23,6 +23,7 @@ import { gristThemeObs } from "app/client/ui2018/theme";
 import { unstyledButton } from "app/client/ui2018/unstyled";
 import { nativeCompare, unwrap } from "app/common/gutil";
 import { Sort } from "app/common/SortSpec";
+import { ikaDocChartColorway } from "app/common/themes/OwarelinThemes";
 import { BaseFormatter } from "app/common/ValueFormatter";
 import { decodeObject } from "app/plugin/objtypes";
 
@@ -356,10 +357,11 @@ export class ChartView extends BaseView {
   }
 
   private _getPlotlyTheme(): Partial<Layout> {
-    const { colors } = gristThemeObs().get();
+    const { colors, name } = gristThemeObs().get();
     const { chartBg, chartLegendBg, chartFg, chartXAxis, chartYAxis } = colors.components;
     return {
-      colorway: [
+      // Owarelin/IkaDoc: charts use the Owarelin palette under an Owarelin theme.
+      colorway: ikaDocChartColorway(name)?.slice() ?? [
         "#2b78ae",
         "#fe945b",
         "#3a936e",
