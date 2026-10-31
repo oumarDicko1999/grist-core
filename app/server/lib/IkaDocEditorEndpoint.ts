@@ -10,7 +10,7 @@ import {
   IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   IKADOC_RUNTIME_SESSION_COOKIE,
   ikaDocRuntimeParticipantCookie,
-} from "app/server/lib/IkaDocRuntimePolicy";
+} from "app/server/lib/IkaDocRuntimeCookies";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import { getEndUserProtocol } from "app/server/lib/requestUtils";
 import { ISendAppPageOptions } from "app/server/lib/sendAppPage";

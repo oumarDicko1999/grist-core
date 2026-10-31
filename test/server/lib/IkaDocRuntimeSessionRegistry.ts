@@ -1,10 +1,6 @@
 import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
-import {
-  IKADOC_RUNTIME_PARTICIPANT_COOKIE,
-  IKADOC_RUNTIME_SESSION_COOKIE,
-  ikadocRuntimeSessionForRequest,
-  IkaDocRuntimeSessionValidator,
-} from "app/server/lib/IkaDocRuntimePolicy";
+import { IKADOC_RUNTIME_PARTICIPANT_COOKIE, IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimeCookies";
+import { ikadocRuntimeSessionForRequest, IkaDocRuntimeSessionValidator } from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import { IkaDocRuntimeSessionRevalidator } from "app/server/lib/IkaDocRuntimeSessionRevalidator";
 

@@ -5,7 +5,7 @@ import {
 } from "app/ikadoc/IkaDocEditorAdmission";
 import { toIkaDocBrowserRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 import { attachIkaDocEditorEndpoint } from "app/server/lib/IkaDocEditorEndpoint";
-import { IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimePolicy";
+import { IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimeCookies";
 import { ISendAppPageOptions } from "app/server/lib/sendAppPage";
 
 import * as http from "http";

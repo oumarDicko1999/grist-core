@@ -23,15 +23,13 @@ import {
   createIkaDocRuntimeAuthSession,
   createIkaDocRuntimeSessionAccessHandler,
 } from "app/server/lib/IkaDocRuntimeAuth";
+import { IKADOC_RUNTIME_PARTICIPANT_COOKIE, IKADOC_RUNTIME_SESSION_COOKIE } from "app/server/lib/IkaDocRuntimeCookies";
+import { deniedIkaDocRuntimeOperation } from "app/server/lib/IkaDocRuntimeDenial";
 import {
   assertIkaDocUserActionsAllowedForDocument,
-  deniedIkaDocRuntimeOperation,
   denyIkaDocRuntimeOperation,
   denyIkaDocRuntimeOperationForDocument,
   IKADOC_NATIVE_SHARING_ROUTES,
-  IKADOC_RUNTIME_PARTICIPANT_COOKIE,
-  IKADOC_RUNTIME_SESSION_COOKIE,
-  IKADOC_SESSION_TOKEN_HEADER,
   IkaDocValidatedAction,
   requireIkaDocCapability,
   requireIkaDocRuntimeCapabilityForDocument,
@@ -40,6 +38,7 @@ import {
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
+import { IKADOC_SESSION_TOKEN_HEADER } from "app/server/lib/IkaDocServiceAccount";
 
 import { createHash } from "crypto";
 import * as http from "http";

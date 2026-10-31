@@ -2,7 +2,6 @@ import { IkaDocCapabilities } from "app/ikadoc/IkaDocCapabilities";
 import { ikaDocRuntimeSessionFromAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
 import {
   assertIkaDocUserActionsAllowedForDocument,
-  assertIkaDocUserActionsAllowedForSession,
   denyIkaDocRuntimeOperationForDocument,
   denyIkaDocRuntimeOperationForSession,
   IkaDocRuntimeSessionValidator,
@@ -12,6 +11,7 @@ import {
   validateIkaDocRuntimeSession,
   validateIkaDocRuntimeSessionForDocument,
 } from "app/server/lib/IkaDocRuntimePolicy";
+import { assertIkaDocUserActionsAllowedForSession } from "app/server/lib/IkaDocUserActionPolicy";
 import log from "app/server/lib/log";
 
 import { createHash } from "crypto";
@@ -65,80 +65,16 @@ export function activeDocMethod(
       await docSession.authorizer.assertAccess(role);
     }
     if (ikadocPolicy) {
-      const runtimeSession = ikaDocRuntimeSessionFromAuthSession(
-        client.authSession,
+      await assertIkaDocMethodAllowed(
+        ikadocPolicy,
+        client,
+        activeDoc.docName,
+        args,
+        ikadocRuntimeSessionRegistry,
+        ikadocRuntimeSessionValidator,
       );
-      if (runtimeSession) {
-        await validateIkaDocRuntimeSession(
-          ikadocRuntimeSessionValidator,
-          runtimeSession,
-          activeDoc.docName,
-          ikadocPolicy.operation,
-          ikadocPolicy.recordsActions ? validatedAction(args) : undefined,
-        );
-        const requiredCapabilities =
-          ikadocPolicy.capabilities ??
-          (ikadocPolicy.capability ? [ikadocPolicy.capability] : []);
-        if (requiredCapabilities.length > 0) {
-          for (const capability of requiredCapabilities) {
-            requireIkaDocRuntimeCapabilityForSession(
-              runtimeSession,
-              capability,
-              ikadocPolicy.operation,
-            );
-          }
-        } else if (!ikadocPolicy.classifyUserActions) {
-          denyIkaDocRuntimeOperationForSession(
-            runtimeSession,
-            ikadocPolicy.operation,
-          );
-        }
-        if (ikadocPolicy.classifyUserActions) {
-          assertIkaDocUserActionsAllowedForSession(runtimeSession, args[0]);
-        }
-      } else {
-        // Only a person IkaDoc admitted may change the document: their actions are their evidence.
-        if (ikadocPolicy.recordsActions) {
-          denyIkaDocRuntimeOperationForDocument(
-            ikadocRuntimeSessionRegistry,
-            activeDoc.docName,
-            ikadocPolicy.operation,
-          );
-        }
-        await validateIkaDocRuntimeSessionForDocument(
-          ikadocRuntimeSessionRegistry,
-          ikadocRuntimeSessionValidator,
-          activeDoc.docName,
-          ikadocPolicy.operation,
-        );
-        const requiredCapabilities =
-          ikadocPolicy.capabilities ??
-          (ikadocPolicy.capability ? [ikadocPolicy.capability] : []);
-        if (requiredCapabilities.length > 0) {
-          for (const capability of requiredCapabilities) {
-            requireIkaDocRuntimeCapabilityForDocument(
-              ikadocRuntimeSessionRegistry,
-              activeDoc.docName,
-              capability,
-              ikadocPolicy.operation,
-            );
-          }
-        } else if (!ikadocPolicy.classifyUserActions) {
-          denyIkaDocRuntimeOperationForDocument(
-            ikadocRuntimeSessionRegistry,
-            activeDoc.docName,
-            ikadocPolicy.operation,
-          );
-        }
-        if (ikadocPolicy.classifyUserActions) {
-          assertIkaDocUserActionsAllowedForDocument(
-            ikadocRuntimeSessionRegistry,
-            activeDoc.docName,
-            args[0],
-          );
-        }
-      }
     }
+
     // Include a basic log record for each ActiveDoc method call.
     log.rawDebug(
       "activeDocMethod",
@@ -166,6 +102,64 @@ export function activeDocMethod(
 
     return method.call(activeDoc, docSession, ...args);
   };
+}
+
+/**
+ * The IkaDoc policy for one call. A person IkaDoc admitted is validated as themselves, with the
+ * actions they apply recorded first (GR-03, GR-07). Without one, the document's session decides,
+ * and a method that applies actions is refused: only an admitted person may change the document.
+ */
+async function assertIkaDocMethodAllowed(
+  policy: IkaDocActiveDocMethodPolicy,
+  client: Client,
+  docName: string,
+  args: unknown[],
+  registry: IkaDocRuntimeSessionRegistry | undefined,
+  validator: IkaDocRuntimeSessionValidator | undefined,
+): Promise<void> {
+  const { operation } = policy;
+  const requiredCapabilities = policy.capabilities ?? (policy.capability ? [policy.capability] : []);
+
+  // A method with no capability to check and no actions to classify is never open to IkaDoc sessions.
+  const refusedOutright = requiredCapabilities.length === 0 && !policy.classifyUserActions;
+
+  const session = ikaDocRuntimeSessionFromAuthSession(client.authSession);
+  if (session) {
+    const recordedAction = policy.recordsActions ? validatedAction(args) : undefined;
+    await validateIkaDocRuntimeSession(validator, session, docName, operation, recordedAction);
+
+    for (const capability of requiredCapabilities) {
+      requireIkaDocRuntimeCapabilityForSession(session, capability, operation);
+    }
+
+    if (refusedOutright) {
+      denyIkaDocRuntimeOperationForSession(session, operation);
+    }
+
+    if (policy.classifyUserActions) {
+      assertIkaDocUserActionsAllowedForSession(session, args[0]);
+    }
+
+    return;
+  }
+
+  if (policy.recordsActions) {
+    denyIkaDocRuntimeOperationForDocument(registry, docName, operation);
+  }
+
+  await validateIkaDocRuntimeSessionForDocument(registry, validator, docName, operation);
+
+  for (const capability of requiredCapabilities) {
+    requireIkaDocRuntimeCapabilityForDocument(registry, docName, capability, operation);
+  }
+
+  if (refusedOutright) {
+    denyIkaDocRuntimeOperationForDocument(registry, docName, operation);
+  }
+
+  if (policy.classifyUserActions) {
+    assertIkaDocUserActionsAllowedForDocument(registry, docName, args[0]);
+  }
 }
 
 /** The applied actions' digest and names; never their content (GR-07). */

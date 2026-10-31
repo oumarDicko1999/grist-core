@@ -14,18 +14,18 @@ import {
   ikaDocForwardAuthAssertionForRequest,
 } from "app/server/lib/IkaDocForwardAuthAssertion";
 import {
-  deniedIkaDocRuntimeOperation,
   hasIkaDocRuntimeSessionCookie,
   IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   ikaDocRuntimeParticipantCookie,
   ikaDocRuntimeSessionCookie,
-  ikadocRuntimeSessionForRequest,
-  isIkaDocRuntimeSessionExpired,
-} from "app/server/lib/IkaDocRuntimePolicy";
+} from "app/server/lib/IkaDocRuntimeCookies";
+import { deniedIkaDocRuntimeOperation } from "app/server/lib/IkaDocRuntimeDenial";
+import { ikadocRuntimeSessionForRequest } from "app/server/lib/IkaDocRuntimePolicy";
 import {
   attachIkaDocRuntimeSession,
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
+  isIkaDocRuntimeSessionExpired,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 
@@ -48,88 +48,53 @@ export function createIkaDocRuntimeAuthMiddleware(
   runtimeOnly: boolean = readIkaDocRuntimeOnly(),
 ): RequestHandler {
   return async (req, res, next) => {
-    let assertion: IkaDocForwardAuthAssertion | undefined;
     try {
-      assertion = ikaDocForwardAuthAssertionForRequest(req, forwardAuthSecret);
-    } catch (error) {
-      return next(error);
-    }
-    const hasIkaDocSession = hasIkaDocRuntimeSessionCookie(req) || Boolean(assertion);
+      const request = await liveIkaDocSessionForRequest(registry, req, admissionClient, forwardAuthSecret, res);
 
-    if (!hasIkaDocSession && runtimeOnly && !reachableWithoutIkaDocSession(req)) {
-      log.warn("IkaDoc runtime refused a request without an IkaDoc session", {
-        method: req.method,
-        path: req.path,
-      });
+      if (request.kind === "plain-grist") {
+        if (runtimeOnly && !reachableWithoutIkaDocSession(req)) {
+          log.warn("IkaDoc runtime refused a request without an IkaDoc session", {
+            method: req.method,
+            path: req.path,
+          });
 
-      return next(deniedIkaDocRuntimeOperation("use Grist outside an IkaDoc session"));
-    }
+          return next(deniedIkaDocRuntimeOperation("use Grist outside an IkaDoc session"));
+        }
 
-    if (!hasIkaDocSession) {
-      return next();
-    }
+        return next();
+      }
 
-    const session = await getIkaDocRuntimeSessionForRequest(
-      registry,
-      req,
-      admissionClient,
-      assertion,
-      res,
-    );
-    if (!session) {
-      log.warn(
-        "IkaDoc runtime auth rejected request without registered session",
-        {
-          method: req.method,
-          path: req.path,
-        },
+      const { session } = request;
+
+      const anonymousUser = dbManager.getAnonymousUser();
+      const credential = new IkaDocRuntimeCredential(
+        session,
+        dbManager.getAnonymousUserId(),
+        dbManager.getPreviewerUserId(),
       );
-      return next(
-        deniedIkaDocRuntimeOperation("use expired runtime session"),
-      );
-    }
-    if (isIkaDocRuntimeSessionExpired(session)) {
-      log.warn("IkaDoc runtime auth rejected expired session", {
+
+      const mreq = req as RequestWithLogin;
+      mreq.user = anonymousUser;
+      mreq.userId = anonymousUser.id;
+      mreq.userIsAuthorized = false;
+      mreq.altSessionId = runtimeParticipantSessionId(session);
+      mreq.fullUser = runtimeTransportUser(dbManager.makeFullUser(anonymousUser), session);
+      mreq.users = [credential.identifiedUser];
+      mreq.authSession = AuthSession.fromReq(mreq, credential);
+      attachIkaDocRuntimeSession(req, session);
+
+      log.info("IkaDoc runtime auth attached request session", {
         method: req.method,
         path: req.path,
         sessionId: session.sessionId,
         documentId: session.documentId,
         documentUrlId: session.documentUrlId,
       });
-      return next(
-        deniedIkaDocRuntimeOperation(
-          "use expired runtime session",
-          session,
-        ),
-      );
-    }
 
-    const anonymousUser = dbManager.getAnonymousUser();
-    const credential = new IkaDocRuntimeCredential(
-      session,
-      dbManager.getAnonymousUserId(),
-      dbManager.getPreviewerUserId(),
-    );
-    const mreq = req as RequestWithLogin;
-    mreq.user = anonymousUser;
-    mreq.userId = anonymousUser.id;
-    mreq.userIsAuthorized = false;
-    mreq.altSessionId = runtimeParticipantSessionId(session);
-    mreq.fullUser = runtimeTransportUser(
-      dbManager.makeFullUser(anonymousUser),
-      session,
-    );
-    mreq.users = [credential.identifiedUser];
-    mreq.authSession = AuthSession.fromReq(mreq, credential);
-    attachIkaDocRuntimeSession(req, session);
-    log.info("IkaDoc runtime auth attached request session", {
-      method: req.method,
-      path: req.path,
-      sessionId: session.sessionId,
-      documentId: session.documentId,
-      documentUrlId: session.documentUrlId,
-    });
-    next();
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }
 
@@ -139,45 +104,25 @@ export function createIkaDocRuntimeProfileHandler(
   forwardAuthSecret?: string,
 ): RequestHandler {
   return async (req, res, next) => {
-    let assertion: IkaDocForwardAuthAssertion | undefined;
     try {
-      assertion = ikaDocForwardAuthAssertionForRequest(req, forwardAuthSecret);
+      const request = await liveIkaDocSessionForRequest(registry, req, admissionClient, forwardAuthSecret, res);
+      if (request.kind === "plain-grist") {
+        return next();
+      }
+
+      const { session } = request;
+
+      res.status(200).json({
+        email: runtimeUserEmail(session),
+        name: session.config.user.displayName,
+        picture: null,
+        ref: runtimeUserRef(session),
+        locale: session.config.locale,
+        anonymous: false,
+      });
     } catch (error) {
-      return next(error);
+      next(error);
     }
-    if (!hasIkaDocRuntimeSessionCookie(req) && !assertion) {
-      return next();
-    }
-
-    const session = await getIkaDocRuntimeSessionForRequest(
-      registry,
-      req,
-      admissionClient,
-      assertion,
-      res,
-    );
-    if (!session) {
-      return next(
-        deniedIkaDocRuntimeOperation("use expired runtime session"),
-      );
-    }
-    if (isIkaDocRuntimeSessionExpired(session)) {
-      return next(
-        deniedIkaDocRuntimeOperation(
-          "use expired runtime session",
-          session,
-        ),
-      );
-    }
-
-    res.status(200).json({
-      email: runtimeUserEmail(session),
-      name: session.config.user.displayName,
-      picture: null,
-      ref: runtimeUserRef(session),
-      locale: session.config.locale,
-      anonymous: false,
-    });
   };
 }
 
@@ -187,56 +132,38 @@ export function createIkaDocRuntimeSessionAccessHandler(
   forwardAuthSecret?: string,
 ): RequestHandler {
   return async (req, res, next) => {
-    let assertion: IkaDocForwardAuthAssertion | undefined;
     try {
-      assertion = ikaDocForwardAuthAssertionForRequest(req, forwardAuthSecret);
+      const request = await liveIkaDocSessionForRequest(registry, req, admissionClient, forwardAuthSecret, res);
+      if (request.kind === "plain-grist") {
+        return next();
+      }
+
+      const { session } = request;
+
+      const user = runtimeTransportUser(
+        {
+          id: 0,
+          email: runtimeUserEmail(session),
+          loginEmail: runtimeUserEmail(session),
+          name: session.config.user.displayName,
+          ref: runtimeUserRef(session),
+          picture: null,
+          anonymous: false,
+          locale: session.config.locale,
+        },
+        session,
+      );
+      const org = runtimeOrganization(session);
+
+      if (req.path.endsWith("/all")) {
+        res.status(200).json({ users: [user], orgs: [org] });
+        return;
+      }
+
+      res.status(200).json({ user, org });
     } catch (error) {
-      return next(error);
+      next(error);
     }
-    if (!hasIkaDocRuntimeSessionCookie(req) && !assertion) {
-      return next();
-    }
-
-    const session = await getIkaDocRuntimeSessionForRequest(
-      registry,
-      req,
-      admissionClient,
-      assertion,
-      res,
-    );
-    if (!session) {
-      return next(
-        deniedIkaDocRuntimeOperation("use expired runtime session"),
-      );
-    }
-    if (isIkaDocRuntimeSessionExpired(session)) {
-      return next(
-        deniedIkaDocRuntimeOperation(
-          "use expired runtime session",
-          session,
-        ),
-      );
-    }
-
-    const user = runtimeTransportUser(
-      {
-        id: 0,
-        email: runtimeUserEmail(session),
-        loginEmail: runtimeUserEmail(session),
-        name: session.config.user.displayName,
-        ref: runtimeUserRef(session),
-        picture: null,
-        anonymous: false,
-        locale: session.config.locale,
-      },
-      session,
-    );
-    const org = runtimeOrganization(session);
-    if (req.path.endsWith("/all")) {
-      res.status(200).json({ users: [user], orgs: [org] });
-      return;
-    }
-    res.status(200).json({ user, org });
   };
 }
 
@@ -248,40 +175,27 @@ export async function createIkaDocRuntimeAuthSession(
   admissionClient?: IkaDocEditorAdmissionClient,
   forwardAuthSecret?: string,
 ): Promise<AuthSession | undefined> {
-  const assertion = ikaDocForwardAuthAssertionForRequest(
-    req,
-    forwardAuthSecret,
-  );
-  if (!hasIkaDocRuntimeSessionCookie(req as Request) && !assertion) {
-    return undefined;
-  }
-
-  const session = await getIkaDocRuntimeSessionForRequest(
+  const request = await liveIkaDocSessionForRequest(
     registry,
     req as Request,
     admissionClient,
-    assertion,
+    forwardAuthSecret,
     undefined,
   );
-  if (!session) {
-    throw deniedIkaDocRuntimeOperation("use expired runtime session");
-  }
-  if (isIkaDocRuntimeSessionExpired(session)) {
-    throw deniedIkaDocRuntimeOperation(
-      "use expired runtime session",
-      session,
-    );
+  if (request.kind === "plain-grist") {
+    return undefined;
   }
 
   const credential = new IkaDocRuntimeCredential(
-    session,
+    request.session,
     dbManager.getAnonymousUserId(),
     dbManager.getPreviewerUserId(),
   );
+
   return AuthSession.fromUser(
     credential.identifiedUser,
     org,
-    runtimeParticipantSessionId(session),
+    runtimeParticipantSessionId(request.session),
     credential,
     false,
   );
@@ -294,6 +208,53 @@ export function ikaDocRuntimeSessionFromAuthSession(
   return credential instanceof IkaDocRuntimeCredential ?
     credential.session :
     undefined;
+}
+
+/** A request as IkaDoc sees it: plain Grist, or one person's live IkaDoc session. */
+type IkaDocRequestSession =
+  | { kind: "plain-grist" } |
+  { kind: "ikadoc"; session: IkaDocRuntimeSession };
+
+/**
+ * A request that says it belongs to IkaDoc (session cookie or signed forward-auth assertion) gets
+ * its person's live session; its refusal is thrown when that session is gone or has expired.
+ * Requests that say nothing of IkaDoc are plain Grist requests.
+ */
+async function liveIkaDocSessionForRequest(
+  registry: IkaDocRuntimeSessionRegistry,
+  req: Request,
+  admissionClient: IkaDocEditorAdmissionClient | undefined,
+  forwardAuthSecret: string | undefined,
+  res: Response | undefined,
+): Promise<IkaDocRequestSession> {
+  const assertion = ikaDocForwardAuthAssertionForRequest(req, forwardAuthSecret);
+  if (!hasIkaDocRuntimeSessionCookie(req) && !assertion) {
+    return { kind: "plain-grist" };
+  }
+
+  const session = await getIkaDocRuntimeSessionForRequest(registry, req, admissionClient, assertion, res);
+  if (!session) {
+    log.warn("IkaDoc runtime auth rejected request without registered session", {
+      method: req.method,
+      path: req.path,
+    });
+
+    throw deniedIkaDocRuntimeOperation("use expired runtime session");
+  }
+
+  if (isIkaDocRuntimeSessionExpired(session)) {
+    log.warn("IkaDoc runtime auth rejected expired session", {
+      method: req.method,
+      path: req.path,
+      sessionId: session.sessionId,
+      documentId: session.documentId,
+      documentUrlId: session.documentUrlId,
+    });
+
+    throw deniedIkaDocRuntimeOperation("use expired runtime session", session);
+  }
+
+  return { kind: "ikadoc", session };
 }
 
 /**

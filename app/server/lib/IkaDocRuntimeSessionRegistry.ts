@@ -114,7 +114,7 @@ export class IkaDocRuntimeSessionRegistry {
       return { kind: "missing" };
     }
     const nowMs = Date.now();
-    const active = matching.filter(session => runtimeSessionExpiresAtMs(session) > nowMs);
+    const active = matching.filter(session => !isIkaDocRuntimeSessionExpired(session, nowMs));
     for (const expired of matching.filter(session => !active.includes(session))) {
       this._delete(expired);
     }
@@ -141,7 +141,7 @@ export class IkaDocRuntimeSessionRegistry {
 
   public pruneExpired(nowMs = Date.now()): void {
     for (const session of this._byHandle.values()) {
-      if (runtimeSessionExpiresAtMs(session) <= nowMs) {
+      if (isIkaDocRuntimeSessionExpired(session, nowMs)) {
         this._delete(session);
       }
     }
@@ -157,7 +157,7 @@ export class IkaDocRuntimeSessionRegistry {
   private _pruneIfExpired(
     session: IkaDocRuntimeSession,
   ): IkaDocRuntimeSession | undefined {
-    if (runtimeSessionExpiresAtMs(session) > Date.now()) {
+    if (!isIkaDocRuntimeSessionExpired(session)) {
       return session;
     }
     this._delete(session);
@@ -201,9 +201,11 @@ function narrowest(sessions: IkaDocRuntimeSession[]): IkaDocRuntimeSession {
   return { ...first, config: { ...first.config, mode, capabilities: shared } };
 }
 
-function runtimeSessionExpiresAtMs(session: IkaDocRuntimeSession): number {
+/** Whether the session's admission has run out; an unreadable expiry counts as expired. */
+export function isIkaDocRuntimeSessionExpired(session: IkaDocRuntimeSession, nowMs = Date.now()): boolean {
   const expiresAtMs = Date.parse(session.config.expiresAt);
-  return Number.isFinite(expiresAtMs) ? expiresAtMs : Number.NEGATIVE_INFINITY;
+
+  return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
 }
 
 const attachedSessions = new WeakMap<object, IkaDocRuntimeSession>();

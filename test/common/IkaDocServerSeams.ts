@@ -45,10 +45,21 @@ const SERVER_SEAMS = [
   {
     file: "app/server/lib/IkaDocRuntimePolicy.ts",
     anchors: [
-      "const BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS = 5000;",
-      "timeout: BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS",
       "sessionMatchesDocumentId",
       "assertIkaDocUserActionsAllowedForSession",
+      "function activeSessionOrRefuse(",
+    ],
+  },
+  {
+    file: "app/server/lib/IkaDocRuntimeDenial.ts",
+    anchors: [
+      "const BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS = 5000;",
+      "timeout: BLOCKED_CAPABILITY_AUDIT_TIMEOUT_MS",
+    ],
+  },
+  {
+    file: "app/server/lib/IkaDocUserActionPolicy.ts",
+    anchors: [
       'tableId === "_grist_Cells"',
       'return ["canUseComments"]',
     ],
