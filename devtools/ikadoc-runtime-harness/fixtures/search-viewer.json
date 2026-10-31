@@ -75,6 +75,28 @@
         "canManageAccess": false,
         "canUsePlugins": false
       },
+      "lockedColumns": {
+        "Factures": [
+          "ikadoc_record_id",
+          "ikadoc_schema_type",
+          "numero",
+          "client",
+          "statut",
+          "montant",
+          "date_emission"
+        ]
+      },
+      "sources": [
+        {
+          "sourceId": "source-factures",
+          "tableId": "Factures",
+          "label": "Factures",
+          "origin": "saved-search",
+          "scope": "Recherche « Factures 2026 »",
+          "rowCount": 60,
+          "snapshotAt": "2026-10-31T11:24:00.000Z"
+        }
+      ],
       "locale": "{{locale}}",
       "theme": "{{theme}}",
       "appearance": "{{appearance}}"

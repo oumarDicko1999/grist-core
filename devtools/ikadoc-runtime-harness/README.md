@@ -19,8 +19,10 @@ fixture:
 - `http://localhost:8484/grist/editor/search-viewer?theme=owarelin&appearance=dark`
 - `http://localhost:8484/grist/editor/document-file`
 
-The first admission creates a demo invoice document as the default user; its id is kept in
-`.state.json` and reused while the document exists. Every call Grist makes to "IkaDoc" is logged
+At startup the harness creates a demo invoice document as the default user (or on the first
+admission if Grist is not up yet); its id is kept in `.state.json` and reused while the document
+exists. Its columns are IkaDoc data (listed in the `search-*` fixtures' `lockedColumns`) except
+« Note », the user's own column. Every call Grist makes to "IkaDoc" is logged
 with the `[ikadoc-harness]` prefix.
 
 Against a Grist container instead of `yarn start`, run `node server.mjs` with
@@ -35,3 +37,18 @@ Against a Grist container instead of `yarn start`, run `node server.mjs` with
 `{{expiresAt}}`, `{{gristOrigin}}`, `{{harnessUrl}}`, `{{locale}}`, `{{theme}}`,
 `{{appearance}}`. The file name is the session id to open. `test/common/IkaDocRuntimeHarness.ts`
 checks that every fixture parses as an enabled runtime config.
+
+## Smoke test (GW-DEV-04)
+
+With Grist and the harness running, and the IkaDoc frontend checked out (Playwright comes from
+there; Grist gets no dependency):
+
+```bash
+IKADOC_NG_DIR=../ikadoc-ng node devtools/ikadoc-runtime-harness/smoke.mjs
+```
+
+It checks the theme against IkaDoc in the four modes (`../ikadoc-theme-tokens/check-grist.js`),
+the sources panel, the locks, that IkaDoc cells cannot be changed while « Note » can, that a
+viewer cannot edit, and the refusal page on a native Grist page. Keep other browsers off the
+same session while it runs. Save and discard are buttons of the IkaDoc page: the frontend's e2e
+covers them.

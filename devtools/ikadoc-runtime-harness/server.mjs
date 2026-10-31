@@ -38,6 +38,10 @@ const server = createServer((request, response) => {
 server.listen(port, host, () => {
   log(`listening on ${harnessUrl}; fixtures: ${[...fixtures.keys()].join(", ")}`);
   log(`open ${gristOrigin}/grist/editor/<fixture>?theme=owarelin&appearance=light`);
+
+  // Prepare the demo document now: creating it during the first admission can outlast
+  // Grist's admission timeout. If Grist is not up yet, the first admission tries again.
+  harnessDocumentId().catch(error => log(`demo document not ready yet: ${error.message}`));
 });
 
 async function handle(request, response) {

@@ -27,6 +27,7 @@ const COLUMN_WIDTHS = {
   statut: 130,
   montant: 140,
   date_emission: 140,
+  note: 200,
 };
 
 export async function createDemoDocument(gristOrigin) {
@@ -200,6 +201,9 @@ function invoiceTable() {
       }),
       column("montant", "Montant", "Numeric", { numMode: "decimal", decimals: 0 }),
       column("date_emission", "Émise le", "Date", { dateFormat: "D MMM YYYY" }),
+
+      // The user's own column: not IkaDoc data, so editable (not in the fixtures' lockedColumns).
+      column("note", "Note", "Text"),
     ],
   };
 }
