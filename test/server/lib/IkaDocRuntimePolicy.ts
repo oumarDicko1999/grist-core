@@ -31,6 +31,7 @@ import {
   IKADOC_NATIVE_SHARING_ROUTES,
   IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   IKADOC_RUNTIME_SESSION_COOKIE,
+  IKADOC_SESSION_TOKEN_HEADER,
   IkaDocValidatedAction,
   requireIkaDocCapability,
   requireIkaDocRuntimeCapabilityForDocument,
@@ -45,7 +46,7 @@ import * as http from "http";
 
 import axios from "axios";
 import { assert } from "chai";
-import express from "express";
+import express, { Request } from "express";
 
 import type { RequestWithLogin } from "app/server/lib/Authorizer";
 
@@ -1866,6 +1867,91 @@ describe("IkaDoc runtime policy", function() {
       ["UpdateRecord", "Table1", 1, { Name: "Updated" }],
       ["BulkAddRecord", "Table1", [2], { Name: ["New"] }],
     ]);
+  });
+
+  describe("IkaDoc service account (GW-SRC-06)", function() {
+    function serviceRequest(headers: Record<string, string>): Request {
+      const lowered = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+
+      return {
+        headers: lowered,
+        params: { docId: "doc-1" },
+        get: (name: string) => lowered[name.toLowerCase()],
+      } as unknown as Request;
+    }
+
+    function viewerRegistryWithLockedColumns() {
+      const registry = new IkaDocRuntimeSessionRegistry();
+
+      registry.register({
+        ...runtimeConfig({}, undefined, "2099-01-01T00:00:00.000Z", "viewer"),
+        lockedColumns: { Factures: ["montant"] },
+      });
+
+      return registry;
+    }
+
+    const apiKey = { authorization: "Bearer service-api-key" };
+    const addClientRow = ["BulkAddRecord", "Clients", [null], {}];
+
+    it("lets the service add and refresh source data with the session's token", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "validation-token" });
+
+      assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+        ["AddTable", "Clients", [{ id: "nom" }]],
+        ["BulkAddRecord", "Clients", [null], { nom: ["Orange Mali"] }],
+        ["BulkUpdateRecord", "Factures", [1], { montant: [5000] }],
+      ], req);
+    });
+
+    it("refuses a wrong session token", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "another-token" });
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
+        /invalid session token/,
+      );
+    });
+
+    it("keeps the service to data actions on user tables", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "validation-token" });
+
+      for (const action of [
+        ["RemoveTable", "Factures"],
+        ["RemoveColumn", "Factures", "montant"],
+        ["BulkAddRecord", "_grist_ACLRules", [null], {}],
+      ]) {
+        assert.throws(
+          () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [action], req),
+          /as the IkaDoc service/,
+        );
+      }
+    });
+
+    it("holds API calls without the token to the session's user policy", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest(apiKey);
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
+      );
+    });
+
+    it("never treats a browser session as the service, even with the token", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({
+        ...apiKey,
+        [IKADOC_SESSION_TOKEN_HEADER]: "validation-token",
+        cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
+      });
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
+      );
+    });
   });
 
   describe("IkaDoc-owned columns (GW-RFR-03)", function() {

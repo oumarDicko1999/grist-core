@@ -270,8 +270,8 @@ export class DocWorkerApi {
       "create or import Grist documents",
     );
     const requireIkaDocUserActions = requireIkaDocUserActionsForRequest(this._ikadocRuntimeSessionRegistry);
-    const assertIkaDocUserActions = (docId: string, actions: UserAction[]) =>
-      assertIkaDocUserActionsAllowedForDocument(this._ikadocRuntimeSessionRegistry, docId, actions);
+    const assertIkaDocUserActions = (docId: string, actions: UserAction[], req?: RequestWithLogin) =>
+      assertIkaDocUserActionsAllowedForDocument(this._ikadocRuntimeSessionRegistry, docId, actions, req);
 
     const withDoc = (callback: WithDocHandler) => throttled(this._requireActiveDoc(callback));
     // Apply user actions to a document.
@@ -705,7 +705,7 @@ export class DocWorkerApi {
           // Maybe there should be a query param to control this?
           ["AddVisibleColumn", tableId, colId, fields || {}],
         );
-        assertIkaDocUserActions(activeDoc.docName, actions);
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         const { retValues } = await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -723,7 +723,7 @@ export class DocWorkerApi {
           const colInfos = columns.map(({ fields, id: colId }) => ({ ...fields, id: colId }));
           return ["AddTable", id, colInfos];
         });
-        assertIkaDocUserActions(activeDoc.docName, actions);
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         const { retValues } = await activeDoc.applyUserActions(docSessionFromRequest(req), actions);
         const tables = retValues.map(({ table_id }) => ({ id: table_id }));
         res.json({ tables });
@@ -941,7 +941,7 @@ export class DocWorkerApi {
           ...(!isAffirmative(req.query.noadd) ? addActions : []),
           ...(isAffirmative(req.query.replaceall) ? [await getRemoveAction()] : []),
         ];
-        assertIkaDocUserActions(activeDoc.docName, actions);
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -954,7 +954,7 @@ export class DocWorkerApi {
         const { colId } = req.params;
         const tableId = await getRealTableId(req.params.tableId, { activeDoc, req });
         const actions = [["RemoveColumn", tableId, colId]];
-        assertIkaDocUserActions(activeDoc.docName, actions);
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         await handleSandboxError(tableId, [colId],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -2400,6 +2400,7 @@ async function getTableOperations(
         ikadocRuntimeSessionRegistry,
         activeDoc.docName,
         actions,
+        req,
       );
       return activeDoc.applyUserActions(
         docSessionFromRequest(req),
