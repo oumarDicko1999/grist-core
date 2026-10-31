@@ -1,6 +1,7 @@
 import { DENIED_IKADOC_CAPABILITIES } from "app/ikadoc/IkaDocCapabilities";
 import {
   applyOwarelinHostEvent,
+  IKADOC_PARTICIPANTS_CHANGED_EVENT,
   owarelinRuntimeEvent,
   parseOwarelinRuntimeEvent,
 } from "app/ikadoc/OwarelinRuntimeEvents";
@@ -27,6 +28,7 @@ const CONFIG = {
   statusUrl: "https://records.owarelin.localhost/api/grist/sessions/session-1",
   validationUrl:
     "https://records.owarelin.localhost/api/grist/editor/session-validation",
+  validationToken: "validation-token",
   discardUrl:
     "https://records.owarelin.localhost/api/grist/sessions/session-1/cancel",
   capabilities: DENIED_IKADOC_CAPABILITIES,
@@ -69,6 +71,27 @@ describe("OwarelinRuntimeEvents", function() {
     assert.equal(clean.type, "owarelin:documentClean");
     assert.equal(dirty.version, 1);
     assert.equal(clean.version, 1);
+  });
+
+  it("builds guided workspace result events without row or cell data", function() {
+    const event = owarelinRuntimeEvent(
+      CONFIG,
+      "owarelin:guidedWorkspaceValidated",
+      {
+        success: false,
+        simulated: true,
+        importedTotal: 0,
+        updatedTotal: 0,
+        errorCount: 2,
+        warningCount: 1,
+        conflictCount: 1,
+      },
+    );
+
+    assert.equal(event.type, "owarelin:guidedWorkspaceValidated");
+    assert.equal(event.detail.errorCount, 2);
+    assert.notProperty(event.detail, "rows");
+    assert.notProperty(event.detail, "cells");
   });
 
   it("accepts inbound host events only for the current session and known names", function() {
@@ -126,6 +149,29 @@ describe("OwarelinRuntimeEvents", function() {
     );
 
     assert.equal(accepted?.type, "owarelin:guidedWorkspaceDescriptorChanged");
+  });
+
+  it("hands the host's participant message to the editor controls, as text (UI-09)", function() {
+    const jsdom = new JSDOM("<!doctype html><html><body></body></html>");
+    (global as any).document = jsdom.window.document;
+    (global as any).window = jsdom.window;
+    (global as any).CustomEvent = jsdom.window.CustomEvent;
+    const received: unknown[] = [];
+    jsdom.window.addEventListener(IKADOC_PARTICIPANTS_CHANGED_EVENT, (event: Event) =>
+      received.push((event as CustomEvent<unknown>).detail),
+    );
+
+    applyOwarelinHostEvent({
+      type: "owarelin:participantsChanged",
+      version: 1,
+      sessionId: "session-1",
+      sourceType: "document-file",
+      emittedAt: "2026-10-28T00:00:00.000Z",
+      detail: { change: "joined", safeMessage: "Bob joined the spreadsheet" },
+    });
+
+    assert.equal(document.documentElement.dataset.owarelinRuntimeState, "participants-changed");
+    assert.deepEqual(received, ["Bob joined the spreadsheet"]);
   });
 
   it("applies lifecycle host events to IkaDoc-owned runtime state attributes", function() {
@@ -259,6 +305,10 @@ describe("OwarelinRuntimeEvents", function() {
       "1",
     );
     assert.equal(
+      document.documentElement.dataset.owarelinGuidedWorkspaceTables,
+      "2",
+    );
+    assert.equal(
       document.documentElement.dataset.owarelinGuidedWorkspaceProtectedColumns,
       "1",
     );
@@ -273,6 +323,7 @@ function guidedDescriptor() {
       targetSchemaType: "document",
       targetSchemaCode: "document_default",
       finalAction: "APPLY_TO_IKADOC",
+      tableBindings: [],
     },
     schemaType: { code: "document", label: "Document" },
     schema: {
@@ -287,8 +338,13 @@ function guidedDescriptor() {
         columnLabel: "Title (title)",
         kind: "string",
         editor: { kind: "text-input", valueShape: "scalar" },
+        multiValue: false,
         readOnly: false,
         required: true,
+        derived: false,
+        sensitive: false,
+        visibility: "FORM_AND_DISPLAY",
+        enumValues: [],
       },
     ],
     protectedColumns: [
@@ -297,6 +353,74 @@ function guidedDescriptor() {
         label: "Row key",
         readOnly: true,
         required: true,
+      },
+    ],
+    tables: [
+      {
+        tableId: "document_default",
+        targetSchemaCode: "document_default",
+        schema: {
+          code: "document_default",
+          fullCode: "document.document_default",
+          label: "Document",
+        },
+        fields: [
+          {
+            code: "title",
+            label: "Title",
+            columnLabel: "Title (title)",
+            kind: "string",
+            editor: { kind: "text-input", valueShape: "scalar" },
+            multiValue: false,
+            readOnly: false,
+            required: true,
+            derived: false,
+            sensitive: false,
+            visibility: "FORM_AND_DISPLAY",
+            enumValues: [],
+          },
+        ],
+        protectedColumns: [
+          {
+            code: "ikadoc_row_key",
+            label: "Row key",
+            readOnly: true,
+            required: true,
+          },
+        ],
+      },
+      {
+        tableId: "folder_case",
+        targetSchemaCode: "folder_case",
+        schema: {
+          code: "folder_case",
+          fullCode: "folder.folder_case",
+          label: "Case folder",
+        },
+        fields: [
+          {
+            code: "title",
+            label: "Title",
+            columnLabel: "Title (title)",
+            kind: "string",
+            editor: { kind: "text-input", valueShape: "scalar" },
+            multiValue: false,
+            readOnly: false,
+            required: true,
+            derived: false,
+            sensitive: false,
+            visibility: "FORM_AND_DISPLAY",
+            enumValues: [],
+          },
+        ],
+        protectedColumns: [
+          {
+            code: "ikadoc_row_key",
+            label: "Row key",
+            readOnly: true,
+            required: true,
+          },
+        ],
       },
     ],
   };

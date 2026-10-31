@@ -41,6 +41,8 @@ import {
   freezeAction,
   IMultiColumnContextMenu,
 } from "app/client/ui/GridViewMenus";
+import { ikaDocGuidedCellIssue } from "app/client/ui/IkaDocGuidedWorkspaceCellIssue";
+import { ikaDocPasteActions } from "app/client/ui/IkaDocGuidedWorkspaceRows";
 import {
   canEditIkaDocRuntimeCells,
   canEditIkaDocRuntimeStructure,
@@ -826,7 +828,11 @@ export default class GridView extends BaseView {
     const pasteFields = updateColIndices.map(i => fields[i] || null);
 
     const richData = await parsePasteForView(pasteData, pasteFields, this.gristDoc);
-    const actions = this._createBulkActionsFromPaste(updateRowIds, richData);
+    // IkaDoc: rows a paste adds to a guided workspace table carry IkaDoc's protected values.
+    const actions = await ikaDocPasteActions(
+      this.viewSection.tableId.peek(),
+      this._createBulkActionsFromPaste(updateRowIds, richData),
+    );
 
     if (actions.length > 0) {
       const cursorPos = this.cursor.getCursorPos();
@@ -1813,6 +1819,8 @@ export default class GridView extends BaseView {
               // a cell in that row becomes larger
               kd.style("borderRightWidth", v.borderWidthPx),
               kd.toggleClass("selected", isSelected),
+              // IkaDoc: marks cells the guided workspace reported a problem on.
+              ikaDocGuidedCellIssue(() => this.schemaModel.tableId(), () => row.id(), () => field.colId()),
               // Optional icon. Currently only use to show formula icon.
               dom("div.field-icon"),
               fieldBuilder.buildDomWithCursor(row, isCellActive, isCellSelected),

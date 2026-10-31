@@ -29,6 +29,7 @@ import { UnionRowSource } from "app/client/models/UnionRowSource";
 import { markAsSeen } from "app/client/models/UserPrefs";
 import { buildReassignModal } from "app/client/ui/buildReassignModal";
 import { createFilterMenu, IColumnFilterMenuOptions } from "app/client/ui/ColumnFilterMenu";
+import { ikaDocNewRowValues } from "app/client/ui/IkaDocGuidedWorkspaceRows";
 import {
   canEditIkaDocRuntimeCells,
   canUseIkaDocRuntimeComments,
@@ -610,7 +611,9 @@ export default class BaseView extends DisposableWithEvents {
     const insertPos = Number.isInteger(rowId) ?
       this.tableModel.tableData.getValue(rowId, "manualSort") : null;
 
-    return this.sendTableAction(["AddRecord", null, { manualSort: insertPos }])!
+    // IkaDoc: rows added to a guided workspace table carry IkaDoc's protected values.
+    return ikaDocNewRowValues(this.schemaModel.tableId(), { manualSort: insertPos })
+      .then(rowValues => this.sendTableAction(["AddRecord", null, rowValues])!)
       .then((rowId) => {
         if (!this.isDisposed()) {
           this._exemptFromFilterRows.addExemptRow(rowId);

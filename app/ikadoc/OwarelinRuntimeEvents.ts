@@ -4,6 +4,9 @@ import { applyIkaDocThemeBridgeState } from "app/ikadoc/IkaDocThemeState";
 
 const MAX_RUNTIME_STATE_MESSAGE_LENGTH = 240;
 
+/** UI-09: the window event the editor controls listen to; its detail is the host's message. */
+export const IKADOC_PARTICIPANTS_CHANGED_EVENT = "ikadoc:participantsChanged";
+
 export type OwarelinInboundRuntimeEventName =
   | "owarelin:languageChanged" |
   "owarelin:themeChanged" |
@@ -17,7 +20,8 @@ export type OwarelinInboundRuntimeEventName =
   "owarelin:saveCompleted" |
   "owarelin:saveFailed" |
   "owarelin:cleanupPending" |
-  "owarelin:guidedWorkspaceDescriptorChanged";
+  "owarelin:guidedWorkspaceDescriptorChanged" |
+  "owarelin:participantsChanged";
 
 export type OwarelinOutboundRuntimeEventName =
   | "owarelin:editorReady" |
@@ -32,6 +36,8 @@ export type OwarelinOutboundRuntimeEventName =
   "owarelin:blockedCapabilityAttempted" |
   "owarelin:runtimeError" |
   "owarelin:sourceRefreshed" |
+  "owarelin:guidedWorkspaceValidated" |
+  "owarelin:guidedWorkspaceApplied" |
   "owarelin:saveCompleted" |
   "owarelin:saveFailed" |
   "owarelin:cleanupPending";
@@ -194,6 +200,9 @@ export function applyOwarelinHostEvent(
     case "owarelin:guidedWorkspaceDescriptorChanged":
       setGuidedWorkspaceDescriptorState(event);
       break;
+    case "owarelin:participantsChanged":
+      setParticipantsState(event);
+      break;
     case "owarelin:sourceRefreshed":
       setRuntimeState("source-refreshed", event);
       break;
@@ -215,6 +224,26 @@ export function applyOwarelinHostEvent(
   }
 }
 
+/**
+ * UI-09: someone joined or left the shared spreadsheet, or it closed. The host wrote the message
+ * in the user's language, naming only people they may see; it is shown as text, never markup.
+ */
+function setParticipantsState(
+  event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
+): void {
+  setRuntimeState("participants-changed", event);
+  const message = readStringDetail(event.detail, "safeMessage");
+  if (!message) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(IKADOC_PARTICIPANTS_CHANGED_EVENT, {
+      detail: message.slice(0, MAX_RUNTIME_STATE_MESSAGE_LENGTH),
+    }),
+  );
+}
+
 function setGuidedWorkspaceDescriptorState(
   event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
 ): void {
@@ -233,6 +262,8 @@ function setGuidedWorkspaceDescriptorState(
     descriptor.marker.intent;
   document.documentElement.dataset.owarelinGuidedWorkspaceSchema =
     descriptor.schema.label;
+  document.documentElement.dataset.owarelinGuidedWorkspaceTables =
+    descriptor.tables.length.toString();
   document.documentElement.dataset.owarelinGuidedWorkspaceFields =
     descriptor.fields.length.toString();
   document.documentElement.dataset.owarelinGuidedWorkspaceProtectedColumns =
@@ -278,4 +309,5 @@ const INBOUND_OWARELIN_RUNTIME_EVENTS: ReadonlySet<OwarelinInboundRuntimeEventNa
     "owarelin:saveFailed",
     "owarelin:cleanupPending",
     "owarelin:guidedWorkspaceDescriptorChanged",
+    "owarelin:participantsChanged",
   ]);

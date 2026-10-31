@@ -84,6 +84,24 @@ export const typeDefs: any = {
           wrap: undefined,
         },
       },
+      IkaDocReference: {
+        cons: "IkaDocReferenceTextBox",
+        editCons: "IkaDocReferenceEditor",
+        icon: "FieldReference",
+        options: {
+          alignment: "left",
+          wrap: undefined,
+        },
+      },
+      IkaDocJson: {
+        cons: "IkaDocJsonTextBox",
+        editCons: "IkaDocJsonEditor",
+        icon: "FieldAny",
+        options: {
+          alignment: "left",
+          wrap: true,
+        },
+      },
     },
     default: "TextBox",
   },

@@ -9,6 +9,7 @@ import { workspaceName } from "app/client/models/WorkspaceInfo";
 import { AccountWidget } from "app/client/ui/AccountWidget";
 import { buildActiveUserList } from "app/client/ui/ActiveUserList";
 import { buildIkaDocEditorControls } from "app/client/ui/IkaDocEditorControls";
+import { attachIkaDocGuidedWorkspaceSetup } from "app/client/ui/IkaDocGuidedWorkspaceSetup";
 import { buildLanguageMenu } from "app/client/ui/LanguageMenu";
 import { buildNotifyMenuButton } from "app/client/ui/NotifyUI";
 import { manageTeamUsersApp } from "app/client/ui/OpenUserManager";
@@ -107,6 +108,7 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
       holder.autoDispose(gristDoc.docData.sendActionsDoneEmitter.addListener(() => {
         postOwarelinRuntimeEvent(ikadocConfig, "owarelin:documentDirty");
       }));
+      attachIkaDocGuidedWorkspaceSetup(holder, ikadocConfig, gristDoc);
       return holder;
     });
   }
@@ -178,7 +180,9 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
         pageModel.gristDoc.get()?.regionFocusSwitcher,
       );
     }),
-    ikadocConfig ? buildIkaDocEditorControls(owner, ikadocConfig) : null,
+    ikadocConfig ? dom.maybe(pageModel.gristDoc, gristDoc =>
+      buildIkaDocEditorControls(owner, ikadocConfig, gristDoc),
+    ) : null,
     ikadocConfig ? null : dom.maybe(use => !(use(pageModel.isTemplate) && isAnonymous), () => [
       buildShareMenuButton(pageModel),
       dom.maybe(pageModel.gristDoc,
