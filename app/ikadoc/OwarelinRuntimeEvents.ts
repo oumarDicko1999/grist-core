@@ -156,34 +156,15 @@ function isOwarelinInboundRuntimeEventName(
 export function applyOwarelinHostEvent(
   event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>,
 ): void {
-  if (
-    event.type === "owarelin:languageChanged" &&
-    typeof event.detail.locale === "string"
-  ) {
-    document.documentElement.lang = event.detail.locale;
-  }
-  if (event.type === "owarelin:themeChanged") {
-    const currentAppearance =
-      document.documentElement.dataset.gristAppearance === "dark" ?
-        "dark" :
-        "light";
-    const appearance =
-      event.detail.appearance === "dark" || event.detail.appearance === "light" ?
-        event.detail.appearance :
-        currentAppearance;
-    const theme =
-      typeof event.detail.theme === "string" ? event.detail.theme : undefined;
-    const mode =
-      document.documentElement.dataset.ikadocRuntimeMode === "viewer" ?
-        "viewer" :
-        "editor";
-    applyIkaDocThemeBridgeState({
-      appearance,
-      mode,
-      theme,
-    });
-  }
   switch (event.type) {
+    case "owarelin:languageChanged":
+      if (typeof event.detail.locale === "string") {
+        document.documentElement.lang = event.detail.locale;
+      }
+      break;
+    case "owarelin:themeChanged":
+      applyHostTheme(event);
+      break;
     case "owarelin:sessionExpired":
       setRuntimeState("expired", event);
       break;
@@ -222,8 +203,24 @@ export function applyOwarelinHostEvent(
       setRuntimeState("save-failed", event);
       break;
     default:
+      // Sources events are read by the sources panel itself (IkaDocSourcesPanel).
       break;
   }
+}
+
+/** The IkaDoc page switched style or appearance; what it leaves out stays as it is. */
+function applyHostTheme(event: OwarelinRuntimeEvent<OwarelinInboundRuntimeEventName>): void {
+  const { dataset } = document.documentElement;
+
+  const requested = event.detail.appearance;
+  const current = dataset.gristAppearance === "dark" ? "dark" : "light";
+  const appearance = requested === "dark" || requested === "light" ? requested : current;
+
+  applyIkaDocThemeBridgeState({
+    appearance,
+    mode: dataset.ikadocRuntimeMode === "viewer" ? "viewer" : "editor",
+    theme: typeof event.detail.theme === "string" ? event.detail.theme : undefined,
+  });
 }
 
 /**

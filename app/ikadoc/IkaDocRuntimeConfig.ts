@@ -229,57 +229,44 @@ export function parseIkaDocRuntimeConfig(
     return { kind: "invalid", reason: "invalid-sources" };
   }
 
-  const sessionId = raw.sessionId as string;
-  const collectionCode = raw.collectionCode as string;
-  const documentId = raw.documentId as string;
-  const documentUrlId = raw.documentUrlId as string;
-  const workerUrl = raw.workerUrl as string;
-  const statusUrl = raw.statusUrl as string;
-  const validationUrl = raw.validationUrl as string;
-  const validationToken = raw.validationToken as string;
-  const discardUrl = raw.discardUrl as string;
-  const expiresAt = raw.expiresAt as string;
-  const locale = raw.locale as string;
-  const appearance = raw.appearance === "dark" ? "dark" : "light";
+  // REQUIRED_STRING_FIELDS were checked above; the optional texts may be absent or ignored.
+  const required = (field: typeof REQUIRED_STRING_FIELDS[number]) => raw[field] as string;
+  const optionalText = (value: unknown) => typeof value === "string" ? value : undefined;
 
   return {
     kind: "enabled",
     config: {
       enabled: true,
-      sessionId,
+      sessionId: required("sessionId"),
       user: normalizeIkaDocRuntimeUser(raw.user),
-      collectionCode,
+      collectionCode: required("collectionCode"),
       sourceType: raw.sourceType as IkaDocSessionSourceType,
-      sourceSummary:
-        typeof raw.sourceSummary === "string" ? raw.sourceSummary : undefined,
+      sourceSummary: optionalText(raw.sourceSummary),
       mode: raw.mode as IkaDocEditorMode,
-      expiresAt,
-      documentId,
-      documentUrlId,
-      workerUrl,
-      statusUrl,
-      validationUrl,
-      validationToken,
-      saveUrl: typeof raw.saveUrl === "string" ? raw.saveUrl : undefined,
-      discardUrl,
-      blockedCapabilityUrl:
-        typeof raw.blockedCapabilityUrl === "string" ?
-          raw.blockedCapabilityUrl :
-          undefined,
-      refreshUrl:
-        typeof raw.refreshUrl === "string" ? raw.refreshUrl : undefined,
-      proposalUrl:
-        typeof raw.proposalUrl === "string" ? raw.proposalUrl : undefined,
+      expiresAt: required("expiresAt"),
+
+      documentId: required("documentId"),
+      documentUrlId: required("documentUrlId"),
+
+      workerUrl: required("workerUrl"),
+      statusUrl: required("statusUrl"),
+      validationUrl: required("validationUrl"),
+      validationToken: required("validationToken"),
+      saveUrl: optionalText(raw.saveUrl),
+      discardUrl: required("discardUrl"),
+      blockedCapabilityUrl: optionalText(raw.blockedCapabilityUrl),
+      refreshUrl: optionalText(raw.refreshUrl),
+      proposalUrl: optionalText(raw.proposalUrl),
+
       guidedWorkspaceUrls,
       guidedWorkspace,
       lockedColumns,
       sources,
-      capabilities: normalizeIkaDocCapabilities(
-        raw.capabilities as IkaDocCapabilityOverrides | undefined,
-      ),
-      locale,
-      theme: typeof raw.theme === "string" ? raw.theme : undefined,
-      appearance,
+      capabilities: normalizeIkaDocCapabilities(raw.capabilities as IkaDocCapabilityOverrides | undefined),
+
+      locale: required("locale"),
+      theme: optionalText(raw.theme),
+      appearance: raw.appearance === "dark" ? "dark" : "light",
     },
   };
 }
