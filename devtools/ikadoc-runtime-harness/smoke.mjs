@@ -87,16 +87,14 @@ try {
   check("an IkaDoc-owned cell cannot be edited", !(await changesCell(page, CLIENT_COLUMN)));
 
   // Control: the same gesture changes the user's own column, so the checks on protected
-  // cells are not passing by accident. Undone after.
+  // cells are not passing by accident. changesCell puts the value back.
   check("control: the user's own column can be changed", await changesCell(page, NOTE_COLUMN));
-  await page.keyboard.press("Control+z");
 
   // A second tab of the same browser on the same session must not disconnect the first.
   const secondTab = await context.newPage();
   await openEditor(secondTab, "search-editor", MODES[0]);
   await page.bringToFront();
   check("a second tab leaves the first one working", await changesCell(page, NOTE_COLUMN));
-  await page.keyboard.press("Control+z");
   await secondTab.close();
 
   await openEditor(page, "search-viewer", MODES[0]);
@@ -135,24 +133,45 @@ async function openEditor(page, fixture, { theme, appearance }) {
 }
 
 /**
- * Types into a cell of the third row and confirms; true when the cell's value changed.
- * Grist opens a read-only editor on cells it will not let the user change, so the value is
- * what tells an editable cell from a protected one. The cursor reaches the cell by keyboard
- * from the first column, since the right panel can cover the last columns.
+ * Types into a cell of the third row and confirms; true when the cell's value changed, in which
+ * case the original value is written back. Grist opens a read-only editor on protected cells
+ * and none at all for a viewer: either way the cell cannot change.
  */
 async function changesCell(page, column) {
-  const row = page.locator(".gridview_row").nth(2);
-  const cell = row.locator(".record > .field").nth(column);
-
+  const cell = page.locator(".gridview_row").nth(2).locator(".record > .field").nth(column);
   const before = await cell.innerText();
+
+  // A value the cell cannot already hold, so an accepted edit always shows.
+  const typed = await editCell(page, column, `smoke-${Date.now()}`);
+  if (!typed) {
+    return false;
+  }
+
+  for (let attempt = 0; attempt < CHANGE_ATTEMPTS; attempt++) {
+    if (await cell.innerText() !== before) {
+      await editCell(page, column, before);
+      return true;
+    }
+
+    await page.waitForTimeout(CHANGE_POLL_MS);
+  }
+
+  return false;
+}
+
+/**
+ * Moves the cursor to a cell of the third row by keyboard (the right panel can cover the last
+ * columns), opens the editor, then types [value] and confirms. False when no editor opens.
+ * The editor is opened first because keys typed while it opens are lost.
+ */
+async function editCell(page, column, value) {
+  const row = page.locator(".gridview_row").nth(2);
 
   await row.locator(".record > .field").first().click();
   for (let step = 0; step < column; step++) {
     await page.keyboard.press("ArrowRight");
   }
 
-  // Open the editor first: keys typed while it opens are lost. Grist opens a read-only editor on
-  // protected cells, and none at all for a viewer: either way the cell cannot change.
   await page.keyboard.press("Enter");
 
   const editorOpened = await page.locator(".cell_editor")
@@ -163,20 +182,10 @@ async function changesCell(page, column) {
   }
 
   await page.keyboard.press("Control+a");
-
-  // A value the cell cannot already hold, so an accepted edit always shows.
-  await page.keyboard.type(`smoke-${Date.now()}`);
+  await page.keyboard.press("Delete");
+  await page.keyboard.type(value);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
 
-  // Grist shows the value once the server has applied the edit.
-  for (let attempt = 0; attempt < CHANGE_ATTEMPTS; attempt++) {
-    if (await cell.innerText() !== before) {
-      return true;
-    }
-
-    await page.waitForTimeout(CHANGE_POLL_MS);
-  }
-
-  return false;
+  return true;
 }
