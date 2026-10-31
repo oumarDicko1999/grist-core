@@ -17,7 +17,54 @@ const CLIENT_SEAMS = [
     anchors: [
       "shouldShowIkaDocRuntimeAuthoringSurfaces",
       "rightPanel: showAuthoringSurfaces ?",
+      "isIkaDocRuntime ? \"ikadocRightPanelWidth\" : \"rightPanelWidth\"",
     ],
+  },
+  {
+    file: "app/client/ui/Tools.ts",
+    anchors: ["dom.create(IkaDocSourcesPanel, ikadocConfig),"],
+  },
+  {
+    file: "app/client/models/entities/ColumnRec.ts",
+    anchors: [
+      "const isIkaDocLocked = ko.pureComputed(() => isIkaDocLockedColumn(this.table().tableId(), this.colId()));",
+      "Boolean(this.summarySourceCol()) || isIkaDocLocked()",
+    ],
+  },
+  {
+    file: "app/client/models/entities/TableRec.ts",
+    anchors: ["ikaDocSummaryGroupDescription(labels) ?? summaryGroupByDescription(labels)"],
+  },
+  {
+    file: "app/client/models/entities/ViewSectionRec.ts",
+    anchors: [
+      "const ikadocTitle = ikaDocDefaultWidgetTitle({",
+      "if (ikadocTitle !== undefined) { return ikadocTitle; }",
+    ],
+  },
+  {
+    file: "app/client/widgets/DateTextBox.js",
+    anchors: ["cssLabel(t(\"Date Format\"))", "defaultLabel: t(\"Mixed format\")"],
+  },
+  {
+    file: "app/client/widgets/DateTimeTextBox.js",
+    anchors: ["cssLabel(t(\"Timezone\"))", "cssLabel(t(\"Time Format\"))"],
+  },
+  {
+    file: "app/client/ui2018/search.ts",
+    anchors: ["{ \"aria-label\": t(\"Search\") }"],
+  },
+  {
+    file: "app/client/ui/ViewSectionMenu.ts",
+    anchors: ["{ \"aria-label\": t(\"Sort and filter\") }", "{ \"aria-label\": t(\"Widget options\") }"],
+  },
+  {
+    file: "app/client/components/buildViewSectionDom.ts",
+    anchors: ["{ \"aria-label\": t(\"Widget options\") }"],
+  },
+  {
+    file: "app/client/widgets/NumericSpinner.ts",
+    anchors: ["{ \"aria-label\": t(\"Increase\") }", "{ \"aria-label\": t(\"Decrease\") }"],
   },
   {
     file: "app/client/models/DocPageModel.ts",
@@ -108,6 +155,9 @@ const CLIENT_SEAMS = [
   {
     file: "app/client/components/GridView.ts",
     anchors: [
+      "{ \"aria-label\": t(\"Select all\") }",
+      "{ \"aria-label\": t(\"Column options\") }",
+      "ikaDocLockedColumnIcon(this.schemaModel.tableId.peek(), field.colId.peek()),",
       "canEditIkaDocRuntimeCells",
       "canEditIkaDocRuntimeStructure",
       "private _isStructureReadonly: boolean;",

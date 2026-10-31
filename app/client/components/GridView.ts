@@ -43,6 +43,7 @@ import {
 } from "app/client/ui/GridViewMenus";
 import { ikaDocGuidedCellIssue } from "app/client/ui/IkaDocGuidedWorkspaceCellIssue";
 import { ikaDocPasteActions } from "app/client/ui/IkaDocGuidedWorkspaceRows";
+import { ikaDocLockedColumnIcon } from "app/client/ui/IkaDocLockedColumns";
 import {
   canEditIkaDocRuntimeCells,
   canEditIkaDocRuntimeStructure,
@@ -1431,6 +1432,8 @@ export default class GridView extends BaseView {
       // Corner and shadows (so it's fixed to the grid viewport)
       this._cornerDom = dom(
         "div.gridview_data_corner_overlay",
+        // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+        { "aria-label": t("Select all") },
         this._cornerRenderer,
       ),
       dom("div.scroll_shadow_top", dom.show(this.scrollShadow.top)),
@@ -1569,6 +1572,8 @@ export default class GridView extends BaseView {
                         field.description,
                         "column",
                       ),
+                      // Owarelin/IkaDoc: a lock marks IkaDoc-owned columns (GW-RFR-03).
+                      ikaDocLockedColumnIcon(this.schemaModel.tableId.peek(), field.colId.peek()),
                       dom.on("mousedown", ev => isEditingLabel() ? ev.stopPropagation() : true),
                       buildRenameColumn({
                         field,
@@ -1599,6 +1604,7 @@ export default class GridView extends BaseView {
                         );
                       },
                       menu(ctl => this.columnContextMenu(ctl, this.getSelection(), field, filterTriggerCtl)),
+                      { "aria-label": t("Column options") },
                       testId("column-menu-trigger"),
                     ),
                     dom("div.selection"),

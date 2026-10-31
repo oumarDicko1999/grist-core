@@ -53,6 +53,16 @@ export interface IkaDocRuntimeConfigWire {
   capabilities?: Partial<IkaDocRuntimeCapabilities>;
   // GW-RFR-03: per table, the columns IkaDoc owns; read-only in the editor.
   lockedColumns?: Record<string, string[]>;
+  // GW-SRC-10: the IkaDoc sources behind the session (see app/ikadoc/IkaDocSessionSources.ts).
+  sources?: {
+    sourceId: string;
+    tableId: string;
+    label: string;
+    origin: "saved-search" | "query" | "selection" | "document";
+    scope: string;
+    rowCount: number;
+    snapshotAt: string;
+  }[];
   locale: string;
   theme?: string;
   appearance?: "light" | "dark";

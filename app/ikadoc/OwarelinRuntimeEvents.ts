@@ -21,7 +21,9 @@ export type OwarelinInboundRuntimeEventName =
   "owarelin:saveFailed" |
   "owarelin:cleanupPending" |
   "owarelin:guidedWorkspaceDescriptorChanged" |
-  "owarelin:participantsChanged";
+  "owarelin:participantsChanged" |
+  "owarelin:sourcesChanged" |
+  "owarelin:sourceRecordsChanged";
 
 export type OwarelinOutboundRuntimeEventName =
   | "owarelin:editorReady" |
@@ -310,4 +312,6 @@ const INBOUND_OWARELIN_RUNTIME_EVENTS: ReadonlySet<OwarelinInboundRuntimeEventNa
     "owarelin:cleanupPending",
     "owarelin:guidedWorkspaceDescriptorChanged",
     "owarelin:participantsChanged",
+    "owarelin:sourcesChanged",
+    "owarelin:sourceRecordsChanged",
   ]);

@@ -5,6 +5,7 @@ import { CellRec, DocModel, IRowModel, recordSet,
   refRecord, TableRec, ViewFieldRec } from "app/client/models/DocModel";
 import { urlState } from "app/client/models/gristUrlState";
 import { jsonObservable, ObjObservable } from "app/client/models/modelUtil";
+import { isIkaDocLockedColumn } from "app/client/ui/IkaDocLockedColumns";
 import * as gristTypes from "app/common/gristTypes";
 import { getReferencedTableId } from "app/common/gristTypes";
 import {
@@ -156,9 +157,12 @@ export function createColumnRec(this: ColumnRec, docModel: DocModel): void {
   this.hasReverse = this.autoDispose(ko.pureComputed(() => Boolean(this.reverseColModel().id())));
   this.visibleColModel = refRecord(docModel.columns, this.visibleCol);
 
-  this.disableModifyBase = ko.pureComputed(() => Boolean(this.summarySourceCol()));
+  // Owarelin/IkaDoc: IkaDoc-owned columns are read-only, like summary group-by columns (GW-RFR-03).
+  const isIkaDocLocked = ko.pureComputed(() => isIkaDocLockedColumn(this.table().tableId(), this.colId()));
+
+  this.disableModifyBase = ko.pureComputed(() => Boolean(this.summarySourceCol()) || isIkaDocLocked());
   this.disableModify = ko.pureComputed(() => this.disableModifyBase() || this.isTransforming());
-  this.disableEditData = ko.pureComputed(() => Boolean(this.summarySourceCol()));
+  this.disableEditData = ko.pureComputed(() => Boolean(this.summarySourceCol()) || isIkaDocLocked());
 
   this.isHiddenCol = ko.pureComputed(() => gristTypes.isHiddenCol(this.colId()));
   this.isFormCol = ko.pureComputed(() => (

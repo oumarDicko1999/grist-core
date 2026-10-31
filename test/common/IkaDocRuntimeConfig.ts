@@ -1,5 +1,5 @@
 import { DENIED_IKADOC_CAPABILITIES } from "app/ikadoc/IkaDocCapabilities";
-import { parseIkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
+import { parseIkaDocRuntimeConfig, toIkaDocBrowserRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 
 import { assert } from "chai";
 
@@ -29,6 +29,60 @@ const VALID_IKADOC_CONFIG = {
 describe("IkaDocRuntimeConfig", function() {
   it("treats a missing config section as disabled", function() {
     assert.deepEqual(parseIkaDocRuntimeConfig(undefined), { kind: "disabled" });
+  });
+
+  it("reads IkaDoc-owned columns per table (GW-RFR-03)", function() {
+    const result = parseIkaDocRuntimeConfig({
+      ...VALID_IKADOC_CONFIG,
+      lockedColumns: { Factures: ["numero", "montant"] },
+    });
+
+    assert.equal(result.kind, "enabled");
+    assert.deepEqual(
+      result.kind === "enabled" ? result.config.lockedColumns : undefined,
+      { Factures: ["numero", "montant"] },
+    );
+  });
+
+  it("sends locked columns and sources to the browser, never the validation token", function() {
+    const source = {
+      sourceId: "source-factures",
+      tableId: "Factures",
+      label: "Factures",
+      origin: "saved-search",
+      scope: "Recherche « Factures 2026 »",
+      rowCount: 60,
+      snapshotAt: "2026-10-31T11:24:00.000Z",
+    };
+
+    const result = parseIkaDocRuntimeConfig({
+      ...VALID_IKADOC_CONFIG,
+      lockedColumns: { Factures: ["numero"] },
+      sources: [source],
+    });
+    assert.equal(result.kind, "enabled");
+
+    const browserConfig = result.kind === "enabled" ? toIkaDocBrowserRuntimeConfig(result.config) : undefined;
+
+    assert.deepEqual(browserConfig?.lockedColumns, { Factures: ["numero"] });
+    assert.deepEqual(browserConfig?.sources, [source]);
+    assert.notProperty(browserConfig, "validationToken");
+  });
+
+  it("rejects a malformed source list (GW-SRC-10)", function() {
+    assert.deepEqual(
+      parseIkaDocRuntimeConfig({ ...VALID_IKADOC_CONFIG, sources: [{ sourceId: "s1" }] }),
+      { kind: "invalid", reason: "invalid-sources" },
+    );
+  });
+
+  it("rejects malformed IkaDoc-owned columns instead of ignoring them", function() {
+    for (const lockedColumns of [["numero"], { Factures: "numero" }, { Factures: [""] }, { Factures: [3] }]) {
+      assert.deepEqual(
+        parseIkaDocRuntimeConfig({ ...VALID_IKADOC_CONFIG, lockedColumns }),
+        { kind: "invalid", reason: "invalid-locked-columns" },
+      );
+    }
   });
 
   it("rejects malformed enabled config instead of silently defaulting", function() {

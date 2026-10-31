@@ -7,6 +7,7 @@ import {
   IkaDocGuidedWorkspaceMarker,
   parseIkaDocGuidedWorkspaceMarker,
 } from "app/ikadoc/IkaDocGuidedWorkspace";
+import { IkaDocSessionSource, parseIkaDocSessionSources } from "app/ikadoc/IkaDocSessionSources";
 
 export type IkaDocSessionSourceType =
   | "document-file" |
@@ -62,6 +63,7 @@ export interface IkaDocRuntimeConfig {
   guidedWorkspaceUrls?: IkaDocGuidedWorkspaceUrls;
   guidedWorkspace?: IkaDocGuidedWorkspaceMarker;
   lockedColumns?: IkaDocLockedColumns;
+  sources?: IkaDocSessionSource[];
   capabilities: IkaDocCapabilities;
   locale: string;
   theme?: string;
@@ -97,6 +99,8 @@ export function toIkaDocBrowserRuntimeConfig(
     proposalUrl: config.proposalUrl,
     guidedWorkspaceUrls: config.guidedWorkspaceUrls,
     guidedWorkspace: config.guidedWorkspace,
+    lockedColumns: config.lockedColumns,
+    sources: config.sources,
     capabilities: config.capabilities,
     locale: config.locale,
     theme: config.theme,
@@ -121,7 +125,8 @@ export type IkaDocRuntimeConfigParseFailure =
   "invalid-capabilities" |
   "invalid-guided-workspace" |
   "invalid-guided-workspace-urls" |
-  "invalid-locked-columns";
+  "invalid-locked-columns" |
+  "invalid-sources";
 
 export type IkaDocRuntimeConfigParseResult =
   | { kind: "disabled" } |
@@ -219,6 +224,11 @@ export function parseIkaDocRuntimeConfig(
     return { kind: "invalid", reason: "invalid-locked-columns" };
   }
 
+  const sources = parseIkaDocSessionSources(raw.sources);
+  if (sources === "invalid") {
+    return { kind: "invalid", reason: "invalid-sources" };
+  }
+
   const sessionId = raw.sessionId as string;
   const collectionCode = raw.collectionCode as string;
   const documentId = raw.documentId as string;
@@ -263,6 +273,7 @@ export function parseIkaDocRuntimeConfig(
       guidedWorkspaceUrls,
       guidedWorkspace,
       lockedColumns,
+      sources,
       capabilities: normalizeIkaDocCapabilities(
         raw.capabilities as IkaDocCapabilityOverrides | undefined,
       ),

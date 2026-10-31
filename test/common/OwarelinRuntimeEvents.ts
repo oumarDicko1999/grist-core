@@ -135,6 +135,24 @@ describe("OwarelinRuntimeEvents", function() {
     assert.equal(unknown, undefined);
   });
 
+  it("accepts the host's source events (GW-SRC-10, GW-RFR-05)", function() {
+    for (const type of ["owarelin:sourcesChanged", "owarelin:sourceRecordsChanged"]) {
+      const event = parseOwarelinRuntimeEvent(
+        {
+          type,
+          version: 1,
+          sessionId: "session-1",
+          emittedAt: "2026-10-31T11:30:00.000Z",
+          detail: { sourceId: "source-factures", changedCount: 3 },
+        },
+        CONFIG,
+      );
+
+      assert.equal(event?.type, type);
+      assert.deepEqual(event?.detail, { sourceId: "source-factures", changedCount: 3 });
+    }
+  });
+
   it("accepts guided descriptor host events for the current session", function() {
     const accepted = parseOwarelinRuntimeEvent(
       {

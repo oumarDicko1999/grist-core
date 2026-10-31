@@ -10,6 +10,7 @@ import {
   canViewIkaDocRuntimeHistory,
   getIkaDocRuntimeConfig,
 } from "app/client/ui/IkaDocRuntimeAccess";
+import { IkaDocSourcesPanel } from "app/client/ui/IkaDocSourcesPanel";
 import {
   createAccessibilityTools,
   createHelpTools,
@@ -68,6 +69,8 @@ export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Obse
     return cssTools(
       { "aria-labelledby": "grist-tools-heading" },
       cssTools.cls("-collapsed", use => !use(leftPanelOpen)),
+      // Owarelin/IkaDoc: the session's IkaDoc sources (GW-SRC-10, GW-RFR-05).
+      dom.create(IkaDocSourcesPanel, ikadocConfig),
       cssSectionHeader(cssSectionHeaderText(t("TOOLS"), { id: "grist-tools-heading" })),
       canViewIkaDocRuntimeHistory(ikadocConfig) ? cssPageEntry(
         cssPageButton(cssPageIcon("Log"), cssLinkText(t("Document history")), testId("log"),
