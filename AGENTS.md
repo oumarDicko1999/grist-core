@@ -7,12 +7,14 @@ spreadsheet engine and document runtime, but IkaDoc-owned behavior turns it into
 a controlled editor/viewer extension for IkaDoc records, vault files, search
 results, and future spreadsheet workflows.
 
-The fork target is upstream Grist `v1.7.16` on the `release/ikadoc-v1.7.16`
-branch. Keep IkaDoc changes isolated, findable, testable, and easy to rebase.
+The fork target is upstream Grist `v1.7.16`. The active fork line is
+`owarelin/integration-v1.7.16` (pushed to `origin`); topic work branches from it
+as `owarelin/<topic>`. `release/ikadoc-v1.7.16` only marks the upstream tag.
+Keep IkaDoc changes isolated, findable, testable, and easy to rebase.
 
 Upstream tags are immutable source references. Do not commit directly on a tag.
-Owarelin work belongs on `release/ikadoc-vX.Y.Z` branches, with one maintained
-release branch per upstream Grist release. Future upstream upgrades create a new
+Owarelin work belongs on the `owarelin/integration-vX.Y.Z` line, with one
+maintained line per upstream Grist release. Future upstream upgrades create a new
 release branch from the new upstream tag and replay or rebase the Owarelin patch
 stack.
 
@@ -63,7 +65,11 @@ IkaDoc-owned code should live in one of these locations whenever possible:
 - `app/ikadoc/**`
 - `app/server/lib/IkaDoc*.ts`
 - `app/client/ui/IkaDoc*.ts`
-- `test/**/IkaDoc*.ts`
+- `app/common/themes/Owarelin*.ts`, `app/common/themes/owarelinTokens.ts`
+  (theme tokens must live in the `app/common` TypeScript project)
+- `devtools/**` (development only, never in images)
+- `static/img/ikadoc/**`, `static/fonts/ikadoc/**` (IkaDoc assets)
+- `test/**/IkaDoc*.ts`, `test/**/Owarelin*.ts`
 - `documentation/ikadoc-*.md`
 - `documentation/owarelin-*.md`
 

@@ -1,6 +1,6 @@
 # Owarelin Integration Guide
 
-This fork embeds Grist as an Owarelin/IkaDoc spreadsheet editor and viewer. Grist
+This fork embeds Grist as an Owarelin spreadsheet editor and viewer. Grist
 still provides the spreadsheet runtime, but Owarelin/IkaDoc remains the authority
 for users, tenants, records, vault files, search results, document lifecycle,
 permissions, audit, and deployment policy.
@@ -26,8 +26,10 @@ in the same change. Do not rely on commit messages as the only explanation.
 Owarelin work is maintained on release branches, not on upstream tags.
 
 - Upstream tags such as `v1.7.16` are immutable source references.
-- The active fork line for that release is `release/ikadoc-v1.7.16`.
-- Owarelin commits sit on top of the release branch.
+- The active fork line for that release is `owarelin/integration-v1.7.16`
+  (pushed to `origin`); `release/ikadoc-v1.7.16` only marks the upstream tag.
+- Owarelin commits sit on top of the active fork line; topic work branches from
+  it as `owarelin/<topic>` and merges back.
 - Future upgrades create a new branch from the new upstream tag, such as
   `release/ikadoc-v1.7.17`, then replay or rebase the Owarelin patch stack.
 
@@ -72,7 +74,23 @@ session and Grist document id/url id that IkaDoc created. Native Grist orgs,
 workspaces, anonymous users, sharing state, API keys, and browser-supplied
 headers must not expand access.
 
+An IkaDoc deployment runs the fork as an IkaDoc-only runtime (GW-SEC-01): when
+IkaDoc admission is configured (`IKADOC_EDITOR_ADMISSION_URL`), browser requests
+without an IkaDoc session or signed forward-auth assertion are refused, except
+the `/grist/editor/:sessionId` entry, which runs admission itself, and API-key
+calls from the IkaDoc service account. `IKADOC_GRIST_RUNTIME_ONLY=false` turns
+this off for the development harness only (`devtools/ikadoc-runtime-harness`).
+
 Native Grist documents remain native unless a table or column carries an explicit IkaDoc schema binding. Schema-bound tables may use IkaDoc reference, value-list, administrative-unit, enum, and validation editors, but those editors must never change the semantics of unbound Grist `Choice`, `ChoiceList`, `Ref`, or `RefList` columns.
+
+The fork compatibility rule is stricter than the UX requirement: do not modify Grist built-in type behavior globally. Guided columns may be created with a backend-selected native Grist type, and the column may carry IkaDoc widget/editor options, but `Text`, `Int`, `Numeric`, `Bool`, `Date`, `DateTime`, `Choice`, `ChoiceList`, `Ref`, and `RefList` must keep upstream-compatible behavior for normal Grist files and unbound columns. Autocomplete, reference picking, value-list picking, administrative-unit picking, structured JSON editing, and retention-specific editing belong in IkaDoc-bound editors/renderers that activate only when column options contain a valid guided metadata binding.
+
+Do not add new Grist storage types for IkaDoc metadata. A `.grist` file persists
+column `type` and JSON `widgetOptions` in its own metadata tables, but it does
+not persist the fork's TypeScript widget implementation. Custom IkaDoc widgets
+are therefore a runtime capability of the fork version that opens the file. The
+stored cell value must remain canonical and backend-valid even if the widget is
+missing, disabled, or upgraded and the file falls back to a native display.
 
 ## Request Flow
 
@@ -94,6 +112,15 @@ Direct document REST and websocket requests:
 3. Grist verifies the signature, timestamp, and path.
 4. Grist converts the request into an IkaDoc runtime credential.
 5. Document auth grants only the admitted document.
+
+Protected websocket mutations perform an additional server-to-server validation
+callback before Grist executes the document action. The fork sends the admitted
+session id in `X-IkaDoc-Grist-Session` and sends the per-session
+`validationToken` from runtime config as bearer auth. The admission bearer
+configured for the fork is not callback authority. IkaDoc uses its durable
+session-routing index to resolve tenant/deployment in shared-runtime mode and
+then re-checks the tenant session, document ids, status, expiry, and capability
+policy.
 
 Failures are authorization failures. Missing, expired, malformed, rejected, or
 unreachable IkaDoc admission must fail closed.
@@ -118,7 +145,6 @@ High-risk surfaces include:
 Client-side hiding is only UX. Server, REST, websocket, and user-action policy
 gates are the security boundary.
 
-
 ## Formula Sandbox
 
 Grist formulas are Python code evaluated by the document data engine. Existing
@@ -133,8 +159,14 @@ Owarelin/IkaDoc runtime mode requires an effective sandbox:
   probe proves it functional;
 - `pyodide` may be used for local development, tests, or explicitly accepted
   deployments when the probe reports it functional and effective;
+- the fork image defaults to `GRIST_SANDBOX_FLAVOR=gvisor` (upstream falls back
+  to `unsandboxed`); a deployment that cannot run `runsc` must set `pyodide`
+  explicitly, and the image refuses to boot when gVisor is selected but fails;
 - request/network formula features, webhook domains, and trusted plugins remain
   disabled unless a separate threat model and allowlist approve them;
+  `GET /api/ikadoc/runtime/posture` reports the values this process actually
+  runs with (sandbox, request function, webhook domains, plugins, widget
+  repository) so IkaDoc can verify them (GW-SEC-04);
 - sandbox failures and Python errors shown to users must be product-safe and must
   not expose server paths, environment variables, secrets, upstream stderr, or
   document content.
@@ -163,25 +195,27 @@ Owarelin owns document lifecycle. Grist is an editor/viewer runtime.
 
 Grist runtime UI must visually fit the IkaDoc tenant UI.
 
-- `IkaDocThemeBridge` owns Owarelin/Angular Material token bridging.
-- Runtime config carries language, theme, and appearance state.
-- Supported visual styles are Material and Owarelin.
+- Colors come from native Grist themes, `OwarelinLight` and `OwarelinDark`
+  (`app/common/themes/OwarelinThemes.ts`). They start from Grist's own themes and
+  replace the semantic tokens; Grist's component tokens follow from those.
+- Theme values are generated from the frontend's `--ow-color-*` tokens by
+  `devtools/owarelin-theme-tokens/generate.mjs` into
+  `app/common/themes/owarelinTokens.ts`. Never edit that file by hand.
+- IkaDoc chooses the theme (`app/client/ui/IkaDocTheme.ts`): from the runtime
+  config in a session, from `IKADOC_GRIST_DEFAULT_THEME` on pages served without
+  one. Tenants on the Material style get Grist's native themes.
+- `IkaDocThemeBridge` only serves the IkaDoc fonts. It must not set colors or
+  Grist CSS variables, and must not target internal Grist classes
+  (`test/common/IkaDocClientSeams.ts` enforces it).
+- Charts use the Owarelin palette (`ikaDocChartColorway`).
+- `test/common/OwarelinThemes.ts` checks WCAG AA text contrast in both themes.
 - Copy must be translatable through locale files.
-- Dark mode and visual-style switching must be driven by runtime theme state,
-  not hard-coded colors.
-- Material mode follows the tenant UI Nexus/M3 baseline: primary `#27496c`,
-  tertiary `#693c00`, Inter body text, Manrope headings, M3 state layers,
-  and table/menu/list geometry that matches the Angular Material shell.
-- Runtime font assets live under `static/fonts/ikadoc/` and are loaded only by
-  `IkaDocThemeBridge`. Keep bundled font files, their upstream family names, and
-  license provenance together when refreshing Inter, Manrope, Fraunces, or
-  Material Symbols assets.
-- CSS bridge changes may tune tokens, row rhythm, surfaces, borders, radius, and
-  state layers. They must not be treated as sufficient for icon systems, menu
-  DOM structure, toolbar composition, picker behavior, or security gates. Those
-  require explicit fork seams with tests and entries in the seam ledger.
+- Runtime font assets live under `static/fonts/ikadoc/`. Keep bundled font files,
+  their upstream family names, and license provenance together when refreshing
+  Inter, Manrope, Fraunces, or Material Symbols assets.
 
-CSS overrides are not a security mechanism. They only improve editor fit.
+CSS is not a security mechanism. Icon systems, menus, toolbar composition and
+security gates need explicit fork seams with tests and seam-ledger entries.
 
 ## Custom Events
 
@@ -222,13 +256,17 @@ search-to-Grist unless the spec explicitly changes.
 
 ## Guided Metadata Integration
 
-Guided Grist workspaces are the path for future IkaDoc import and bulk-write workflows. The `.grist` file remains a normal Grist file; the special part is the Owarelin/IkaDoc use case attached to it. A table becomes guided only through an explicit IkaDoc action that chooses the workflow, schema type, and optional schema variant. The fork then shows the right labels, editors, and controls for non-technical users until they click the final Owarelin/IkaDoc export/apply action.
+Guided Grist workspaces are the path for IkaDoc import and bulk-write workflows. The `.grist` file remains a normal Grist file; the special part is the Owarelin/IkaDoc use case attached to it. A table becomes guided only through an explicit IkaDoc action that chooses the workflow, schema type, and optional schema variant. The fork then shows the right labels, descriptor-bound editors, protected row identity, and simulation/apply controls for non-technical users until they click the final Owarelin/IkaDoc export/apply action.
 
 Guided documents must carry an explicit workflow intent. The fork must be able to distinguish regular native Grist files from IkaDoc record-creation workspaces, record-import workspaces, bulk edit proposals, bulk write proposals, search-processing workspaces, report-analysis workspaces, and document-file editor sessions. This is just the use case behind the file, and it must survive saving a partially completed `.grist` file so the user can return later through IkaDoc without losing the right tools.
 
-Intent values must be mutually exclusive and backend-issued. `record-creation` means rows are candidate new records. `record-import` means rows are an import/upsert data set handled by IkaDoc migration import. `bulk-edit-proposal` means rows target existing records only. `bulk-write-proposal` means a broader backend-defined write package. No intent may imply delete, archive, workflow transition, content upload, or schema mutation unless a future product flow explicitly adds that action and permission.
+Intent values must be mutually exclusive and backend-issued. They are UX/tooling decisions, not browser-owned persistence operations. `record-creation` starts from candidate new rows, `record-import` starts from external/imported rows, and `bulk-write-proposal` starts from a broader backend-defined candidate write package. Those three intents feed the same IkaDoc reconciled import simulation/apply pipeline, where the backend decides create, update, no-op, conflict, invalid, unauthorized, or ignored per row. `bulk-edit-proposal` targets records selected by IkaDoc and is admitted only when the backend session source contract already contains immutable target rows with target record id, baseline version token, and baseline field values. No intent may imply delete, archive, workflow transition, content upload, or schema mutation unless a future product flow explicitly adds that action and permission.
 
-The fork must not infer workflow intent from table names, labels, hidden columns, previous browser state, or native Grist ACL/workspace metadata. IkaDoc stores a small use-case marker with or linked to the IkaDoc vault/content version: intent, target collection, schema type, optional schema code or variant, and allowed final action. IkaDoc UI uses that marker to distinguish normal `.grist` files from guided files in document lists, previews, and action menus. Reopening a saved guided file must re-check that marker before enabling import, bulk edit, bulk write, validation, picker, or export/apply controls. Missing or stale markers fail closed or open as normal/read-only Grist with product-safe guidance. New saved versions carry the current marker; rollback opens with the marker attached to that version; copying a guided `.grist` file must either intentionally copy the marker or create a normal unmarked `.grist` file.
+The fork must not infer workflow intent from table names, labels, hidden columns, previous browser state, or native Grist ACL/workspace metadata. IkaDoc stores a small use-case marker with or linked to the IkaDoc vault/content version: intent, target collection, schema type, optional schema code or variant, allowed final action, and optional table bindings. IkaDoc UI uses that marker to distinguish normal `.grist` files from guided files in document lists, previews, and action menus. Reopening a saved guided file must re-check that marker before enabling import, bulk edit, bulk write, simulation, picker, or export/apply controls. Missing or stale markers fail closed or open as normal/read-only Grist with product-safe guidance. New saved versions carry the current marker; rollback opens with the marker attached to that version; copying a guided `.grist` file must either intentionally copy the marker or create a normal unmarked `.grist` file.
+
+The guided workspace descriptor is the fork's render contract. Top-level schema fields preserve the legacy single-table contract. Multi-variant or batch clients must use descriptor `tables[]`, where each item carries the backend-issued Grist `tableId`, resolved target schema code, schema label, metadata field descriptors, and protected columns for that table. The fork may create or repair guided pages/tables only from this descriptor and only in editor sessions with structure-edit capability; viewer sessions remain read-only display surfaces. Guided setup may create missing bound tables, add missing bound columns, or restore one normal table page per existing bound table by using Grist's native `CreateViewSection(tableRef, 0, "table", null, null)` page-creation path. It must not auto-create charts, summaries, custom widgets, or repeated sections; those remain user-driven native Grist actions under the existing capability gates.
+
+The current fork implementation writes descriptor-backed column labels and widget options when it creates or repairs guided columns. User-facing column labels combine the localized metadata label with the stable metadata code so mapping remains inspectable after localization or label drift. Enum descriptors become native Grist `Choice` or `ChoiceList` columns with backend-provided stable values. Date and datetime descriptors become native Grist `Date` and `DateTime` columns unless a future descriptor declares domain-specific constraints that require an IkaDoc-bound editor layered on top. Reference and JSON descriptors store IkaDoc-specific widget metadata in the column options, including metadata code, editor kind, value shape, reference restrictions, JSON payload/editor posture, required/derived/sensitive flags, and read-only posture. Native Grist still owns ordinary scalar editing; the fork enables explicit IkaDoc reference and JSON widgets only on descriptor-bound compatible `Text` storage columns, and backend validation remains the final authority.
 
 Required behavior:
 
@@ -243,12 +281,54 @@ Required behavior:
 - copied, derived, content, and unsupported metadata remain read-only or blocked until the backend contract says otherwise;
 - bound column headers show both the localized metadata label and stable metadata code. Labels are semantic display text only; codes remain the mapping and apply authority;
 - all picker/autocomplete requests go through IkaDoc backend session validation and return only values allowed for the current actor, tenant, collection, schema, metadata field, and row context;
-- users do not type authoritative row ids, record ids, or import strategy switches. IkaDoc generates or resolves those values through add-row, normalization, or the final apply action;
-- import rows may carry legacy ids only when IkaDoc selects an `oldSystem` migration/re-import strategy. Normal record creation and bulk-write candidate rows use backend-generated identity. Bulk-edit rows must carry immutable target record id and expected record version from IkaDoc selection state. Apply decides create, update, no-op, or conflict from backend lineage and current database state, not from user-edited id cells, and retries must not create duplicate records;
-- bulk-write rows must declare their allowed operation family;
+- users do not type authoritative row ids, record ids, record versions, target ids, or import strategy switches. IkaDoc generates or resolves those values through add-row, normalization, simulation, or the final apply action;
+- in guided bound tables, native Grist row creation paths that can add records, including single-row insert and paste into new rows, request backend-issued protected row values before the Grist `AddRecord`/`BulkAddRecord` action is sent. If allocation fails or returns a mismatched row count, the row creation fails closed instead of creating unreconcilable rows;
+- import rows may carry legacy ids only when IkaDoc selects an `oldSystem` migration/re-import strategy. Normal record creation and bulk-write candidate rows use backend-generated identity. Bulk-edit rows must carry immutable target record id and opaque baseline version token from IkaDoc selection state. Apply decides create, update, no-op, or conflict from backend lineage and current database state, not from user-edited id cells, and retries must not create duplicate records;
+- bulk-write rows must declare their allowed operation family through the backend marker/descriptor only. The user does not choose create versus update in the sheet;
 - formula-backed bound cells contribute only their evaluated value in the apply snapshot. Formula expressions remain Grist workspace behavior and are not imported or persisted as IkaDoc record metadata authority.
 
+Reference picker implementation detail:
+
+- Grist native `ReferenceEditor` and `ReferenceUtils` are not suitable for
+  normal IkaDoc references because they require `Ref`/`RefList` column types,
+  a referenced table inside the `.grist` document, and local Grist row ids.
+- Guided IkaDoc references use the explicit `IkaDocReference` widget on
+  compatible `Text` storage columns. The registry seam is narrow:
+  `UserType.ts` adds only the IkaDoc widget entry for `Text`, and
+  `UserTypeImpl.ts` maps that entry to IkaDoc-owned editor/display classes.
+  Native `Text`, `Ref`, and `RefList` behavior remains unchanged for unbound
+  columns.
+- The cell value remains the canonical IkaDoc UUID. The editor searches through
+  session-scoped backend lookup endpoints and writes the selected UUID only.
+  The renderer resolves UUID labels through a session-scoped batched cache keyed
+  by session id, table id, metadata code, row key, and id.
+- Guided JSON metadata uses the explicit `IkaDocJson` widget on compatible
+  `Text` storage columns. It formats JSON for reading and keeps editing
+  read-only; structured JSON writes remain backend-owned through
+  simulation/apply validation.
+- The fork sends only Grist binding coordinates such as table id, metadata code,
+  optional row key, query, and ids. IkaDoc derives schema type, schema variant,
+  reference restrictions, allowed target schemas, actor, collection, language,
+  and create/update permission context from the owned open guided session.
+- Free-typed labels and pasted values are candidate data. They are not silently
+  converted to records in the browser; simulation/apply resolves or rejects them
+  with row/cell feedback.
+- Lookup options may include records the actor can select but cannot normally
+  open. This is expected for IkaDoc select-only target types such as categories,
+  administrative units, storage spaces, retention rules, classifications, event
+  definitions, users, groups, roles, and legacy value lists. When the backend
+  returns `canOpen=false`, the fork may display only the safe label/hint from the
+  option DTO and must not show record navigation, full details, or hidden
+  metadata.
+- A future browse button may open the tenant UI reference picker over the
+  versioned `owarelin:*` event bridge, but the selected value still goes through
+  the same backend lookup/resolve/apply authority.
+
 Same-value fill across selected rows must be represented as one logical bulk proposal or bulk action, not many unrelated single-row edits. IkaDoc validates every target row/cell before apply and reports partial failures with audit-safe detail.
+
+The public backend route name `/validate` is a compatibility detail. Fork UI and host events should treat it as simulation: read the evaluated Grist snapshot, ask IkaDoc what would happen, and display summary/result state without mutating records. Apply must always rerun the same reconciliation against the latest backend state before writing; it must not trust an earlier browser simulation response.
+
+Guided validate/apply browser notifications use the versioned Owarelin event bridge. The fork emits `owarelin:guidedWorkspaceValidated` and `owarelin:guidedWorkspaceApplied` with summary counts only: success, simulation status, imported total, updated total, warning count, error count, and conflict count. Row data, cell values, personal data, and conflict payloads must not be leaked through host notifications. In-grid issue/conflict markers and guided row-state writeback stay inside the Grist runtime; full manual conflict-resolution tooling remains a later guided workspace UI phase.
 
 ## Logging And Audit
 

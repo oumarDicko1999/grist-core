@@ -92,13 +92,13 @@ viewer must not look like an editor.
 
 ## Runtime Modes
 
-| Mode                    | Meaning                                                                               | Expected Browser Surface                                                                                                                                                                                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native Grist            | No IkaDoc runtime config.                                                             | Upstream Grist behavior. IkaDoc helpers return permissive defaults so native Grist is not broken.                                                                                                                                                                                                                                |
-| IkaDoc viewer           | Admitted IkaDoc session with `mode: "viewer"` or no edit capability.                  | Spreadsheet content and page navigation only. Optional browser export may be shown only when `canExportFromBrowser` is true. No cell editors, row/column write controls, widget menus, page menus, layout drag/resize, right authoring panel, formulas, widgets, access, share, plugins, or native Grist account/admin surfaces. |
-| IkaDoc editor           | Admitted IkaDoc session with `mode: "editor"` and authoring capabilities.             | Normal Grist editing inside IkaDoc boundaries. If cell, structure, formula, and chart capabilities are granted, native rows, columns, pages, widgets, charts, summaries, formulas, layout, and right-panel configuration must work coherently. Unsupported external/product surfaces remain gated. |
-| Search result workspace | IkaDoc editor source type used for temporary search/result processing.                | A seeded normal Grist document. Search only controls how the initial rows/columns are materialized and which IkaDoc exit actions are available. It must not disable native Grist editor behavior by source type.                                                                                                                   |
-| Guided workspace        | IkaDoc import/export/batch use case marker on a normal Grist file.                    | Normal Grist editing plus task-specific IkaDoc helpers, schema/reference-aware editors, protected columns, validation, conflict tooling, and final Owarelin action. The marker affects IkaDoc integration UX, not native Grist document semantics.                                                                                |
+| Mode                    | Meaning                                                                   | Expected Browser Surface                                                                                                                                                                                                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Grist            | No IkaDoc runtime config.                                                 | Upstream Grist behavior. IkaDoc helpers return permissive defaults so native Grist is not broken.                                                                                                                                                                                                                                |
+| IkaDoc viewer           | Admitted IkaDoc session with `mode: "viewer"` or no edit capability.      | Spreadsheet content and page navigation only. Optional browser export may be shown only when `canExportFromBrowser` is true. No cell editors, row/column write controls, widget menus, page menus, layout drag/resize, right authoring panel, formulas, widgets, access, share, plugins, or native Grist account/admin surfaces. |
+| IkaDoc editor           | Admitted IkaDoc session with `mode: "editor"` and authoring capabilities. | Normal Grist editing inside IkaDoc boundaries. If cell, structure, formula, and chart capabilities are granted, native rows, columns, pages, widgets, charts, summaries, formulas, layout, and right-panel configuration must work coherently. Unsupported external/product surfaces remain gated.                               |
+| Search result workspace | IkaDoc editor source type used for temporary search/result processing.    | A seeded normal Grist document. Search only controls how the initial rows/columns are materialized and which IkaDoc exit actions are available. It must not disable native Grist editor behavior by source type.                                                                                                                 |
+| Guided workspace        | IkaDoc import/export/batch use case marker on a normal Grist file.        | Normal Grist editing plus task-specific IkaDoc helpers, schema/reference-aware editors, protected columns, simulation, conflict tooling, and final Owarelin action. The marker affects IkaDoc integration UX, not native Grist document semantics.                                                                               |
 
 ## End-to-End Runtime Flow
 
@@ -253,6 +253,126 @@ Audit rule: when adding or hiding a client control, identify the exact
 `UserAction` or REST route behind it and confirm the matching IkaDoc server
 gate exists.
 
+## Guided Workspace Simulation And Apply Flow
+
+Guided workspace write-back is not a native Grist save. Grist remains the
+spreadsheet/data-builder. IkaDoc remains the authority for what records are
+created, updated, skipped, conflicted, or rejected.
+
+```text
+Tenant UI chooses guided intent and schema variants
+  -> IkaDoc backend stores a small marker on the IkaDoc file/version
+  -> Grist admission injects marker, descriptor URL, row URLs, validate/apply URLs
+  -> tenant UI posts owarelin:guidedWorkspaceDescriptorChanged
+  -> IkaDocGuidedWorkspaceSetup builds/repairs descriptor tables/columns/pages
+  -> BaseView/GridView row insert and paste ask IkaDoc for protected row values
+  -> user edits normal Grist cells, formulas, filters, charts, and layout
+  -> Simulate button calls the backend validate URL as simulation
+  -> backend reads evaluated Grist table snapshots with hidden protected columns
+  -> backend normalizes rows through persisted table/schema bindings
+  -> backend runs migration import simulation and bulk-edit conflict checks
+  -> Apply button calls the backend apply URL with an idempotency key
+  -> backend reruns the fresh snapshot/reconciliation before writing
+  -> backend writes only through IkaDoc import/record services and returns summary
+```
+
+Important consequences:
+
+- user intent is a UX/setup profile, not an operation switch. Creation, import,
+  and bulk write all feed the same reconciled import simulation/apply pipeline;
+- bulk edit is different because rows target existing selected records and use
+  backend-persisted target id, opaque baseline version token, and baseline field
+  values before conflict simulation/apply can run;
+- the fork may mirror protected columns in Grist, but hidden cells are never the
+  authority. Apply validates them against the persisted IkaDoc session source
+  contract;
+- formula-backed bound cells contribute their evaluated value from the apply
+  snapshot. Formula expressions stay Grist workspace behavior;
+- the public route name `validate` means simulation. Browser copy/events should
+  avoid implying a write or a final guarantee;
+- apply must not trust a previous simulation result because records,
+  permissions, schema metadata, and references may have changed after the user
+  simulated.
+
+Implementation note: the public backend route is still `/validate` for
+compatibility, but fork-visible copy treats the action as simulation/preflight.
+Runtime error operation ids use `guided-workspace-simulate` so host/UI logs do
+not imply that a record write already happened.
+
+Guided fork files:
+
+| Responsibility           | Files                                                                  | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Descriptor contracts     | `app/ikadoc/IkaDocGuidedWorkspace.ts`                                  | Parse marker, tables, fields, protected columns, enum/reference/JSON descriptors. Malformed descriptors disable guided behavior.                                                                                                                                                                                                                                                                                                                                        |
+| Table setup actions      | `app/ikadoc/IkaDocGuidedWorkspaceSetup.ts`                             | Create/repair only backend-described tables, columns, and one normal table page per bound table through Grist's native `CreateViewSection(tableRef, 0, "table", null, null)` path. Select native Grist column types from backend metadata descriptors, but never redefine built-in type behavior. Never create charts, summaries, custom widgets, or records.                                                                                                           |
+| Setup event attachment   | `app/client/ui/IkaDocGuidedWorkspaceSetup.ts`                          | Listen for `owarelin:guidedWorkspaceDescriptorChanged` and send native Grist user actions only in editor sessions with structure capability.                                                                                                                                                                                                                                                                                                                            |
+| Protected row allocation | `app/client/ui/IkaDocGuidedWorkspaceRows.ts`                           | Allocate row keys for bound guided tables before native `AddRecord`/`BulkAddRecord` sends rows; admit existing rows that are still missing protected row keys before simulation/apply; immediately write each admitted table's protected cells back to Grist before admitting the next table, so a later backend failure does not leave earlier backend-issued row keys unmirrored; build row-state writeback actions after simulation/apply. Product-safe errors only. |
+| Header controls          | `app/client/ui/IkaDocEditorControls.ts`                                | Display simulation/apply controls, parse validate/apply results, update in-grid issue/conflict state, write guided row states, and emit summary-only host events. V1 cell conflicts expose original/proposed/current values only when the backend does not redact them. Full conflict-resolution editing belongs in the future guided UI.                                                                                                                                 |
+| Host event bridge        | `app/ikadoc/OwarelinRuntimeEvents.ts`                                  | Accept only versioned, same-origin, matching-session `owarelin:*` events and never leak row/cell values through host notifications.                                                                                                                                                                                                                                                                                                                                     |
+| Server policy            | `app/server/lib/IkaDocRuntimePolicy.ts`, `app/server/lib/DocWorker.ts` | Gate native Grist user actions by mode/capability. Guided controls are UX; backend session and apply routes remain the write authority.                                                                                                                                                                                                                                                                                                                                 |
+
+Backend counterpart files in `/home/taka/IdeaProjects/ikadoc-grist`:
+
+| Responsibility          | Files                                                                                                                    | Rule                                                                                                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Marker contract         | `modules/core/src/main/kotlin/com/ikadoc/modules/core/records/DocumentGristWorkspaceMarker.kt`                           | Small persisted use-case marker. Absence means normal `.grist`; marker values are backend-issued.                                                                                                                                                                 |
+| Descriptor              | `modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GetGristGuidedWorkspaceDescriptorUseCase.kt` | Resolve active schema/form metadata into table/field/protected-column descriptors under tenant/session/permission checks.                                                                                                                                         |
+| Row allocation/admit    | `AllocateGristGuidedWorkspaceRowsUseCase.kt`, `AdmitGristGuidedWorkspaceRowsUseCase.kt`                                  | Persist issued row keys in the session source contract before returning protected cells.                                                                                                                                                                          |
+| Snapshot import adapter | `GristGuidedWorkspaceImportDataProvider.kt`                                                                              | Convert evaluated table rows into migration `ExportedRecord` values only when protected row keys are issued, unique, and in importable row state (`draft`, `validated`, `conflict`). Bulk edit preserves target id and baseline values from the session contract. |
+| Simulation              | `ValidateGristGuidedWorkspaceUseCase.kt`, `GristGuidedWorkspaceImportRunner.kt`                                          | Compatibility `validate` endpoint runs the import pipeline with `simulate=true`; it must not write records.                                                                                                                                                       |
+| Apply                   | `ApplyGristGuidedWorkspaceUseCase.kt`, `GristGuidedWorkspaceImportRunner.kt`                                             | Rerun snapshot normalization/reconciliation with `simulate=false`, use durable idempotency, then write through IkaDoc import services.                                                                                                                            |
+| Routes/DTOs             | `GristGuidedWorkspaceRoutes.kt`, `GristGuidedWorkspaceDtos.kt`, `GristEditorRuntimeConfigDto.kt`                         | Browser receives only session-scoped URLs/contracts. Runtime ids, workspace ids, service credentials, record data, and sensitive conflict values must not leak.                                                                                                   |
+
+Guided metadata editor rule:
+
+- native Grist column types stay upstream-compatible globally;
+- descriptor mapping may create `Text`, `Int`, `Numeric`, `Bool`, `Date`, `DateTime`, `Choice`, or `ChoiceList` columns according to IkaDoc metadata;
+- enum autocomplete should use native `Choice`/`ChoiceList` values supplied by the backend descriptor;
+- date and datetime should use native Grist editors unless a future descriptor exposes domain-specific constraints;
+- reference, value-list, administrative-unit, structured JSON, and retention editors are IkaDoc-bound editor/widget seams activated from guided column options;
+- native `Ref`/`RefList` may be used for guided reference UX only through an explicit lookup-table bridge that maps Grist row ids back to immutable IkaDoc ids on apply.
+
+Grist file lifecycle for IkaDoc widgets:
+
+- `_grist_Tables_column.type` and `_grist_Tables_column.widgetOptions` are
+  persisted inside the `.grist` SQLite file. The fork's widget/editor code is
+  not persisted in the file.
+- Custom IkaDoc behavior must use compatible native storage types plus
+  versioned IkaDoc widget options. Do not add new column storage type names for
+  IkaDoc metadata.
+- If a saved guided file is opened by native Grist or by an older fork that does
+  not know `IkaDocReference`, Grist may fall back to a native widget and show raw
+  canonical values. That is acceptable only as a degraded display mode; it must
+  not grant simulation/apply/import authority.
+- Guided setup/repair must not silently rewrite unknown IkaDoc widget options to
+  native defaults. If the fork cannot understand an IkaDoc widget option version,
+  it should preserve the stored options and rely on backend descriptor refresh or
+  fail-closed guided controls.
+- Backend simulation/apply must validate the evaluated cell values against the
+  current descriptor and persisted guided marker. It must not assume the custom
+  renderer/editor existed during the user's edit session.
+
+Reference picker map:
+
+| Responsibility                | Files                                                                                                                                                                                                   | Rule                                                                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend form lookup precedent | `/home/taka/IdeaProjects/ikadoc-grist/modules/core/src/main/kotlin/com/ikadoc/modules/core/services/references/ReferenceLookupService.kt`, `ReferenceLookupOptionMapper.kt`, `ReferenceLookupRoutes.kt` | Existing IkaDoc forms store canonical UUIDs and display ACL-filtered labels/hints. Guided Grist should reuse this backend authority instead of inventing a fork-only lookup model.                                             |
+| Tenant UI picker precedent    | `/home/taka/WebStormProject/ikadoc-ng/projects/tenant-ui/src/app/domain/records/components/reference-picker/**`, `reference-lookup-api.service.ts`                                                      | Angular autocomplete/dialog keeps the form value as id and resolves display labels through lookup/resolve. Grist cannot directly host this Angular component, but the behavior contract is the one to match.                   |
+| Native Grist reference editor | `app/client/widgets/ReferenceEditor.ts`, `app/client/lib/ReferenceUtils.ts`                                                                                                                             | Built for native `Ref`/`RefList` columns and local Grist row ids. Do not use it for canonical IkaDoc UUID columns unless a deliberate lookup-table bridge maps Grist row ids back to immutable IkaDoc ids.                     |
+| Widget registry seam          | `app/client/widgets/UserType.ts`, `app/client/widgets/UserTypeImpl.ts`                                                                                                                                  | `widget: "IkaDocReference"` is registered only for compatible `Text` storage columns and resolves to IkaDoc-owned constructors. Native `Text`, `Ref`, and `RefList` mappings remain unchanged.                                 |
+| Guided column binding         | `app/ikadoc/IkaDocGuidedWorkspaceSetup.ts`, `app/ikadoc/IkaDocGuidedWorkspace.ts`                                                                                                                       | Column options already carry metadata code, label, editor kind, value shape, and reference restrictions. Treat this metadata as a hint only; backend session lookup must rederive and validate the binding.                    |
+| Runtime lookup URL            | `app/ikadoc/IkaDocRuntimeConfig.ts`, backend runtime config DTO/admission use case                                                                                                                      | Add session-scoped guided lookup/resolve URLs rather than hard-coding generic `/api/reference-lookup/*` from the fork.                                                                                                         |
+| Fork editor/renderer          | `app/client/ui/IkaDocReferenceWidget.ts`, `app/ikadoc/IkaDocReferenceLookup.ts`                                                                                                                         | The editor searches session-scoped backend lookup URLs, displays labels/hints in autocomplete, saves selected UUIDs as plain text cell values, and the text box resolves visible UUIDs through a session-scoped batched cache. |
+| Guided JSON renderer          | `app/client/ui/IkaDocReferenceWidget.ts`, `app/client/widgets/UserType.ts`, `app/client/widgets/UserTypeImpl.ts`                                                                                        | `IkaDocJson` is registered as a compatible `Text` widget. It renders valid JSON in a readable formatted shape and keeps editing read-only because backend validation/apply owns structured metadata semantics.                 |
+
+Consequence: reference UX is not just a cell autocomplete. It also needs
+renderer resolution, batching, stale-value display, session-bound authorization,
+and final apply validation. The current renderer groups visible UUID values by
+session/table/metadata/row-key context and resolves them with batched requests.
+The renderer must also respect `canOpen=false`: lookup may intentionally return
+select-only labels for records the actor cannot normally open, and the fork must
+not turn those options into record links or detail previews.
+
 ## Chart And Summary Flow
 
 Native Grist charts are structural document features. Treat them as normal
@@ -406,7 +526,7 @@ page tree must also respect IkaDoc structure capability.
 - `DocPageModel.ts` gates local import menu actions with
   `canImportIkaDocRuntimeLocalFiles()`. The server websocket/import method also
   requires the same capability.
-| Comments/discussions                     | `BaseView._openDiscussionAtCursor`, `CellContextMenu.ts`                                  | Comment writes.                                  | Requires future `canUseComments` server gate before enabling. Viewer must hide comment write entry.      |
+  | Comments/discussions | `BaseView._openDiscussionAtCursor`, `CellContextMenu.ts` | Comment writes. | Requires future `canUseComments` server gate before enabling. Viewer must hide comment write entry. |
 
 ### Grid Source Notes
 
@@ -445,28 +565,28 @@ page tree must also respect IkaDoc structure capability.
 
 ## Server Method Map
 
-| Method/Route Family           | Native Entry                                                                        | IkaDoc Hook                                                                                   | Notes                                                                                     |
-| ----------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `openDoc`                     | Client `Comm.openDoc()` to server websocket `Comm`/document open flow               | Runtime auth session and exact-document doc auth                                              | Opening is read-capable but must not fall back to anonymous/native ACL on IkaDoc failure. |
-| `fetchTable`                  | `DocComm.fetchTable` -> `DocWorker.fetchTable` -> `ActiveDoc.fetchTable`            | Runtime credential doc auth plus native read filtering                                        | Read path. Viewer must keep this working.                                                 |
-| `applyUserActions`            | `DocData.sendActions` -> `DocComm.applyUserActions` -> `DocWorker.applyUserActions` | `IkaDocActiveDocMethod` session validation and user-action classifier; no broad cell-edit pre-gate | Primary write path from browser UI. Each payload action decides its required capability. |
-| `applyUserActionsById`        | Websocket method                                                                    | Same active-doc method wrapper                                                                | Write replay path; must not bypass policy.                                                |
-| Plugin RPC                    | `forwardPluginRpc`, `pluginsReload`, plugin methods                                 | `canUsePlugins` or explicit deny                                                              | Keep denied unless product explicitly supports plugins.                                   |
-| REST `/api/docs/:docId/apply` | `DocApi.ts`                                                                         | `requireIkaDocCellEdit` and `requireIkaDocUserActions`                                        | Primary REST apply endpoint.                                                              |
-| REST table CRUD               | `DocApi.ts` records/tables/columns routes                                           | `getTableOperations(...).applyUserActions` policy wrapper or direct `assertIkaDocUserActions` | Watch direct `activeDoc.applyUserActions` calls.                                          |
-| REST download/export          | `DocApi.ts` download routes                                                         | `requireIkaDocBrowserExport`                                                                  | Browser export permission.                                                                |
-| REST create/import/fork/copy  | `DocApi.ts`, `AppEndpoint.ts`                                                       | explicit deny in runtime mode                                                                 | IkaDoc owns document lifecycle.                                                           |
-| REST history mutation         | `DocApi.ts` snapshot/state remove routes                                            | explicit deny                                                                                 | History is read-only in runtime mode.                                                     |
-| REST trigger/webhook          | `DocApiTriggers.ts`                                                                 | `requireIkaDocExternalData`                                                                   | External egress.                                                                          |
+| Method/Route Family           | Native Entry                                                                        | IkaDoc Hook                                                                                        | Notes                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `openDoc`                     | Client `Comm.openDoc()` to server websocket `Comm`/document open flow               | Runtime auth session and exact-document doc auth                                                   | Opening is read-capable but must not fall back to anonymous/native ACL on IkaDoc failure. |
+| `fetchTable`                  | `DocComm.fetchTable` -> `DocWorker.fetchTable` -> `ActiveDoc.fetchTable`            | Runtime credential doc auth plus native read filtering                                             | Read path. Viewer must keep this working.                                                 |
+| `applyUserActions`            | `DocData.sendActions` -> `DocComm.applyUserActions` -> `DocWorker.applyUserActions` | `IkaDocActiveDocMethod` session validation and user-action classifier; no broad cell-edit pre-gate | Primary write path from browser UI. Each payload action decides its required capability.  |
+| `applyUserActionsById`        | Websocket method                                                                    | Same active-doc method wrapper                                                                     | Write replay path; must not bypass policy.                                                |
+| Plugin RPC                    | `forwardPluginRpc`, `pluginsReload`, plugin methods                                 | `canUsePlugins` or explicit deny                                                                   | Keep denied unless product explicitly supports plugins.                                   |
+| REST `/api/docs/:docId/apply` | `DocApi.ts`                                                                         | `requireIkaDocCellEdit` and `requireIkaDocUserActions`                                             | Primary REST apply endpoint.                                                              |
+| REST table CRUD               | `DocApi.ts` records/tables/columns routes                                           | `getTableOperations(...).applyUserActions` policy wrapper or direct `assertIkaDocUserActions`      | Watch direct `activeDoc.applyUserActions` calls.                                          |
+| REST download/export          | `DocApi.ts` download routes                                                         | `requireIkaDocBrowserExport`                                                                       | Browser export permission.                                                                |
+| REST create/import/fork/copy  | `DocApi.ts`, `AppEndpoint.ts`                                                       | explicit deny in runtime mode                                                                      | IkaDoc owns document lifecycle.                                                           |
+| REST history mutation         | `DocApi.ts` snapshot/state remove routes                                            | explicit deny                                                                                      | History is read-only in runtime mode.                                                     |
+| REST trigger/webhook          | `DocApiTriggers.ts`                                                                 | `requireIkaDocExternalData`                                                                        | External egress.                                                                          |
 
 ## Native Read-Only vs IkaDoc Viewer
 
 Do not confuse these:
 
-| Concept               | Source                                                                    | Meaning                                                                 | Problem                                                                                                |
-| --------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Native Grist readonly | `DocPageModel.isReadonly`, `GristDoc.isReadonly`, `GristDoc.isReadonlyKo` | Derived from native Grist document access/recovery/fork/snapshot state. | In IkaDoc runtime, Grist may use an internal identity that has editor access so the document can load. |
-| IkaDoc viewer mode    | `gristConfig.ikadoc.mode === "viewer"`                                    | Product says user may only read this IkaDoc-controlled file.            | Must hide editor affordances regardless of native Grist readonly.                                      |
+| Concept               | Source                                                                    | Meaning                                                                 | Problem                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Grist readonly | `DocPageModel.isReadonly`, `GristDoc.isReadonly`, `GristDoc.isReadonlyKo` | Derived from native Grist document access/recovery/fork/snapshot state. | In IkaDoc runtime, Grist may use an internal identity that has editor access so the document can load.                                                                                                   |
+| IkaDoc viewer mode    | `gristConfig.ikadoc.mode === "viewer"`                                    | Product says user may only read this IkaDoc-controlled file.            | Must hide editor affordances regardless of native Grist readonly.                                                                                                                                        |
 | IkaDoc editor mode    | `mode === "editor"` plus capability booleans                              | Product says this session may edit the admitted working copy.           | Native Grist editor behavior should remain coherent. Gates protect IkaDoc boundaries and unsupported external/product surfaces, not ordinary internal metadata writes needed by visible editor features. |
 
 Rule: in IkaDoc runtime code, use native readonly plus IkaDoc capability. Native
@@ -517,20 +637,20 @@ for websocket and REST apply payloads.
   connected browser clients on the same Grist document keep independent
   capabilities.
 
-| Action/Table Shape                                                                                                 | Capability                                                  |
-| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| Add/modify formula column or formula metadata                                                                      | `canUseFormulas` and `canEditStructure`                     |
-| `_grist_ACL*` metadata                                                                                             | `canManageAccess`                                           |
-| `_grist_Attachments` metadata                                                                                      | `canUseAttachments`                                         |
-| `_grist_Cells` comment/discussion metadata                                                                         | `canUseComments`                                            |
-| `_grist_Triggers`, `_grist_Webhooks`                                                                               | `canUseExternalData`                                        |
-| Custom widget metadata/options                                                                                     | `canUseCustomWidgets` and `canEditStructure`                |
-| Chart view-section creation and chart-specific `_grist_Views_section` metadata                                      | `canCreateCharts` and `canEditStructure`                    |
-| Chart axis/series field membership through `_grist_Views_section_field` Add/Update/RemoveRecord                  | `canEditStructure`                                          |
-| Page/view/layout metadata that is not chart-specific                                                            | `canEditStructure`                                          |
-| Any other `_grist_*` metadata table                                                                                | `canEditStructure`                                          |
-| Normal table cell actions in `CELL_EDIT_ACTIONS`                                                                   | `canEditCells`                                              |
-| Unknown write action                                                                                               | `canEditStructure`                                          |
+| Action/Table Shape                                                                              | Capability                                   |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Add/modify formula column or formula metadata                                                   | `canUseFormulas` and `canEditStructure`      |
+| `_grist_ACL*` metadata                                                                          | `canManageAccess`                            |
+| `_grist_Attachments` metadata                                                                   | `canUseAttachments`                          |
+| `_grist_Cells` comment/discussion metadata                                                      | `canUseComments`                             |
+| `_grist_Triggers`, `_grist_Webhooks`                                                            | `canUseExternalData`                         |
+| Custom widget metadata/options                                                                  | `canUseCustomWidgets` and `canEditStructure` |
+| Chart view-section creation and chart-specific `_grist_Views_section` metadata                  | `canCreateCharts` and `canEditStructure`     |
+| Chart axis/series field membership through `_grist_Views_section_field` Add/Update/RemoveRecord | `canEditStructure`                           |
+| Page/view/layout metadata that is not chart-specific                                            | `canEditStructure`                           |
+| Any other `_grist_*` metadata table                                                             | `canEditStructure`                           |
+| Normal table cell actions in `CELL_EDIT_ACTIONS`                                                | `canEditCells`                               |
+| Unknown write action                                                                            | `canEditStructure`                           |
 
 Audit implication: `applyUserActions` must not carry a broad method-level edit capability because chart, formula, cell, and structure edits all share that websocket method. The server validates the session first, then classifies each action in the payload. `applyUserActionsById` cannot inspect the replayed action payload and remains a conservative cell-edit gated replay path until a typed replay contract exists.
 
@@ -727,27 +847,39 @@ Cross-worktree backend files inspected for this correction:
 - `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristSearchSeedBuilder.kt`
 - `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristSearchDisplayValueFormatter.kt`
 - `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristSearchDisplayProjector.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/core/src/main/kotlin/com/ikadoc/modules/core/records/DocumentGristWorkspaceMarker.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristGuidedWorkspaceDescriptor.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristGuidedWorkspaceImportRunner.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/GristGuidedWorkspaceImportDataProvider.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/ValidateGristGuidedWorkspaceUseCase.kt`
+- `/home/taka/IdeaProjects/ikadoc-grist/modules/grist/src/main/kotlin/com/ikadoc/modules/grist/application/session/ApplyGristGuidedWorkspaceUseCase.kt`
+- `/home/taka/WebStormProject/owarelin-grist/app/ikadoc/IkaDocGuidedWorkspace.ts`
+- `/home/taka/WebStormProject/owarelin-grist/app/ikadoc/IkaDocGuidedWorkspaceSetup.ts`
+- `/home/taka/WebStormProject/owarelin-grist/app/client/ui/IkaDocGuidedWorkspaceRows.ts`
+- `/home/taka/WebStormProject/owarelin-grist/app/client/ui/IkaDocGuidedWorkspaceSetup.ts`
+- `/home/taka/WebStormProject/owarelin-grist/app/client/ui/IkaDocEditorControls.ts`
+- `/home/taka/WebStormProject/owarelin-grist/app/ikadoc/OwarelinRuntimeEvents.ts`
 
 ## Editor Surface Map
 
-| Surface                              | Main Files                                                                                               | Writes?                                                                              | IkaDoc Rule                                                                                                                                                                |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser entrypoint                   | `app/server/lib/IkaDocEditorEndpoint.ts`, `app/server/lib/AppEndpoint.ts`                                | Session registration only.                                                           | Only `/grist/editor/:sessionId` may bootstrap an IkaDoc runtime page. Missing/invalid admission fails closed.                                                              |
-| Runtime identity                     | `app/server/lib/IkaDocRuntimeAuth.ts`, `app/server/lib/Comm.ts`, `app/server/lib/DocAuthorizer.ts`       | No direct document write.                                                            | REST, websocket, and profile requests must resolve through the same admitted runtime session or signed forward-auth assertion.                                             |
-| Shell/right panel                    | `app/client/ui/AppUI.ts`, `app/client/ui/RightPanel.ts`                                                   | Authoring controls can cause writes indirectly.                                      | Hide the right authoring panel unless IkaDoc editor has an authoring capability. Inside the panel, structure-owned field, sort/filter, data-selection, widget title/layout, visible-field, form submission, and widget-picker controls require `canEditStructure`; chart and custom-widget sections use their own capabilities. |
-| Left authoring entrypoint            | `app/client/models/DocPageModel.ts`                                                                      | Creates pages/tables/widgets.                                                        | Hide Add/New unless IkaDoc editor has authoring capability. Viewer keeps page navigation only.                                                                             |
-| Page tree                            | `app/client/ui/Pages.ts`, `app/client/ui2018/pages.ts`, `app/client/ui/TreeViewComponent.ts`             | Rename/remove/duplicate/default collapse can write. Drag/drop can reorder pages.     | Viewer must not expose page context menu or drag/drop writes. Native Grist readonly is not enough if IkaDoc viewer is backed by an internal editor-capable Grist identity. |
-| Widget container/title               | `app/client/components/buildViewSectionDom.ts`, `app/client/ui/WidgetTitle.ts`                           | Rename, layout drag, resize, menu actions can write.                                 | Viewer must render title as text only and hide drag/menu/resize/collapse controls. Structure edit gates title rename and layout controls.                                  |
-| Widget layout editor                 | `app/client/components/ViewLayout.ts`, `app/client/components/LayoutEditor.ts`                           | Resizes, reorders, collapses, removes widgets.                                       | Viewer must not create active layout editing behavior. `saveLayoutSpec()` must check IkaDoc structure capability, not only Grist native readonly.                          |
-| Widget menu                          | `app/client/ui/ViewSectionMenu.ts`, `app/client/ui/ViewLayoutMenu.ts`                                    | Contains raw data, print, export, options, sort/filter, collapse, duplicate, delete. | Viewer shows no widget menu unless browser export is granted; export-only menu must contain only explicit download actions.                                                |
-| Sort/filter menu and panel           | `app/client/ui/ViewSectionMenu.ts`, `app/client/ui/RightPanel.ts`, `FilterConfig.ts`, `SortConfig.ts`     | Can save sort/filter/widget options.                                                 | Viewer should not expose this menu or panel sub-tab. Search is a separate topbar read affordance. Editor/search workspaces show it only with structure capability.          |
-| Cell editor                          | `app/client/components/BaseView.ts`, field builders/widgets under `app/client/widgets`                   | Edits cell values.                                                                   | Viewer must not activate field editors. Editor needs `canEditCells`.                                                                                                       |
-| Grid selection/row/column commands   | `app/client/components/GridView.ts`, `app/client/ui/GridViewMenus.ts`, `app/client/ui/RowContextMenu.ts` | Add/delete rows/columns, paste, fill, freeze, modify fields.                         | Viewer must force GridView readonly behavior. Server still denies all apply actions without capability.                                                                    |
-| Raw data tables                      | `app/client/components/DataTables.ts`                                                                    | Rename, duplicate, remove, create tables.                                            | Structure edit required. Viewer must hide write affordances.                                                                                                               |
-| Share/access/account/admin           | `app/client/ui/ShareMenu.ts`, `app/server/lib/FlexServer.ts`, `DocApi.ts`                                | Can expose or mutate access/account state.                                           | Hidden or denied in IkaDoc runtime unless explicit capability exists. Grist org/workspace/account are never authority.                                                     |
-| Export/download                      | `app/client/ui/ViewLayoutMenu.ts`, `app/client/ui/DocHistory.ts`, `app/server/lib/DocApi.ts`             | Reads document bytes/content out of runtime.                                         | Browser export/download shown and allowed only with `canExportFromBrowser`.                                                                                                |
-| History/snapshots                    | `app/client/ui/DocHistory.ts`, `DocApi.ts`                                                               | Reads snapshots; compare/download can export.                                        | History viewing and browser export are separate gates. History itself should be read-only.                                                                                 |
-| Formula/custom widgets/external data | `IkaDocRuntimePolicy.ts`, `IkaDocRuntimeHealthEndpoint.ts`, `DocApiTriggers.ts`                          | Executes code or egress.                                                             | Formula edits require formula and structure capability plus effective sandbox. Custom widgets/plugins/external data require explicit capabilities.                         |
+| Surface                              | Main Files                                                                                               | Writes?                                                                              | IkaDoc Rule                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser entrypoint                   | `app/server/lib/IkaDocEditorEndpoint.ts`, `app/server/lib/AppEndpoint.ts`                                | Session registration only.                                                           | Only `/grist/editor/:sessionId` may bootstrap an IkaDoc runtime page. Missing/invalid admission fails closed.                                                                                                                                                                                                                   |
+| Runtime identity                     | `app/server/lib/IkaDocRuntimeAuth.ts`, `app/server/lib/Comm.ts`, `app/server/lib/DocAuthorizer.ts`       | No direct document write.                                                            | REST, websocket, and profile requests must resolve through the same admitted runtime session or signed forward-auth assertion.                                                                                                                                                                                                  |
+| Shell/right panel                    | `app/client/ui/AppUI.ts`, `app/client/ui/RightPanel.ts`                                                  | Authoring controls can cause writes indirectly.                                      | Hide the right authoring panel unless IkaDoc editor has an authoring capability. Inside the panel, structure-owned field, sort/filter, data-selection, widget title/layout, visible-field, form submission, and widget-picker controls require `canEditStructure`; chart and custom-widget sections use their own capabilities. |
+| Left authoring entrypoint            | `app/client/models/DocPageModel.ts`                                                                      | Creates pages/tables/widgets.                                                        | Hide Add/New unless IkaDoc editor has authoring capability. Viewer keeps page navigation only.                                                                                                                                                                                                                                  |
+| Page tree                            | `app/client/ui/Pages.ts`, `app/client/ui2018/pages.ts`, `app/client/ui/TreeViewComponent.ts`             | Rename/remove/duplicate/default collapse can write. Drag/drop can reorder pages.     | Viewer must not expose page context menu or drag/drop writes. Native Grist readonly is not enough if IkaDoc viewer is backed by an internal editor-capable Grist identity.                                                                                                                                                      |
+| Widget container/title               | `app/client/components/buildViewSectionDom.ts`, `app/client/ui/WidgetTitle.ts`                           | Rename, layout drag, resize, menu actions can write.                                 | Viewer must render title as text only and hide drag/menu/resize/collapse controls. Structure edit gates title rename and layout controls.                                                                                                                                                                                       |
+| Widget layout editor                 | `app/client/components/ViewLayout.ts`, `app/client/components/LayoutEditor.ts`                           | Resizes, reorders, collapses, removes widgets.                                       | Viewer must not create active layout editing behavior. `saveLayoutSpec()` must check IkaDoc structure capability, not only Grist native readonly.                                                                                                                                                                               |
+| Widget menu                          | `app/client/ui/ViewSectionMenu.ts`, `app/client/ui/ViewLayoutMenu.ts`                                    | Contains raw data, print, export, options, sort/filter, collapse, duplicate, delete. | Viewer shows no widget menu unless browser export is granted; export-only menu must contain only explicit download actions.                                                                                                                                                                                                     |
+| Sort/filter menu and panel           | `app/client/ui/ViewSectionMenu.ts`, `app/client/ui/RightPanel.ts`, `FilterConfig.ts`, `SortConfig.ts`    | Can save sort/filter/widget options.                                                 | Viewer should not expose this menu or panel sub-tab. Search is a separate topbar read affordance. Editor/search workspaces show it only with structure capability.                                                                                                                                                              |
+| Cell editor                          | `app/client/components/BaseView.ts`, field builders/widgets under `app/client/widgets`                   | Edits cell values.                                                                   | Viewer must not activate field editors. Editor needs `canEditCells`.                                                                                                                                                                                                                                                            |
+| Grid selection/row/column commands   | `app/client/components/GridView.ts`, `app/client/ui/GridViewMenus.ts`, `app/client/ui/RowContextMenu.ts` | Add/delete rows/columns, paste, fill, freeze, modify fields.                         | Viewer must force GridView readonly behavior. Server still denies all apply actions without capability.                                                                                                                                                                                                                         |
+| Raw data tables                      | `app/client/components/DataTables.ts`                                                                    | Rename, duplicate, remove, create tables.                                            | Structure edit required. Viewer must hide write affordances.                                                                                                                                                                                                                                                                    |
+| Share/access/account/admin           | `app/client/ui/ShareMenu.ts`, `app/server/lib/FlexServer.ts`, `DocApi.ts`                                | Can expose or mutate access/account state.                                           | Hidden or denied in IkaDoc runtime unless explicit capability exists. Grist org/workspace/account are never authority.                                                                                                                                                                                                          |
+| Export/download                      | `app/client/ui/ViewLayoutMenu.ts`, `app/client/ui/DocHistory.ts`, `app/server/lib/DocApi.ts`             | Reads document bytes/content out of runtime.                                         | Browser export/download shown and allowed only with `canExportFromBrowser`.                                                                                                                                                                                                                                                     |
+| History/snapshots                    | `app/client/ui/DocHistory.ts`, `DocApi.ts`                                                               | Reads snapshots; compare/download can export.                                        | History viewing and browser export are separate gates. History itself should be read-only.                                                                                                                                                                                                                                      |
+| Formula/custom widgets/external data | `IkaDocRuntimePolicy.ts`, `IkaDocRuntimeHealthEndpoint.ts`, `DocApiTriggers.ts`                          | Executes code or egress.                                                             | Formula edits require formula and structure capability plus effective sandbox. Custom widgets/plugins/external data require explicit capabilities.                                                                                                                                                                              |
 
 ## Current Correction Findings
 
@@ -796,15 +928,12 @@ Cross-worktree backend files inspected for this correction:
   tests for metadata type mapping/conflict handling, and live chart smoke tests.
   Severity: medium.
 
-- Issue: The blocked-action toast is too generic for implementation debugging.
-  Evidence: `IkaDocRuntimePolicy.deniedIkaDocRuntimeOperation()` returns the
-  same browser message for every denied operation.
-  Impact: during development, a legitimate edit-mode regression looks like a
-  deliberate product denial, making it harder to tell whether a chart/layout
-  failure came from policy, Grist, routing, or data typing.
-  Required fix: keep browser messages product-safe, but log and audit operation,
-  capability, source type, mode, session id, document id, and policy reason.
-  Tests needed: blocked-capability audit payload tests and live log inspection.
+- Issue: The blocked-action toast is intentionally generic for users, but implementation debugging needs sanitized context.
+  Evidence: `IkaDocRuntimePolicy.deniedIkaDocRuntimeOperation()` keeps one safe browser message, while blocked-capability audit callbacks now include operation/capability reason, missing capability when known, action name, table id, source type, mode, session id, document id, and document URL id.
+  Impact: policy denials can be distinguished from Grist data or routing regressions without leaking cell values, vault bytes, cookies, or service credentials.
+  Required fix: implemented in `app/server/lib/IkaDocRuntimePolicy.ts`; browser copy remains generic by design.
+  Tests needed: blocked-capability audit payload tests are implemented; live log inspection remains part of integrated smoke.
+  Status: addressed except live environment smoke.
   Severity: medium.
 
 ## Audit Findings From This Pass
@@ -1008,40 +1137,37 @@ Cross-worktree backend files inspected for this correction:
   Status: addressed.
   Severity: medium.
 
-- Issue: Undo/redo policy is too coarse for future partial editor modes.
-  Evidence: `DocWorker.ts` gates `applyUserActionsById` only with
-  `canEditCells`; `ActiveDoc.applyUserActionsById()` reconstructs stored user
-  actions or undo actions from history and applies them through native Grist
-  access checks, not through the IkaDoc action classifier.
-  Impact: Current document-file/search editor policies grant cells, structure,
-  formulas, and charts together, so normal edit sessions are not blocked by this
-  today. A future cell-only or guided partial session could replay structure,
-  formula, chart, ACL, attachment, or external-data changes through undo/redo
-  with only `canEditCells`.
-  Required fix: Design an undo/redo classifier for reconstructed user actions
-  and `ApplyUndoActions`, or explicitly require the complete capability set for
-  `applyUserActionsById` in partial editor modes.
-  Tests needed: dispatcher tests for undo/redo of row edits, structure edits,
-  formula edits, chart edits, comments, attachments, ACL, and triggers.
-  Status: open.
+- Issue: Undo/redo policy cannot classify reconstructed actions at the
+  `applyUserActionsById` websocket boundary.
+  Evidence: `ActiveDoc.applyUserActionsById()` reconstructs stored user actions
+  or undo actions from history and applies them after native Grist access checks;
+  the fork gate now requires the full IkaDoc authoring capability set before
+  allowing replay.
+  Impact: Partial editor modes cannot replay hidden structure, formula, chart,
+  ACL, attachment, external-data, custom-widget, or cell changes through a
+  cell-only gate. This is conservative: a future typed replay classifier may
+  re-enable narrower undo/redo permissions.
+  Required fix: Future partial editor modes may design an undo/redo classifier
+  for reconstructed user actions and `ApplyUndoActions`.
+  Tests needed: existing policy tests cover missing/full replay capability; live
+  browser validation should still cover undo/redo of representative row,
+  structure, formula, chart, attachment, ACL, and trigger edits.
+  Status: addressed conservatively; typed replay remains future work.
   Severity: medium.
 
-- Issue: Blocked-action observability is too generic for debugging Grist UI
+- Issue: Blocked-action observability was too generic for debugging Grist UI
   regressions.
-  Evidence: `IkaDocRuntimePolicy.deniedIkaDocRuntimeOperation(...)` exposes the
-  same safe browser message for every denial, and `reportBlockedCapability(...)`
-  posts only `capability` and `reason`. The browser screenshot shows the generic
-  disabled toast without enough action/table/capability context to distinguish a
-  policy denial from a Grist data-type UX problem.
-  Impact: Operators and developers waste time guessing which Grist action chain
-  failed. Adding detail must not leak cell values, record content, cookies,
-  vault bytes, or service credentials.
-  Required fix: Log and audit sanitized denial context: operation, action name,
-  metadata table id, missing capability, mode, source type, and document/session
-  ids. Keep the browser-facing message generic.
-  Tests needed: server tests for sanitized audit payload and no cookie/content
-  forwarding.
-  Status: open.
+  Evidence: `reportBlockedCapability(...)` now posts sanitized operation,
+  reason, missing capability, action name, table id, mode, source type,
+  session id, document id, and document URL id when that context is available.
+  Impact: Operators and developers can distinguish policy denials from Grist
+  data-type or routing failures without leaking cell values, record content,
+  cookies, vault bytes, or service credentials.
+  Required fix: Implemented in `app/server/lib/IkaDocRuntimePolicy.ts`; browser
+  message remains intentionally generic.
+  Tests needed: server payload tests cover REST and user-action denials plus
+  no-cookie forwarding. Live log inspection remains part of integrated smoke.
+  Status: addressed except live environment smoke.
   Severity: medium.
 
 - Issue: Local runtime logs still show an unrelated IkaDoc SSE 500 during the
@@ -1071,33 +1197,33 @@ Cross-worktree backend files inspected for this correction:
 
 ## 25-Point Iteration Status
 
-| #  | Topic                                | Status                                                                 |
-| -- | ------------------------------------ | ---------------------------------------------------------------------- |
-| 1  | Viewer/editor mode model             | Addressed: native Grist fallback and IkaDoc editor mode are separated. |
-| 2  | Client capability helpers            | Addressed: helpers now cover the runtime capability contract.          |
-| 3  | Page tree                            | Addressed: drag/drop and page row menus use IkaDoc readonly state.      |
-| 4  | Widget layout                        | Addressed: layout editor, tray, save path, and keyboard mutations share the IkaDoc structure gate. |
-| 5  | Widget menus                         | Addressed: trigger and menu contents fail closed; export-only menu is explicit. |
-| 6  | Sort/filter/data-selection menu      | Addressed: widget sort/filter trigger, command shortcut, and right-panel sub-tabs require structure access. |
-| 7  | Cell/grid editing                    | Addressed: value-edit paths use `canEditCells`; viewer cell menu exposes read actions only. |
-| 8  | Column/header controls               | Addressed: schema/view column paths use `canEditStructure`; column menu/add/resize/rename/freeze are hidden or no-op without structure access. |
-| 9  | Row controls                         | Addressed: row insert/delete/duplicate use cell gate; row-to-header uses structure gate; viewer row menu omits write actions. |
-| 10 | Detail/card view                     | Addressed: add/duplicate/delete/clear use cell gate; field hide uses structure gate; viewer field menu is read-only. |
-| 11 | Right authoring panel                | Addressed: panel construction is authoring-gated, and panel sub-tabs/sub-controls are separately gated by structure, chart, formula, and custom-widget capabilities. |
-| 12 | Raw data view                        | Partial: raw-data read navigation remains and writes require structure, but viewer dots-menu write entries still need to be hidden or made export-only. |
-| 13 | History                              | Addressed: snapshot listing is server-gated by history permission; snapshot mutation is denied; compare links require browser export. |
-| 14 | Export/download                      | Addressed: widget/history compare export UI uses browser export helper; `DocApi` gates download/compare/export routes with browser export permission. |
-| 15 | Import                               | Addressed: local import UI and websocket import method require `canImportLocalFiles`; external data remains separate. |
-| 16 | Formula execution                    | Addressed: formula UI entrypoints are hidden without formula capability; server classifier requires formula plus structure capability; sandbox proof endpoint is covered. |
-| 17 | Custom widgets/plugins/external data | Addressed: widget picker, right panel, plugin RPC, external fetch, trigger, and webhook paths use explicit capabilities. |
-| 18 | Server/websocket policy              | Partial: REST, websocket ACL/assistant/proposal gates, and `applyUserActions` classification are in place; `applyUserActionsById` remains coarse until a typed replay contract exists. |
-| 19 | Forward-auth/session lifecycle       | Addressed: cookie, signed forward-auth, admission fallback, expiry pruning, wrong-document rejection, and backend validation are covered by focused tests. |
-| 20 | Multi-runtime scaling                | Addressed in the fork for multiple browser sessions sharing one Grist document; deployment-level runtime pooling remains owned by the IkaDoc gateway/runtime pool. |
-| 21 | Runtime health/readiness             | Addressed for formula sandbox proof in the fork; broader pool readiness is owned by the IkaDoc runtime/gateway status API. |
-| 22 | Audit/logging                        | Partial: blocked capability callbacks avoid cross-origin cookies, but sanitized action/table/capability denial context is still too generic for UI regression debugging. |
-| 23 | Live browser tests                   | Deferred: requires an authenticated live IkaDoc viewer/editor session; unit/build gates are green, but screenshots/browser smoke should run after container rebuild. |
-| 24 | Patch hygiene                        | Addressed: upstream seams are listed in `documentation/ikadoc-integration-seams.md` and protected by seam tests. |
-| 25 | Docs/spec drift                      | Updated: this map records the current mode/capability/session model, the chart/summary action chain, and the remaining source-backed gaps. |
+| #   | Topic                                | Status                                                                                                                                                                                             |
+| --- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Viewer/editor mode model             | Addressed: native Grist fallback and IkaDoc editor mode are separated.                                                                                                                             |
+| 2   | Client capability helpers            | Addressed: helpers now cover the runtime capability contract.                                                                                                                                      |
+| 3   | Page tree                            | Addressed: drag/drop and page row menus use IkaDoc readonly state.                                                                                                                                 |
+| 4   | Widget layout                        | Addressed: layout editor, tray, save path, and keyboard mutations share the IkaDoc structure gate.                                                                                                 |
+| 5   | Widget menus                         | Addressed: trigger and menu contents fail closed; export-only menu is explicit.                                                                                                                    |
+| 6   | Sort/filter/data-selection menu      | Addressed: widget sort/filter trigger, command shortcut, and right-panel sub-tabs require structure access.                                                                                        |
+| 7   | Cell/grid editing                    | Addressed: value-edit paths use `canEditCells`; viewer cell menu exposes read actions only.                                                                                                        |
+| 8   | Column/header controls               | Addressed: schema/view column paths use `canEditStructure`; column menu/add/resize/rename/freeze are hidden or no-op without structure access.                                                     |
+| 9   | Row controls                         | Addressed: row insert/delete/duplicate use cell gate; row-to-header uses structure gate; viewer row menu omits write actions.                                                                      |
+| 10  | Detail/card view                     | Addressed: add/duplicate/delete/clear use cell gate; field hide uses structure gate; viewer field menu is read-only.                                                                               |
+| 11  | Right authoring panel                | Addressed: panel construction is authoring-gated, and panel sub-tabs/sub-controls are separately gated by structure, chart, formula, and custom-widget capabilities.                               |
+| 12  | Raw data view                        | Addressed except live validation: raw-data read navigation remains, while dots-menu and record-card write controls hide without structure access or native editability.                            |
+| 13  | History                              | Addressed: snapshot listing is server-gated by history permission; snapshot mutation is denied; compare links require browser export.                                                              |
+| 14  | Export/download                      | Addressed: widget/history compare export UI uses browser export helper; `DocApi` gates download/compare/export routes with browser export permission.                                              |
+| 15  | Import                               | Addressed: local import UI and websocket import method require `canImportLocalFiles`; external data remains separate.                                                                              |
+| 16  | Formula execution                    | Addressed: formula UI entrypoints are hidden without formula capability; server classifier requires formula plus structure capability; sandbox proof endpoint is covered.                          |
+| 17  | Custom widgets/plugins/external data | Addressed: widget picker, right panel, plugin RPC, external fetch, trigger, and webhook paths use explicit capabilities.                                                                           |
+| 18  | Server/websocket policy              | Addressed conservatively: REST gates, websocket ACL/assistant/proposal gates, `applyUserActions` classification, and full-capability `applyUserActionsById` replay gating are in place.            |
+| 19  | Forward-auth/session lifecycle       | Addressed: cookie, signed forward-auth, admission fallback, expiry pruning, wrong-document rejection, and backend validation are covered by focused tests.                                         |
+| 20  | Multi-runtime scaling                | Addressed in the fork for multiple browser sessions sharing one Grist document; deployment-level runtime pooling remains owned by the IkaDoc gateway/runtime pool.                                 |
+| 21  | Runtime health/readiness             | Addressed for formula sandbox proof in the fork; broader pool readiness is owned by the IkaDoc runtime/gateway status API.                                                                         |
+| 22  | Audit/logging                        | Addressed in unit coverage: blocked capability callbacks carry sanitized action/table/missing-capability context and avoid cross-origin cookies; live log inspection remains for integrated smoke. |
+| 23  | Live browser tests                   | Deferred: requires an authenticated live IkaDoc viewer/editor session; unit/build gates are green, but screenshots/browser smoke should run after container rebuild.                               |
+| 24  | Patch hygiene                        | Addressed: upstream seams are listed in `documentation/ikadoc-integration-seams.md` and protected by seam tests.                                                                                   |
+| 25  | Docs/spec drift                      | Updated: this map records the current mode/capability/session model, the chart/summary action chain, and the remaining source-backed gaps.                                                         |
 
 ## Remaining Validation Checklist
 
