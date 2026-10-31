@@ -559,9 +559,10 @@ export class FieldBuilder extends Disposable {
                       },
                     )),
                   ),
-                  t("Field in {{count}} views", {
-                    count: kd.text(() => this.origColumn.viewFields().all().length),
-                  }),
+                  // Owarelin/IkaDoc: a number, not a DOM node, so the plural form is translated.
+                  kd.text(() => t("Field in {{count}} views", {
+                    count: this.origColumn.viewFields().all().length,
+                  })),
                 ),
               ),
             ),

@@ -43,6 +43,10 @@ const CLIENT_SEAMS = [
     ],
   },
   {
+    file: "app/client/widgets/FieldBuilder.ts",
+    anchors: ["kd.text(() => t(\"Field in {{count}} views\", {"],
+  },
+  {
     file: "app/client/components/duplicatePage.ts",
     anchors: ["confirmModal(t(\"Duplicate page\"), t(\"Save\")", "cssLabel(t(\"Name\"))"],
   },
