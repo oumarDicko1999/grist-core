@@ -51,6 +51,8 @@ export interface IkaDocRuntimeConfigWire {
   refreshUrl?: string;
   proposalUrl?: string;
   capabilities?: Partial<IkaDocRuntimeCapabilities>;
+  // GW-RFR-03: per table, the columns IkaDoc owns; read-only in the editor.
+  lockedColumns?: Record<string, string[]>;
   locale: string;
   theme?: string;
   appearance?: "light" | "dark";

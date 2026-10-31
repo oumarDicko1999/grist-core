@@ -1868,6 +1868,70 @@ describe("IkaDoc runtime policy", function() {
     ]);
   });
 
+  describe("IkaDoc-owned columns (GW-RFR-03)", function() {
+    function registryWithLockedColumns() {
+      const registry = new IkaDocRuntimeSessionRegistry();
+
+      registry.register({
+        ...runtimeConfig({ canEditCells: true, canEditStructure: true }),
+        lockedColumns: { Factures: ["Numero", "Montant"] },
+      });
+
+      return registry;
+    }
+
+    it("denies edits to a locked column", function() {
+      const registry = registryWithLockedColumns();
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["UpdateRecord", "Factures", 1, { Montant: 0 }],
+        ]),
+        /Montant/,
+      );
+    });
+
+    it("denies pasted or added rows that fill a locked column", function() {
+      const registry = registryWithLockedColumns();
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["BulkAddRecord", "Factures", [null], { Numero: ["FAC-9999"], Note: ["x"] }],
+        ]),
+        /Numero/,
+      );
+    });
+
+    it("denies renaming or removing a locked column", function() {
+      const registry = registryWithLockedColumns();
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["RenameColumn", "Factures", "Numero", "Number"],
+        ]),
+        /Numero/,
+      );
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+          ["RemoveColumn", "Factures", "Montant"],
+        ]),
+        /Montant/,
+      );
+    });
+
+    it("allows the user's own columns and other tables", function() {
+      const registry = registryWithLockedColumns();
+
+      assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+        ["UpdateRecord", "Factures", 1, { Note: "à relancer" }],
+        ["AddRecord", "Factures", null, { manualSort: 3 }],
+        ["UpdateRecord", "Notes", 1, { Montant: 5 }],
+        ["RemoveColumn", "Factures", "Note"],
+      ]);
+    });
+  });
+
   it("denies user-table edits in viewer mode even when cell editing is present", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     registry.register(

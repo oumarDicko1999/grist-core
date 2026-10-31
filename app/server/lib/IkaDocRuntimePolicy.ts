@@ -65,6 +65,21 @@ const EDITOR_ONLY_CAPABILITIES = new Set<IkaDocCapabilityName>([
   "canUsePlugins",
 ]);
 
+/** Actions whose 4th element maps column ids to new values. */
+const LOCKED_COLUMN_VALUE_ACTIONS = new Set([
+  "AddRecord",
+  "BulkAddRecord",
+  "UpdateRecord",
+  "BulkUpdateRecord",
+]);
+
+/** Actions whose 3rd element is the column they change or remove. */
+const LOCKED_COLUMN_STRUCTURE_ACTIONS = new Set([
+  "ModifyColumn",
+  "RenameColumn",
+  "RemoveColumn",
+]);
+
 const CELL_EDIT_ACTIONS = new Set([
   "AddRecord",
   "BulkAddRecord",
@@ -456,6 +471,44 @@ function assertIkaDocUserActionAllowed(
       throw deniedIkaDocRuntimeOperation(`apply ${actionName}`, session);
     }
   }
+
+  const lockedColumn = touchedLockedColumn(session, actionName, tableId, action);
+  if (lockedColumn) {
+    throw deniedIkaDocRuntimeOperation(`change the IkaDoc column ${lockedColumn}`, session);
+  }
+}
+
+/**
+ * GW-RFR-03: columns IkaDoc owns change only through IkaDoc (service account).
+ * Returns the first locked column the action writes or restructures.
+ */
+function touchedLockedColumn(
+  session: IkaDocRuntimeSession,
+  actionName: string,
+  tableId: string | undefined,
+  action: unknown[],
+): string | undefined {
+  const locked = tableId ? session.config.lockedColumns?.[tableId] : undefined;
+  if (!locked?.length) {
+    return undefined;
+  }
+
+  if (LOCKED_COLUMN_STRUCTURE_ACTIONS.has(actionName)) {
+    const columnId = action[2];
+
+    return typeof columnId === "string" && locked.includes(columnId) ? columnId : undefined;
+  }
+
+  if (LOCKED_COLUMN_VALUE_ACTIONS.has(actionName)) {
+    const values = action[3];
+    if (!values || typeof values !== "object") {
+      return undefined;
+    }
+
+    return Object.keys(values).find(columnId => locked.includes(columnId));
+  }
+
+  return undefined;
 }
 
 function isIkaDocCapabilityAllowed(

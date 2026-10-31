@@ -33,6 +33,12 @@ export interface IkaDocGuidedWorkspaceUrls {
   applyUrl: string;
 }
 
+/**
+ * GW-RFR-03: per table, the columns IkaDoc owns (source data).
+ * They change only through IkaDoc (materialize, refresh), never from the editor.
+ */
+export type IkaDocLockedColumns = Record<string, string[]>;
+
 export interface IkaDocRuntimeConfig {
   enabled: true;
   sessionId: string;
@@ -55,6 +61,7 @@ export interface IkaDocRuntimeConfig {
   proposalUrl?: string;
   guidedWorkspaceUrls?: IkaDocGuidedWorkspaceUrls;
   guidedWorkspace?: IkaDocGuidedWorkspaceMarker;
+  lockedColumns?: IkaDocLockedColumns;
   capabilities: IkaDocCapabilities;
   locale: string;
   theme?: string;
@@ -113,7 +120,8 @@ export type IkaDocRuntimeConfigParseFailure =
   "invalid-user" |
   "invalid-capabilities" |
   "invalid-guided-workspace" |
-  "invalid-guided-workspace-urls";
+  "invalid-guided-workspace-urls" |
+  "invalid-locked-columns";
 
 export type IkaDocRuntimeConfigParseResult =
   | { kind: "disabled" } |
@@ -206,6 +214,11 @@ export function parseIkaDocRuntimeConfig(
     return { kind: "invalid", reason: "invalid-guided-workspace-urls" };
   }
 
+  const lockedColumns = normalizeLockedColumns(raw.lockedColumns);
+  if (lockedColumns === "invalid") {
+    return { kind: "invalid", reason: "invalid-locked-columns" };
+  }
+
   const sessionId = raw.sessionId as string;
   const collectionCode = raw.collectionCode as string;
   const documentId = raw.documentId as string;
@@ -249,6 +262,7 @@ export function parseIkaDocRuntimeConfig(
         typeof raw.proposalUrl === "string" ? raw.proposalUrl : undefined,
       guidedWorkspaceUrls,
       guidedWorkspace,
+      lockedColumns,
       capabilities: normalizeIkaDocCapabilities(
         raw.capabilities as IkaDocCapabilityOverrides | undefined,
       ),
@@ -257,6 +271,30 @@ export function parseIkaDocRuntimeConfig(
       appearance,
     },
   };
+}
+
+function normalizeLockedColumns(input: unknown): IkaDocLockedColumns | undefined | "invalid" {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return "invalid";
+  }
+
+  const lockedColumns: IkaDocLockedColumns = {};
+
+  for (const [tableId, columnIds] of Object.entries(input)) {
+    const validColumns = Array.isArray(columnIds) &&
+      columnIds.every(columnId => typeof columnId === "string" && columnId.length > 0);
+    if (!validColumns) {
+      return "invalid";
+    }
+
+    lockedColumns[tableId] = [...columnIds];
+  }
+
+  return lockedColumns;
 }
 
 function normalizeGuidedWorkspace(
