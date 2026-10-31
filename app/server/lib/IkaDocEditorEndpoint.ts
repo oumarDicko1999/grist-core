@@ -9,6 +9,7 @@ import { DocTemplate } from "app/server/lib/GristServer";
 import {
   IKADOC_RUNTIME_PARTICIPANT_COOKIE,
   IKADOC_RUNTIME_SESSION_COOKIE,
+  ikaDocRuntimeParticipantCookie,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import { getEndUserProtocol } from "app/server/lib/requestUtils";
@@ -72,8 +73,10 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
       sameSite: "lax" as const,
       secure: getEndUserProtocol(req) === "https",
     };
-    // This browser's own entry: several people may be in the session, each validated as themselves.
-    const participant = runtimeSessionRegistry?.register(runtimeConfig, Date.now());
+    // This browser's own entry: several people may be in the session, each validated as themselves,
+    // and one person may have several tabs open; re-entering replaces only this browser's entry.
+    const browserHandle = ikaDocRuntimeParticipantCookie(req);
+    const participant = runtimeSessionRegistry?.register(runtimeConfig, Date.now(), browserHandle);
     res.cookie(IKADOC_RUNTIME_SESSION_COOKIE, runtimeConfig.sessionId, cookieOptions);
     if (participant) {
       res.cookie(IKADOC_RUNTIME_PARTICIPANT_COOKIE, participant.participantHandle, cookieOptions);

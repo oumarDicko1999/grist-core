@@ -17,6 +17,7 @@ import {
   deniedIkaDocRuntimeOperation,
   hasIkaDocRuntimeSessionCookie,
   IKADOC_RUNTIME_PARTICIPANT_COOKIE,
+  ikaDocRuntimeParticipantCookie,
   ikaDocRuntimeSessionCookie,
   ikadocRuntimeSessionForRequest,
   isIkaDocRuntimeSessionExpired,
@@ -350,7 +351,8 @@ async function getIkaDocRuntimeSessionForRequest(
     });
     return undefined;
   }
-  const registered = registry.register(result.admission.runtimeConfig, Date.now());
+  const browserHandle = ikaDocRuntimeParticipantCookie(req);
+  const registered = registry.register(result.admission.runtimeConfig, Date.now(), browserHandle);
   res?.cookie(IKADOC_RUNTIME_PARTICIPANT_COOKIE, registered.participantHandle, {
     httpOnly: true,
     path: "/",

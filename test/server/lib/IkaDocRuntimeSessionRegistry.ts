@@ -26,16 +26,73 @@ describe("IkaDoc runtime session registry with several participants", function()
       .validationToken, "editor-token");
   });
 
-  it("replaces a person's previous entry when they enter again, without touching the others", function() {
+  it("reuses a browser's entry when that browser enters again, with the new config", function() {
     const registry = new IkaDocRuntimeSessionRegistry();
     const owner = registry.register(participantConfig("owner", "owner-token"));
     const firstVisit = registry.register(participantConfig("editor", "editor-token-1"));
 
-    const secondVisit = registry.register(participantConfig("editor", "editor-token-2"));
+    const reload = registry.register(participantConfig("editor", "editor-token-2"), Date.now(),
+      firstVisit.participantHandle);
 
-    assert.isUndefined(registry.getByHandle(firstVisit.participantHandle));
-    assert.equal(registry.getByHandle(secondVisit.participantHandle), secondVisit);
+    assert.strictEqual(reload, firstVisit);
+    assert.equal(reload.config.validationToken, "editor-token-2");
     assert.equal(registry.getByHandle(owner.participantHandle), owner);
+  });
+
+  it("keeps a person's tabs connected when another tab of the same browser enters", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const dropped: string[] = [];
+    registry.onUnregistered(session => dropped.push(session.participantHandle));
+
+    const firstTab = registry.register(participantConfig("editor", "editor-token-1"));
+    registry.register(participantConfig("editor", "editor-token-2"), Date.now(), firstTab.participantHandle);
+
+    assert.deepEqual(dropped, []);
+    assert.equal(registry.getByHandle(firstTab.participantHandle), firstTab);
+  });
+
+  it("gives every open tab the person's latest capabilities at once", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const laptop = registry.register(participantConfig("editor", "editor-token-1", true));
+
+    registry.register(participantConfig("editor", "editor-token-2", false));
+
+    assert.isFalse(registry.getByHandle(laptop.participantHandle)?.config.capabilities.canExportFromBrowser);
+  });
+
+  it("keeps a person's first tab open when they open the session in a second tab", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const dropped: string[] = [];
+    registry.onUnregistered(session => dropped.push(session.participantHandle));
+
+    const firstTab = registry.register(participantConfig("editor", "editor-token-1"));
+    const secondTab = registry.register(participantConfig("editor", "editor-token-2"));
+
+    assert.equal(registry.getByHandle(firstTab.participantHandle), firstTab);
+    assert.equal(registry.getByHandle(secondTab.participantHandle), secondTab);
+    assert.deepEqual(dropped, []);
+    assert.equal(registry.getByParticipant("session-1", "editor"), secondTab);
+  });
+
+  it("never replaces another person's entry, even when given their handle", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const owner = registry.register(participantConfig("owner", "owner-token"));
+
+    registry.register(participantConfig("editor", "editor-token"), Date.now(), owner.participantHandle);
+
+    assert.equal(registry.getByHandle(owner.participantHandle), owner);
+  });
+
+  it("drops a person's oldest tabs beyond the limit, so lost cookies cannot pile up", function() {
+    const registry = new IkaDocRuntimeSessionRegistry();
+    const startMs = Date.now();
+
+    const tabs = Array.from({ length: 9 }, (_, i) =>
+      registry.register(participantConfig("editor", `editor-token-${i}`), startMs + i));
+
+    assert.isUndefined(registry.getByHandle(tabs[0].participantHandle));
+    assert.equal(registry.getByHandle(tabs[1].participantHandle), tabs[1]);
+    assert.equal(registry.getByHandle(tabs[8].participantHandle), tabs[8]);
   });
 
   it("never gives a browser whose own entry is gone someone else's entry for the document", function() {

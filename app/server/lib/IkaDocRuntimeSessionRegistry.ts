@@ -6,6 +6,12 @@ import { randomBytes } from "crypto";
 const PARTICIPANT_HANDLE_BYTES = 32;
 
 /**
+ * Browsers (tabs, devices) one person may keep open in one session. Beyond it the oldest entry
+ * leaves, so admissions that lost their cookie cannot pile up until the session expires.
+ */
+const MAX_ENTRIES_PER_PERSON = 8;
+
+/**
  * One person admitted into one IkaDoc spreadsheet session. Several people can share a session
  * (GR-02); each has their own entry, runtime config and validation token, so every request and
  * every action is validated as the person who made it (GR-03).
@@ -31,15 +37,40 @@ export class IkaDocRuntimeSessionRegistry {
   private readonly _byHandle = new Map<string, IkaDocRuntimeSession>();
   private readonly _onUnregistered: ((session: IkaDocRuntimeSession) => void)[] = [];
 
-  /** Admits [config]'s person, replacing their previous entry in the same session. */
+  /**
+   * Admits [config]'s person in one browser ([browserHandle]: the entry its cookie names).
+   * A person may have several tabs and devices open: entering again never disconnects them.
+   * Their entries take the new config at once (capabilities may have changed), the browser's own
+   * entry is reused, and only entries for a document the session has left are dropped.
+   */
   public register(
     config: IkaDocRuntimeConfig,
     registeredAtMs = Date.now(),
+    browserHandle?: string,
   ): IkaDocRuntimeSession {
-    const previous = this.getByParticipant(config.sessionId, config.user.userId);
-    if (previous) {
-      this._delete(previous);
+    for (const entry of this._entriesOf(config.sessionId, config.user.userId)) {
+      if (entry.documentId !== config.documentId) {
+        this._delete(entry);
+        continue;
+      }
+
+      entry.config = config;
+      entry.documentUrlId = config.documentUrlId;
     }
+
+    const browserEntry = browserHandle ? this._byHandle.get(browserHandle) : undefined;
+    const isSamePerson = browserEntry?.sessionId === config.sessionId &&
+      browserEntry.userId === config.user.userId;
+    if (browserEntry && isSamePerson) {
+      return browserEntry;
+    }
+
+    const personEntries = this._entriesOf(config.sessionId, config.user.userId);
+    const overLimit = Math.max(0, personEntries.length - MAX_ENTRIES_PER_PERSON + 1);
+    for (const oldest of personEntries.slice(0, overLimit)) {
+      this._delete(oldest);
+    }
+
     const session: IkaDocRuntimeSession = {
       sessionId: config.sessionId,
       participantHandle: randomBytes(PARTICIPANT_HANDLE_BYTES).toString("base64url"),
@@ -58,16 +89,14 @@ export class IkaDocRuntimeSessionRegistry {
     return session ? this._pruneIfExpired(session) : undefined;
   }
 
+  /** The person's most recent entry in the session (they may have several browsers open). */
   public getByParticipant(
     sessionId: string,
     userId: string,
   ): IkaDocRuntimeSession | undefined {
-    for (const session of this._byHandle.values()) {
-      if (session.sessionId === sessionId && session.userId === userId) {
-        return this._pruneIfExpired(session);
-      }
-    }
-    return undefined;
+    const latest = this._entriesOf(sessionId, userId).at(-1);
+
+    return latest ? this._pruneIfExpired(latest) : undefined;
   }
 
   /**
@@ -116,6 +145,13 @@ export class IkaDocRuntimeSessionRegistry {
         this._delete(session);
       }
     }
+  }
+
+  /** The person's entries in the session, oldest first. */
+  private _entriesOf(sessionId: string, userId: string): IkaDocRuntimeSession[] {
+    return [...this._byHandle.values()]
+      .filter(session => session.sessionId === sessionId && session.userId === userId)
+      .sort((a, b) => a.registeredAtMs - b.registeredAtMs);
   }
 
   private _pruneIfExpired(

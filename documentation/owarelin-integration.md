@@ -74,6 +74,14 @@ session and Grist document id/url id that IkaDoc created. Native Grist orgs,
 workspaces, anonymous users, sharing state, API keys, and browser-supplied
 headers must not expand access.
 
+Each admission registers one browser of one person
+(`IkaDocRuntimeSessionRegistry`). A person may have several tabs and devices in a
+session: entering again never disconnects them. Their entries take the newest
+config at once (capabilities may have changed), the browser's own entry (its
+participant cookie) is reused, entries for a document the session has left are
+dropped, and at most 8 entries per person are kept. `smoke.mjs` checks that a
+second tab leaves the first one working.
+
 An IkaDoc deployment runs the fork as an IkaDoc-only runtime (GW-SEC-01): when
 IkaDoc admission is configured (`IKADOC_EDITOR_ADMISSION_URL`), browser requests
 without an IkaDoc session or signed forward-auth assertion are refused, except
