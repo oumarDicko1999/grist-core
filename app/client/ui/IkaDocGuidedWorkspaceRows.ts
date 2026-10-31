@@ -5,6 +5,7 @@ import {
   IkaDocGuidedWorkspaceDescriptor,
   IkaDocGuidedWorkspaceResult,
 } from "app/ikadoc/IkaDocGuidedWorkspace";
+import { IkaDocRequestError, requestIkaDocJson } from "app/ikadoc/IkaDocRequest";
 
 import type { BulkColValues, UserAction } from "app/common/DocActions";
 import type { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
@@ -366,18 +367,11 @@ async function requestGuidedWorkspaceRows(
   url: string,
   body: Record<string, unknown>,
 ): Promise<GuidedWorkspaceRowsResponse> {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  headers.set("X-Collection", config.collectionCode);
-  const response = await window.fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify(body),
+  const payload = await requestIkaDocJson(config, url, { method: "POST", body }).catch((error) => {
+    const status = error instanceof IkaDocRequestError ? `HTTP ${error.status}` : String(error);
+    throw new IkaDocGuidedWorkspaceRowsError("request-failed", status);
   });
-  const payload = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    throw new IkaDocGuidedWorkspaceRowsError("request-failed", `HTTP ${response.status}`);
-  }
+
   return parseGuidedWorkspaceRowsResponse(payload);
 }
 

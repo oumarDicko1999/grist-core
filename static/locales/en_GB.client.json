@@ -3,36 +3,13 @@
         "Enter email address": ""
     },
     "IkaDocEditorControls": {
-        "Admit guided workspace rows": "Admit guided workspace rows",
-        "Apply": "Apply",
-        "Applying guided workspace": "Applying guided workspace",
         "Build proposal": "Build proposal",
         "Building proposal": "Building proposal",
         "Checking session": "Checking session",
-        "Discard": "Discard",
-        "Discard this spreadsheet session?": "Discard this spreadsheet session?",
-        "Discarding session": "Discarding session",
-        "Guided workspace": "Guided workspace",
-        "Guided workspace has {{count}} issue(s)": "Guided workspace has {{count}} issue(s)",
-        "Guided workspace ready to apply": "Guided workspace ready to apply",
-        "Guided workspace response is invalid": "Guided workspace response is invalid",
-        "Guided workspace unavailable": "Guided workspace unavailable",
-        "Guided workspace: {{schema}}": "Guided workspace: {{schema}}",
-        "No changes to save": "No changes to save",
         "Proposal requested": "Proposal requested",
         "Refresh": "Refresh",
         "Refreshing source": "Refreshing source",
-        "Request failed": "Request failed",
-        "Save": "Save",
-        "Saved": "Saved",
-        "Saving": "Saving",
-        "Session discarded": "Session discarded",
-        "Simulate": "Simulate",
-        "Simulating guided workspace": "Simulating guided workspace",
         "Source refreshed": "Source refreshed",
-        "Update guided workspace row states": "Update guided workspace row states",
-        "row {{row}}": "row {{row}}",
-        "{{count}} more issue(s)": "{{count}} more issue(s)",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session ready",
         "{{sourceSummary}}Session: {{status}}": "{{sourceSummary}}Session: {{status}}"
     },
@@ -119,5 +96,24 @@
         "Save": "Save",
         "Name": "Name",
         "{{name}} (copy)": "{{name}} (copy)"
+    },
+    "IkaDocEditorControlState": {
+        "Request failed": "Request failed"
+    },
+    "IkaDocGuidedWorkspaceControls": {
+        "Admit guided workspace rows": "Admit guided workspace rows",
+        "Apply": "Apply",
+        "Applying guided workspace": "Applying guided workspace",
+        "Guided workspace": "Guided workspace",
+        "Guided workspace has {{count}} issue(s)": "Guided workspace has {{count}} issue(s)",
+        "Guided workspace ready to apply": "Guided workspace ready to apply",
+        "Guided workspace response is invalid": "Guided workspace response is invalid",
+        "Guided workspace unavailable": "Guided workspace unavailable",
+        "Guided workspace: {{schema}}": "Guided workspace: {{schema}}",
+        "Simulate": "Simulate",
+        "Simulating guided workspace": "Simulating guided workspace",
+        "Update guided workspace row states": "Update guided workspace row states",
+        "row {{row}}": "row {{row}}",
+        "{{count}} more issue(s)": "{{count}} more issue(s)"
     }
 }

@@ -340,30 +340,12 @@ const CLIENT_SEAMS = [
   },
 ] as const;
 
-const IKADOC_EDITOR_CONTROL_KEYS = [
-  "Build proposal",
-  "Simulating guided workspace",
-  "Simulate",
-  "Guided workspace ready to apply",
-  "Guided workspace has {{count}} issue(s)",
-  "Applying guided workspace",
-  "Apply",
-  "Building proposal",
-  "Checking session",
-  "Guided workspace",
-  "Guided workspace unavailable",
-  "Guided workspace response is invalid",
-  "Guided workspace: {{schema}}",
-  "Proposal requested",
-  "Refresh",
-  "Refreshing source",
-  "Request failed",
-  "Source refreshed",
-  "row {{row}}",
-  "{{count}} more issue(s)",
-  "{{sourceSummary}}Session ready",
-  "{{sourceSummary}}Session: {{status}}",
-] as const;
+/** IkaDoc UI files whose texts must be translated; makeT's scope is the file name. */
+const IKADOC_TRANSLATED_FILES = [
+  "app/client/ui/IkaDocEditorControls.ts",
+  "app/client/ui/IkaDocEditorControlState.ts",
+  "app/client/ui/IkaDocGuidedWorkspaceControls.ts",
+];
 
 describe("IkaDoc client seams", function() {
   for (const seam of CLIENT_SEAMS) {
@@ -412,11 +394,13 @@ describe("IkaDoc client seams", function() {
   });
 
   it("uses the versioned Owarelin event bridge instead of legacy IkaDoc messages", function() {
-    const source = readSource("app/client/ui/IkaDocEditorControls.ts");
+    const source = [
+      readSource("app/client/ui/IkaDocEditorControls.ts"),
+      readSource("app/client/ui/IkaDocGuidedWorkspaceControls.ts"),
+    ].join("\n");
 
     assert.include(source, "postOwarelinRuntimeEvent");
-    assert.include(source, "config.guidedWorkspaceUrls.applyUrl");
-    assert.include(source, "config.guidedWorkspaceUrls.validateUrl");
+    assert.include(source, "isApply ? urls.applyUrl : urls.validateUrl");
     assert.include(
       source,
       'current.descriptor.marker.finalAction === "APPLY_TO_IKADOC"',
@@ -453,7 +437,7 @@ describe("IkaDoc client seams", function() {
     assert.include(runtimeConfig, "referenceResolveUrl");
     assert.include(lookup, "searchIkaDocGuidedReferenceOptions");
     assert.include(lookup, "resolveIkaDocGuidedReferenceOptions");
-    assert.include(lookup, '"X-Collection": config.collectionCode');
+    assert.include(lookup, "requestIkaDocJson(config, url, { method: \"POST\", body })");
     assert.include(userType, "IkaDocReference");
     assert.include(userType, 'cons: "IkaDocReferenceTextBox"');
     assert.include(userTypeImpl, "IkaDocReferenceEditor");
@@ -472,28 +456,25 @@ describe("IkaDoc client seams", function() {
     assert.include(userTypeImpl, "IkaDocJsonTextBox");
   });
 
-  it("keeps IkaDoc editor control translations in supported runtime locales", function() {
+  it("translates every IkaDoc editor control text in the supported runtime locales", function() {
     const localeFiles = [
       "static/locales/en.client.json",
       "static/locales/en_GB.client.json",
       "static/locales/fr.client.json",
     ];
 
-    for (const localeFile of localeFiles) {
-      const locale = JSON.parse(readSource(localeFile));
-      const controls = locale.IkaDocEditorControls;
+    for (const file of IKADOC_TRANSLATED_FILES) {
+      const scope = file.replace(/^.*\//, "").replace(/\.ts$/, "");
+      const keys = [...readSource(file).matchAll(/\bt\("((?:[^"\\]|\\.)*)"/g)].map(match => match[1]);
+      assert.isNotEmpty(keys, `${file} has no translated text`);
 
-      assert.isObject(
-        controls,
-        `${localeFile} is missing IkaDocEditorControls`,
-      );
-      for (const key of IKADOC_EDITOR_CONTROL_KEYS) {
-        assert.isString(controls[key], `${localeFile} is missing ${key}`);
-        assert.isAbove(
-          controls[key].length,
-          0,
-          `${localeFile} has an empty ${key}`,
-        );
+      for (const localeFile of localeFiles) {
+        const translations: Record<string, string> = JSON.parse(readSource(localeFile))[scope] ?? {};
+
+        for (const key of keys) {
+          const translated = translations[key] ?? translations[`${key}_other`] ?? "";
+          assert.isNotEmpty(translated, `${localeFile} does not translate "${key}" (${scope})`);
+        }
       }
     }
   });

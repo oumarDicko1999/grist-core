@@ -1,3 +1,4 @@
+import { IkaDocRequestError, requestIkaDocJson } from "app/ikadoc/IkaDocRequest";
 import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 
 export interface IkaDocReferenceLookupOption {
@@ -23,7 +24,7 @@ export async function searchIkaDocGuidedReferenceOptions(
   request: IkaDocReferenceLookupRequest,
 ): Promise<readonly IkaDocReferenceLookupOption[]> {
   const urls = requireGuidedReferenceLookupUrls(config);
-  const payload = await requestIkaDocJson(config, urls.referenceSearchUrl, {
+  const payload = await requestReferenceLookup(config, urls.referenceSearchUrl, {
     tableId: request.tableId,
     metadataCode: request.metadataCode,
     rowKey: request.rowKey,
@@ -40,7 +41,7 @@ export async function resolveIkaDocGuidedReferenceOptions(
   },
 ): Promise<readonly IkaDocReferenceLookupOption[]> {
   const urls = requireGuidedReferenceLookupUrls(config);
-  const payload = await requestIkaDocJson(config, urls.referenceResolveUrl, {
+  const payload = await requestReferenceLookup(config, urls.referenceResolveUrl, {
     tableId: request.tableId,
     metadataCode: request.metadataCode,
     rowKey: request.rowKey,
@@ -56,25 +57,18 @@ function requireGuidedReferenceLookupUrls(config: IkaDocRuntimeConfig) {
   return config.guidedWorkspaceUrls;
 }
 
-async function requestIkaDocJson(
+/** POST to IkaDoc's reference lookup, with IkaDoc's own message when it refuses. */
+async function requestReferenceLookup(
   config: IkaDocRuntimeConfig,
   url: string,
   body: object,
 ): Promise<unknown> {
-  const response = await window.fetch(url, {
-    credentials: "include",
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Collection": config.collectionCode,
-    },
-    body: JSON.stringify(body),
-  });
-  const payload = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    throw new Error(readIkaDocError(payload) ?? "Reference lookup failed");
+  try {
+    return await requestIkaDocJson(config, url, { method: "POST", body });
+  } catch (error) {
+    const ikadocMessage = error instanceof IkaDocRequestError ? error.ikadocMessage : undefined;
+    throw new Error(ikadocMessage ?? "Reference lookup failed");
   }
-  return payload;
 }
 
 export function parseIkaDocReferenceLookupResponse(
@@ -123,12 +117,4 @@ function parseReferenceLookupOption(
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function readIkaDocError(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return undefined;
-  }
-  const error = (payload as Record<string, unknown>).error;
-  return typeof error === "string" && error.length > 0 ? error : undefined;
 }

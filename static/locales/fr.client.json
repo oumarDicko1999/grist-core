@@ -3216,36 +3216,13 @@
         "unfiltered": "non filtré"
     },
     "IkaDocEditorControls": {
-        "Admit guided workspace rows": "Admettre les lignes de l'espace guide",
-        "Apply": "Appliquer",
-        "Applying guided workspace": "Application de l'espace guide",
         "Build proposal": "Preparer une proposition",
         "Building proposal": "Preparation de la proposition",
         "Checking session": "Verification de la session",
-        "Discard": "Abandonner",
-        "Discard this spreadsheet session?": "Abandonner cette session de feuille de calcul ?",
-        "Discarding session": "Abandon de la session",
-        "Guided workspace": "Espace guide",
-        "Guided workspace has {{count}} issue(s)": "L'espace guide contient {{count}} probleme(s)",
-        "Guided workspace ready to apply": "Espace guide pret a appliquer",
-        "Guided workspace response is invalid": "La reponse de l'espace guide est invalide",
-        "Guided workspace unavailable": "Espace guide indisponible",
-        "Guided workspace: {{schema}}": "Espace guide : {{schema}}",
-        "No changes to save": "Aucun changement a enregistrer",
         "Proposal requested": "Proposition demandee",
         "Refresh": "Actualiser",
         "Refreshing source": "Actualisation de la source",
-        "Request failed": "La requete a echoue",
-        "Save": "Enregistrer",
-        "Saved": "Enregistre",
-        "Saving": "Enregistrement",
-        "Session discarded": "Session abandonnee",
-        "Simulate": "Simuler",
-        "Simulating guided workspace": "Simulation de l'espace guide",
         "Source refreshed": "Source actualisee",
-        "Update guided workspace row states": "Mettre a jour l'etat des lignes de l'espace guide",
-        "row {{row}}": "ligne {{row}}",
-        "{{count}} more issue(s)": "{{count}} autre(s) probleme(s)",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session prete",
         "{{sourceSummary}}Session: {{status}}": "{{sourceSummary}}Session : {{status}}"
     },
@@ -3316,5 +3293,24 @@
         "Query": "Requête",
         "Selected records": "Sélection de fiches",
         "Document": "Document"
+    },
+    "IkaDocEditorControlState": {
+        "Request failed": "La requete a echoue"
+    },
+    "IkaDocGuidedWorkspaceControls": {
+        "Admit guided workspace rows": "Admettre les lignes de l'espace guide",
+        "Apply": "Appliquer",
+        "Applying guided workspace": "Application de l'espace guide",
+        "Guided workspace": "Espace guide",
+        "Guided workspace has {{count}} issue(s)": "L'espace guide contient {{count}} probleme(s)",
+        "Guided workspace ready to apply": "Espace guide pret a appliquer",
+        "Guided workspace response is invalid": "La reponse de l'espace guide est invalide",
+        "Guided workspace unavailable": "Espace guide indisponible",
+        "Guided workspace: {{schema}}": "Espace guide : {{schema}}",
+        "Simulate": "Simuler",
+        "Simulating guided workspace": "Simulation de l'espace guide",
+        "Update guided workspace row states": "Mettre a jour l'etat des lignes de l'espace guide",
+        "row {{row}}": "ligne {{row}}",
+        "{{count}} more issue(s)": "{{count}} autre(s) probleme(s)"
     }
 }
