@@ -34,6 +34,7 @@ import { choiceToken } from "app/client/widgets/ChoiceToken";
 import { CellValue } from "app/common/DocActions";
 import { IRelativeDateSpec, isEquivalentFilter, isRelativeBound } from "app/common/FilterState";
 import { extractTypeFromColType, isDateLikeType, isList, isNumberType, isRefListType } from "app/common/gristTypes";
+import { ikaDocChoiceLabel } from "app/common/IkaDocChoiceLabels";
 import { formatRelBounds } from "app/common/RelativeDates";
 import { createFormatter } from "app/common/ValueFormatter";
 import { UIRowId } from "app/plugin/GristAPI";
@@ -633,7 +634,12 @@ function getEmptyCountMap(fieldOrColumn: ViewFieldRec | ColumnRec): Map<CellValu
     const options = fieldOrColumn.origCol().widgetOptionsJson;
     values = options.prop("choices")() ?? [];
   }
-  return new Map(values.map(v => [v, { label: String(v), count: 0, displayValue: v }]));
+
+  // Owarelin/IkaDoc: IkaDoc choices are listed by their label (GW-COL-04).
+  const formatter = fieldOrColumn.visibleColFormatter.peek();
+  const label = (v: any) => ikaDocChoiceLabel(formatter.widgetOpts, v, formatter.docSettings.locale) ?? String(v);
+
+  return new Map(values.map(v => [v, { label: label(v), count: 0, displayValue: v }]));
 }
 
 export interface IColumnFilterMenuOptions {
@@ -809,21 +815,24 @@ function getRenderFunc(columnType: string, fieldOrColumn: ViewFieldRec | ColumnR
     const choiceSet = new Set<string>(options.choices || []);
     const choiceOptions: ChoiceOptions = options.choiceOptions || {};
 
-    return (_key: CellValue, value: IFilterCount) => {
+    return (key: CellValue, value: IFilterCount) => {
       if (value.label === "") {
         return cssItemValue(value.label);
       }
 
+      // Owarelin/IkaDoc: colors and validity follow the stored code; the label is only shown (GW-COL-04).
+      const choice = typeof key === "string" ? key : value.label;
+
       return choiceToken(
         value.label,
         {
-          fillColor: choiceOptions[value.label]?.fillColor,
-          textColor: choiceOptions[value.label]?.textColor,
-          fontBold: choiceOptions[value.label]?.fontBold ?? false,
-          fontUnderline: choiceOptions[value.label]?.fontUnderline ?? false,
-          fontItalic: choiceOptions[value.label]?.fontItalic ?? false,
-          fontStrikethrough: choiceOptions[value.label]?.fontStrikethrough ?? false,
-          invalid: !choiceSet.has(value.label),
+          fillColor: choiceOptions[choice]?.fillColor,
+          textColor: choiceOptions[choice]?.textColor,
+          fontBold: choiceOptions[choice]?.fontBold ?? false,
+          fontUnderline: choiceOptions[choice]?.fontUnderline ?? false,
+          fontItalic: choiceOptions[choice]?.fontItalic ?? false,
+          fontStrikethrough: choiceOptions[choice]?.fontStrikethrough ?? false,
+          invalid: !choiceSet.has(choice),
         },
         dom.cls(cssToken.className),
         testId("choice-token"),

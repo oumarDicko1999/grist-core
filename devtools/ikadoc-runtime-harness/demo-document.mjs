@@ -16,7 +16,15 @@ const CLIENTS = [
 
 const DOCUMENT_LOCALE = "fr-FR";
 
-const STATUSES = ["Brouillon", "Envoyée", "Payée", "Payée", "Payée", "En retard"];
+/** IkaDoc stores status codes and gives their labels (GW-COL-04, ikadocChoiceLabels). */
+const STATUS_LABELS = {
+  DRAFT: { fr: "Brouillon", en: "Draft" },
+  SENT: { fr: "Envoyée", en: "Sent" },
+  PAID: { fr: "Payée", en: "Paid" },
+  LATE: { fr: "En retard", en: "Late" },
+};
+
+const STATUSES = ["DRAFT", "SENT", "PAID", "PAID", "PAID", "LATE"];
 
 /** IkaDoc sizes columns to their content; Grist's default width (~75px) truncates everything. */
 const COLUMN_WIDTHS = {
@@ -197,7 +205,8 @@ function invoiceTable() {
       column("numero", "Numéro", "Text"),
       column("client", "Client", "Text"),
       column("statut", "Statut", "Choice", {
-        choices: ["Brouillon", "Envoyée", "Payée", "En retard"],
+        choices: Object.keys(STATUS_LABELS),
+        ikadocChoiceLabels: STATUS_LABELS,
       }),
       column("montant", "Montant", "Numeric", { numMode: "decimal", decimals: 0 }),
       column("date_emission", "Émise le", "Date", { dateFormat: "D MMM YYYY" }),

@@ -5,6 +5,7 @@ import { DocumentSettings } from "app/common/DocumentSettings";
 import * as gristTypes from "app/common/gristTypes";
 import { getReferencedTableId, isList } from "app/common/gristTypes";
 import * as gutil from "app/common/gutil";
+import { ikaDocChoiceLabel } from "app/common/IkaDocChoiceLabels";
 import { isHiddenTable } from "app/common/isHiddenTable";
 import { buildNumberFormat, NumberFormatOptions } from "app/common/NumberFormat";
 import { createParserOrFormatterArguments, ReferenceParsingOptions } from "app/common/ValueParser";
@@ -272,6 +273,27 @@ class ReferenceListFormatter extends ReferenceFormatter {
   }
 }
 
+// Owarelin/IkaDoc: IkaDoc choices show their label and keep their code (GW-COL-04, IkaDocChoiceLabels).
+class ChoiceFormatter extends BaseFormatter {
+  public format(value: any): string {
+    return ikaDocChoiceLabel(this.widgetOpts, value, this.docSettings.locale) ?? formatUnknown(value);
+  }
+}
+
+class ChoiceListFormatter extends BaseFormatter {
+  public format(value: any): string {
+    const choices = decodeObject(value);
+    if (!Array.isArray(choices) || hasNestedObjects(choices)) {
+      return formatUnknown(value);
+    }
+
+    const labels = choices.map(choice =>
+      ikaDocChoiceLabel(this.widgetOpts, choice, this.docSettings.locale) ?? formatDecoded(choice, true));
+
+    return csvEncodeRow(labels, { prettier: true });
+  }
+}
+
 const formatters: { [name: string]: typeof BaseFormatter } = {
   Numeric: NumericFormatter,
   Int: IntFormatter,
@@ -281,6 +303,8 @@ const formatters: { [name: string]: typeof BaseFormatter } = {
   Ref: ReferenceFormatter,
   RefList: ReferenceListFormatter,
   Id: RowIdFormatter,
+  Choice: ChoiceFormatter,
+  ChoiceList: ChoiceListFormatter,
   // We don't list anything that maps to AnyFormatter, since that's the default.
 };
 

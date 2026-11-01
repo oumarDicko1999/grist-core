@@ -32,6 +32,38 @@ const CLIENT_SEAMS = [
     ],
   },
   {
+    file: "app/common/ValueFormatter.ts",
+    anchors: ["Choice: ChoiceFormatter,", "ChoiceList: ChoiceListFormatter,"],
+  },
+  {
+    file: "app/client/widgets/ChoiceTextBox.ts",
+    anchors: ["invalid: !use(this._choiceValuesSet).has(choice),"],
+  },
+  {
+    file: "app/client/widgets/ChoiceListCell.ts",
+    anchors: ["isBlank ? \"[Blank]\" : label ?? String(token),"],
+  },
+  {
+    file: "app/client/widgets/ChoiceEditor.js",
+    anchors: [
+      "this.choiceText = ikaDocChoiceText(options.field);",
+      "return this.choiceText.codeOf(text) ?? text;",
+      "!this.choiceText.ikadocOwned",
+    ],
+  },
+  {
+    file: "app/client/widgets/ChoiceListEditor.ts",
+    anchors: [
+      "const choiceText = ikaDocChoiceText(options.field);",
+      "const label = choiceText.codeOf(text) ?? text;",
+      "!choiceText.ikadocOwned",
+    ],
+  },
+  {
+    file: "app/client/ui/ColumnFilterMenu.ts",
+    anchors: ["{ label: label(v), count: 0, displayValue: v }", "invalid: !choiceSet.has(choice),"],
+  },
+  {
     file: "app/client/models/entities/TableRec.ts",
     anchors: ["ikaDocSummaryGroupDescription(labels) ?? summaryGroupByDescription(labels)"],
   },

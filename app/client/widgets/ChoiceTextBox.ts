@@ -56,14 +56,18 @@ export class ChoiceTextBox extends NTextBox {
         dom.domComputed((use) => {
           if (this.isDisposed() || use(row._isAddRow)) { return null; }
 
-          const formattedValue = use(this.valueFormatter).formatAny(use(value));
+          const rawValue = use(value);
+          const formattedValue = use(this.valueFormatter).formatAny(rawValue);
           if (formattedValue === "") { return null; }
+
+          // Owarelin/IkaDoc: colors and validity follow the stored code, the text its label (GW-COL-04).
+          const choice = typeof rawValue === "string" ? rawValue : formattedValue;
 
           return choiceToken(
             formattedValue,
             {
-              ...(use(this._choiceOptionsByName).get(formattedValue) || {}),
-              invalid: !use(this._choiceValuesSet).has(formattedValue),
+              ...(use(this._choiceOptionsByName).get(choice) || {}),
+              invalid: !use(this._choiceValuesSet).has(choice),
             },
             dom.cls(cssChoiceText.className),
             testId("choice-token"),
