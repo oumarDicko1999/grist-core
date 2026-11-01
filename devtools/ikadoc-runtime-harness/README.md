@@ -48,7 +48,20 @@ IKADOC_NG_DIR=../ikadoc-ng node devtools/ikadoc-runtime-harness/smoke.mjs
 ```
 
 It checks the theme against IkaDoc in the four modes (`../ikadoc-theme-tokens/check-grist.js`),
-the sources panel, the locks, that IkaDoc cells cannot be changed while « Note » can, that a
-viewer cannot edit, and the refusal page on a native Grist page. Keep other browsers off the
-same session while it runs. Save and discard are buttons of the IkaDoc page: the frontend's e2e
-covers them.
+the sources panel, the locks, that choices show IkaDoc's label (the « Statut » column stores
+codes such as `PAID`), that IkaDoc cells cannot be changed while « Note » can, that a second
+tab leaves the first working, that a viewer cannot edit, and the refusal page on a native Grist
+page. Keep other browsers off the same session while it runs. Save and discard are buttons of
+the IkaDoc page: the frontend's e2e covers them.
+
+## Restart test (GW-SEC-05)
+
+Restarts the Grist container in the middle of a session:
+
+```bash
+IKADOC_NG_DIR=../ikadoc-ng IKADOC_GRIST_CONTAINER=<container> \
+  node devtools/ikadoc-runtime-harness/restart-check.mjs
+```
+
+The open session's next edit must revalidate with IkaDoc and apply, and a session IkaDoc does
+not know must be refused. `grid-actions.mjs` holds the grid gestures both scripts use.
