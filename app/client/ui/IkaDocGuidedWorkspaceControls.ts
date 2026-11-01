@@ -2,10 +2,8 @@ import { GristDoc } from "app/client/components/GristDoc";
 import { makeT } from "app/client/lib/localization";
 import { IkaDocEditorControlState, reportIkaDocControlFailure } from "app/client/ui/IkaDocEditorControlState";
 import { setIkaDocGuidedWorkspaceIssues } from "app/client/ui/IkaDocGuidedWorkspaceIssues";
-import {
-  admitExistingGuidedWorkspaceRows,
-  updateGuidedWorkspaceRowStates,
-} from "app/client/ui/IkaDocGuidedWorkspaceRows";
+import { admitExistingGuidedWorkspaceRows } from "app/client/ui/IkaDocGuidedWorkspaceRows";
+import { updateGuidedWorkspaceRowStates } from "app/client/ui/IkaDocGuidedWorkspaceRowStates";
 import { basicButton } from "app/client/ui2018/buttons";
 import { testId, theme } from "app/client/ui2018/cssVars";
 import {

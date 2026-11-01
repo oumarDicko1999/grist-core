@@ -1,13 +1,9 @@
-import {
-  ACResults,
-  buildHighlightedDom,
-  HighlightFunc,
-  normalizeText,
-} from "app/client/lib/ACIndex";
+import { ACResults, buildHighlightedDom, HighlightFunc, normalizeText } from "app/client/lib/ACIndex";
 import { Autocomplete } from "app/client/lib/autocomplete";
 import { makeT } from "app/client/lib/localization";
 import { DataRowModel } from "app/client/models/DataRowModel";
 import { reportError } from "app/client/models/errors";
+import { ikaDocReferenceLabel, IkaDocReferenceLookupContext } from "app/client/ui/IkaDocReferenceLabels";
 import { getIkaDocRuntimeConfig } from "app/client/ui/IkaDocRuntimeAccess";
 import { menuCssClass } from "app/client/ui2018/menus";
 import { FieldOptions } from "app/client/widgets/NewBaseEditor";
@@ -19,106 +15,90 @@ import {
   resolveIkaDocGuidedReferenceOptions,
   searchIkaDocGuidedReferenceOptions,
 } from "app/ikadoc/IkaDocReferenceLookup";
-import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 
 import { dom, Observable, styled } from "grainjs";
 
-const GUIDED_ROW_KEY_COLUMN = "ikadoc_row_key";
-const GUIDED_REFERENCE_LOOKUP_PAGE_SIZE = 20;
-const MAX_REFERENCE_LABEL_CACHE_SIZE = 2000;
 const t = makeT("IkaDocReferenceWidget");
 
-const referenceLabelCache = new Map<string, string>();
-const referenceLabelBatches = new Map<string, IkaDocReferenceResolveBatch>();
+/** Guided rows carry IkaDoc's key for the row; IkaDoc scopes some references by it. */
+const GUIDED_ROW_KEY_COLUMN = "ikadoc_row_key";
+const LOOKUP_PAGE_SIZE = 20;
 
-interface IkaDocReferenceAutocompleteItem {
+interface ReferenceItem {
   id: string;
   text: string;
   hint: string;
   cleanText: string;
 }
 
-interface IkaDocReferenceLookupContext {
-  tableId: string;
-  metadataCode: string;
-  rowKey?: string;
-}
-
-interface IkaDocReferenceResolveBatch {
-  config: IkaDocRuntimeConfig;
-  request: IkaDocReferenceLookupContext;
-  ids: Set<string>;
-  waiters: Map<
-    string,
-    {
-      resolve: (label: string) => void;
-      reject: (error: unknown) => void;
-    }[]
-  >;
-  scheduled: boolean;
-}
-
+/**
+ * An IkaDoc reference cell: stores the referenced record's id and shows its label. The lookup
+ * goes through IkaDoc, which only offers records the session may reference.
+ */
 export class IkaDocReferenceTextBox extends NTextBox {
   public buildDom(row: DataRowModel) {
     const value = row.cells[this.field.colId.peek()];
-    const resolvedLabel = Observable.create<string>(null, "");
-    const resolvedId = Observable.create<string>(null, "");
+
+    const shownId = Observable.create<string>(null, "");
+    const label = Observable.create<string>(null, "");
+
     return dom(
       "div.field_clip",
+      dom.autoDispose(shownId),
+      dom.autoDispose(label),
       dom.style("text-align", this.alignment),
       dom.cls("text_wrapping", this.wrapping),
       dom.domComputed((use) => {
         if (use(row._isAddRow) || this.isDisposed()) {
           return null;
         }
+
         const id = String(use(value) ?? "").trim();
-        if (!id) {
-          resolvedId.set("");
-          resolvedLabel.set("");
-          return "";
+
+        // The id shows until IkaDoc answers with its label.
+        if (use(shownId) !== id) {
+          shownId.set(id);
+          label.set(id);
+
+          if (id) {
+            this._resolveLabel(row, id, label).catch(reportError);
+          }
         }
-        if (use(resolvedId) !== id) {
-          resolvedId.set(id);
-          resolvedLabel.set(id);
-          this._resolveLabel(row, id, resolvedLabel).catch(reportError);
-        }
-        return use(resolvedLabel);
+
+        return use(label);
       }),
     );
   }
 
-  private async _resolveLabel(
-    row: DataRowModel,
-    id: string,
-    resolvedLabel: Observable<string>,
-  ): Promise<void> {
+  private async _resolveLabel(row: DataRowModel, id: string, label: Observable<string>): Promise<void> {
     const config = getIkaDocRuntimeConfig();
-    const request = lookupRequest(
-      this.field.tableId.peek(),
-      this.field.widgetOptionsJson.peek(),
-      row,
-    );
-    if (!config || !request) {
+    const rowKey = rowKeyValue(row.cells[GUIDED_ROW_KEY_COLUMN]?.peek());
+    const context = lookupContext(this.field.tableId.peek(), this.field.widgetOptionsJson.peek(), rowKey);
+    if (!config || !context) {
       return;
     }
-    const label = await cachedReferenceLabel(config, request, id);
+
+    const resolved = await ikaDocReferenceLabel(config, context, id);
     if (!this.isDisposed()) {
-      resolvedLabel.set(label);
+      label.set(resolved);
     }
   }
 }
 
+/** Edits an IkaDoc reference by searching IkaDoc's records by label; saves the chosen id. */
 export class IkaDocReferenceEditor extends NTextEditor {
-  private _autocomplete?: Autocomplete<IkaDocReferenceAutocompleteItem>;
-  private _resolvedOriginal?: IkaDocReferenceAutocompleteItem;
-  private _selected?: IkaDocReferenceAutocompleteItem;
+  private _autocomplete?: Autocomplete<ReferenceItem>;
+  private _original?: ReferenceItem;
+  private _selected?: ReferenceItem;
 
   constructor(options: FieldOptions) {
     super(options);
+
     if (!options.readonly) {
-      this.cellEditorDiv.classList.add(cssIkaDocReferenceEditor.className);
+      this.cellEditorDiv.classList.add(cssReferenceEditor.className);
     }
-    this._resolveInitialValue().catch(reportError);
+
+    this._showOriginalLabel().catch(reportError);
   }
 
   public attach(cellElem: Element): void {
@@ -126,20 +106,18 @@ export class IkaDocReferenceEditor extends NTextEditor {
     if (this.options.readonly) {
       return;
     }
-    this._autocomplete = this.autoDispose(
-      new Autocomplete<IkaDocReferenceAutocompleteItem>(this.textInput, {
-        menuCssClass: `${menuCssClass} ${cssIkaDocReferenceList.className}`,
-        buildNoItemsMessage: () =>
-          cssIkaDocReferenceMessage(t("No matching references")),
-        search: this._search.bind(this),
-        renderItem: this._renderItem.bind(this),
-        getItemText: item => item.text,
-        onClick: () => {
-          this._selected = this._autocomplete?.getSelectedItem();
-          this.options.commands.fieldEditSaveHere();
-        },
-      }),
-    );
+
+    this._autocomplete = this.autoDispose(new Autocomplete<ReferenceItem>(this.textInput, {
+      menuCssClass: `${menuCssClass} ${cssReferenceList.className}`,
+      buildNoItemsMessage: () => cssReferenceMessage(t("No matching references")),
+      search: this._search.bind(this),
+      renderItem: renderReferenceItem,
+      getItemText: item => item.text,
+      onClick: () => {
+        this._selected = this._autocomplete?.getSelectedItem();
+        this.options.commands.fieldEditSaveHere();
+      },
+    }));
   }
 
   public getCellValue(): CellValue {
@@ -147,295 +125,89 @@ export class IkaDocReferenceEditor extends NTextEditor {
     if (selected) {
       return selected.id;
     }
-    if (
-      this._resolvedOriginal &&
-      this.textInput.value === this._resolvedOriginal.text
-    ) {
+
+    // The label shown for the current id, left as is, keeps that id.
+    if (this._original && this.textInput.value === this._original.text) {
       return this.options.cellValue;
     }
+
     return super.getCellValue();
   }
 
-  private async _resolveInitialValue(): Promise<void> {
+  /** The editor opens on the stored id; it is replaced by its label once IkaDoc gives it. */
+  private async _showOriginalLabel(): Promise<void> {
     const id = String(this.options.cellValue ?? "").trim();
-    if (!id) {
-      return;
-    }
     const config = getIkaDocRuntimeConfig();
-    const request = this._lookupRequest();
-    if (!config || !request) {
+    const context = this._lookupContext();
+    if (!id || !config || !context) {
       return;
     }
-    const options = await resolveIkaDocGuidedReferenceOptions(config, {
-      tableId: request.tableId,
-      metadataCode: request.metadataCode,
-      rowKey: request.rowKey,
-      ids: [id],
-    });
-    const option = options[0];
+
+    const [option] = await resolveIkaDocGuidedReferenceOptions(config, { ...context, ids: [id] });
     if (!option || this.isDisposed()) {
       return;
     }
-    this._resolvedOriginal = toAutocompleteItem(option);
+
+    this._original = toReferenceItem(option);
+
     if (this.textInput.value === id) {
-      this.textInput.value = this._resolvedOriginal.text;
+      this.textInput.value = this._original.text;
       this.resizeInput();
     }
   }
 
-  private async _search(
-    text: string,
-  ): Promise<ACResults<IkaDocReferenceAutocompleteItem>> {
+  private async _search(text: string): Promise<ACResults<ReferenceItem>> {
     const config = getIkaDocRuntimeConfig();
-    const request = this._lookupRequest();
-    if (!config || !request) {
-      return emptyResults();
+    const context = this._lookupContext();
+    if (!config || !context) {
+      return { items: [], extraItems: [], highlightFunc: value => [value], selectIndex: -1 };
     }
+
     const options = await searchIkaDocGuidedReferenceOptions(config, {
-      ...request,
+      ...context,
       query: text,
-      pageSize: GUIDED_REFERENCE_LOOKUP_PAGE_SIZE,
+      pageSize: LOOKUP_PAGE_SIZE,
     });
+
     return {
-      items: options.map(toAutocompleteItem),
+      items: options.map(toReferenceItem),
       extraItems: [],
-      highlightFunc: highlightText(text),
+      highlightFunc: highlightMatch(text),
       selectIndex: options.length > 0 ? 0 : -1,
     };
   }
 
-  private _renderItem(
-    item: IkaDocReferenceAutocompleteItem,
-    highlightFunc: HighlightFunc,
-  ): HTMLElement {
-    return cssIkaDocReferenceItem(
-      cssIkaDocReferenceLabel(
-        buildHighlightedDom(item.text, highlightFunc, cssIkaDocReferenceMatch),
-      ),
-      dom.maybe(item.hint.length > 0, () => cssIkaDocReferenceHint(item.hint)),
-    );
-  }
+  private _lookupContext(): IkaDocReferenceLookupContext | undefined {
+    const { field, gristDoc, rowId } = this.options;
+    const tableId = field.tableId.peek();
 
-  private _lookupRequest(): IkaDocReferenceLookupContext | undefined {
-    const request = lookupRequest(
-      this.options.field.tableId.peek(),
-      this.options.field.widgetOptionsJson.peek(),
-      undefined,
-      this.options,
-    );
-    if (!request) {
-      return undefined;
-    }
-    return request;
+    const rowKey = rowKeyValue(gristDoc.docData.getTable(tableId)?.getValue(rowId, GUIDED_ROW_KEY_COLUMN));
+
+    return lookupContext(tableId, field.widgetOptionsJson.peek(), rowKey);
   }
 }
 
-export class IkaDocJsonTextBox extends NTextBox {
-  public buildDom(row: DataRowModel) {
-    const value = row.cells[this.field.colId.peek()];
-    return dom(
-      "div.field_clip",
-      dom.style("text-align", this.alignment),
-      dom.cls("text_wrapping", this.wrapping),
-      dom.domComputed((use) => {
-        if (use(row._isAddRow) || this.isDisposed()) {
-          return null;
-        }
-        return formatJsonCellValue(use(value));
-      }),
-    );
-  }
-}
-
-export class IkaDocJsonEditor extends NTextEditor {
-  constructor(options: FieldOptions) {
-    super({ ...options, readonly: true });
-  }
-}
-
-function lookupRequest(
+/** The lookup context of a reference column; undefined when it names no IkaDoc metadata. */
+function lookupContext(
   tableId: string,
-  options: Record<string, unknown>,
-  row?: DataRowModel,
-  fieldOptions?: FieldOptions,
+  widgetOptions: Record<string, unknown>,
+  rowKey: string | undefined,
 ): IkaDocReferenceLookupContext | undefined {
-  const metadataCode =
-    typeof options.metadataCode === "string" ? options.metadataCode : "";
-  if (!tableId || !metadataCode) {
+  const metadataCode = widgetOptions.metadataCode;
+  if (!tableId || typeof metadataCode !== "string" || !metadataCode) {
     return undefined;
   }
-  const rowKey = row ?
-    readRowKeyFromRow(row) :
-    readRowKeyFromFieldOptions(fieldOptions, tableId);
+
   return rowKey ? { tableId, metadataCode, rowKey } : { tableId, metadataCode };
 }
 
-async function cachedReferenceLabel(
-  config: IkaDocRuntimeConfig,
-  request: IkaDocReferenceLookupContext,
-  id: string,
-): Promise<string> {
-  const cacheKey = referenceLabelCacheKey(config, request, id);
-  const cached = referenceLabelCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-  return queueReferenceLabelResolve(config, request, id);
-}
-
-function queueReferenceLabelResolve(
-  config: IkaDocRuntimeConfig,
-  request: IkaDocReferenceLookupContext,
-  id: string,
-): Promise<string> {
-  const batchKey = referenceLookupContextKey(config, request);
-  let batch = referenceLabelBatches.get(batchKey);
-  if (!batch) {
-    batch = {
-      config,
-      request,
-      ids: new Set<string>(),
-      waiters: new Map<
-        string,
-        {
-          resolve: (label: string) => void;
-          reject: (error: unknown) => void;
-        }[]
-      >(),
-      scheduled: false,
-    };
-    referenceLabelBatches.set(batchKey, batch);
-  }
-  batch.ids.add(id);
-  const pending = new Promise<string>((resolve, reject) => {
-    const waiters = batch.waiters.get(id) ?? [];
-    waiters.push({ resolve, reject });
-    batch.waiters.set(id, waiters);
-  });
-  if (!batch.scheduled) {
-    batch.scheduled = true;
-    window.setTimeout(() => flushReferenceLabelBatch(batchKey), 0);
-  }
-  return pending;
-}
-
-async function flushReferenceLabelBatch(batchKey: string): Promise<void> {
-  const batch = referenceLabelBatches.get(batchKey);
-  if (!batch) {
-    return;
-  }
-  referenceLabelBatches.delete(batchKey);
-  const ids = [...batch.ids];
-  try {
-    const options = await resolveIkaDocGuidedReferenceOptions(batch.config, {
-      ...batch.request,
-      ids,
-    });
-    const labels = new Map(options.map(option => [option.id, option.label]));
-    for (const id of ids) {
-      const label = labels.get(id) ?? id;
-      rememberReferenceLabel(
-        referenceLabelCacheKey(batch.config, batch.request, id),
-        label,
-      );
-      resolveReferenceWaiters(batch, id, label);
-    }
-  } catch (error) {
-    for (const id of ids) {
-      rejectReferenceWaiters(batch, id, error);
-    }
-  }
-}
-
-function rememberReferenceLabel(cacheKey: string, label: string): void {
-  referenceLabelCache.set(cacheKey, label);
-  if (referenceLabelCache.size <= MAX_REFERENCE_LABEL_CACHE_SIZE) {
-    return;
-  }
-  const oldestKey = referenceLabelCache.keys().next().value;
-  if (oldestKey) {
-    referenceLabelCache.delete(oldestKey);
-  }
-}
-
-function resolveReferenceWaiters(
-  batch: IkaDocReferenceResolveBatch,
-  id: string,
-  label: string,
-): void {
-  for (const waiter of batch.waiters.get(id) ?? []) {
-    waiter.resolve(label);
-  }
-}
-
-function rejectReferenceWaiters(
-  batch: IkaDocReferenceResolveBatch,
-  id: string,
-  error: unknown,
-): void {
-  for (const waiter of batch.waiters.get(id) ?? []) {
-    waiter.reject(error);
-  }
-}
-
-function referenceLookupContextKey(
-  config: IkaDocRuntimeConfig,
-  request: IkaDocReferenceLookupContext,
-): string {
-  return [
-    config.sessionId,
-    request.tableId,
-    request.metadataCode,
-    request.rowKey ?? "",
-  ].join("|");
-}
-
-function referenceLabelCacheKey(
-  config: IkaDocRuntimeConfig,
-  request: IkaDocReferenceLookupContext,
-  id: string,
-): string {
-  return [referenceLookupContextKey(config, request), id].join("|");
-}
-
-function readRowKeyFromRow(row: DataRowModel): string | undefined {
-  const value = row.cells[GUIDED_ROW_KEY_COLUMN]?.peek();
+function rowKeyValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function readRowKeyFromFieldOptions(
-  options: FieldOptions | undefined,
-  tableId: string,
-): string | undefined {
-  if (!options) {
-    return undefined;
-  }
-  const value = options.gristDoc.docData
-    .getTable(tableId)
-    ?.getValue(options.rowId, GUIDED_ROW_KEY_COLUMN);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
+function toReferenceItem(option: IkaDocReferenceLookupOption): ReferenceItem {
+  const hint = [option.secondaryLabel, option.contextLabel].filter(Boolean).join(" - ");
 
-function formatJsonCellValue(value: CellValue): string {
-  if (value === null || value === undefined || value === "") {
-    return "";
-  }
-  if (typeof value !== "string") {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
-
-function toAutocompleteItem(
-  option: IkaDocReferenceLookupOption,
-): IkaDocReferenceAutocompleteItem {
-  const hint = [option.secondaryLabel, option.contextLabel]
-    .filter(Boolean)
-    .join(" - ");
   return {
     id: option.id,
     text: option.label,
@@ -444,92 +216,66 @@ function toAutocompleteItem(
   };
 }
 
-function emptyResults(): ACResults<IkaDocReferenceAutocompleteItem> {
-  return {
-    items: [],
-    extraItems: [],
-    highlightFunc: text => [text],
-    selectIndex: -1,
-  };
+function renderReferenceItem(item: ReferenceItem, highlightFunc: HighlightFunc): HTMLElement {
+  return cssReferenceItem(
+    cssReferenceLabel(buildHighlightedDom(item.text, highlightFunc, cssReferenceMatch)),
+    item.hint ? cssReferenceHint(item.hint) : null,
+  );
 }
 
-function highlightText(searchText: string): HighlightFunc {
+/** Highlights the first match of [searchText], ignoring case and accents. */
+function highlightMatch(searchText: string): HighlightFunc {
   const normalized = normalizeText(searchText);
-  if (!normalized) {
-    return text => [text];
-  }
+
   return (text) => {
-    const index = normalizeText(text).indexOf(normalized);
+    const index = normalized ? normalizeText(text).indexOf(normalized) : -1;
     if (index < 0) {
       return [text];
     }
-    return [
-      text.slice(0, index),
-      text.slice(index, index + searchText.length),
-      text.slice(index + searchText.length),
-    ];
+
+    const end = index + searchText.length;
+    return [text.slice(0, index), text.slice(index, end), text.slice(end)];
   };
 }
 
-const cssIkaDocReferenceEditor = styled(
-  "div",
-  `
+const cssReferenceEditor = styled("div", `
   & > .celleditor_text_editor, & > .celleditor_content_measure {
     padding-left: 8px;
   }
-`,
-);
+`);
 
-const cssIkaDocReferenceList = styled(
-  "div",
-  `
+const cssReferenceList = styled("div", `
   z-index: 1001;
   overflow-y: auto;
   padding: 4px 0;
-`,
-);
+`);
 
-const cssIkaDocReferenceItem = styled(
-  "li",
-  `
+const cssReferenceItem = styled("li", `
   display: block;
   padding: 8px 12px;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-`,
-);
+`);
 
-const cssIkaDocReferenceLabel = styled(
-  "div",
-  `
+const cssReferenceLabel = styled("div", `
   overflow: hidden;
   text-overflow: ellipsis;
-`,
-);
+`);
 
-const cssIkaDocReferenceHint = styled(
-  "div",
-  `
+const cssReferenceHint = styled("div", `
   opacity: 0.72;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
-`,
-);
+`);
 
-const cssIkaDocReferenceMatch = styled(
-  "span",
-  `
+const cssReferenceMatch = styled("span", `
   font-weight: 600;
-`,
-);
+`);
 
-const cssIkaDocReferenceMessage = styled(
-  "div",
-  `
+const cssReferenceMessage = styled("div", `
   padding: 8px 12px;
   opacity: 0.72;
-`,
-);
+`);

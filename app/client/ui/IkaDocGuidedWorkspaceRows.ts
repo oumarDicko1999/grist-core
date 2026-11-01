@@ -1,49 +1,30 @@
 import { GristDoc } from "app/client/components/GristDoc";
 import { makeT } from "app/client/lib/localization";
 import { getIkaDocRuntimeConfig } from "app/client/ui/IkaDocRuntimeAccess";
-import {
-  IkaDocGuidedWorkspaceDescriptor,
-  IkaDocGuidedWorkspaceResult,
-} from "app/ikadoc/IkaDocGuidedWorkspace";
+import { IkaDocGuidedWorkspaceDescriptor } from "app/ikadoc/IkaDocGuidedWorkspace";
 import { IkaDocRequestError, requestIkaDocJson } from "app/ikadoc/IkaDocRequest";
 
 import type { BulkColValues, UserAction } from "app/common/DocActions";
 import type { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
 
+const t = makeT("IkaDocGuidedWorkspaceRows");
+
+/** IkaDoc's key for a guided row; rows without one have not been admitted yet. */
+const GUIDED_ROW_KEY_COLUMN = "ikadoc_row_key";
+
+/** A row key IkaDoc issued, with the protected values (key, state...) the row must carry. */
 export interface GuidedWorkspaceAllocatedRow {
   rowKey: string;
   protectedValues: Record<string, string>;
 }
 
+/** The same, for a row that already exists in Grist. */
 export interface GuidedWorkspaceAdmittedRow extends GuidedWorkspaceAllocatedRow {
   rowId: number;
 }
 
-interface GuidedWorkspaceRowsResponse {
-  rows: GuidedWorkspaceAllocatedRow[];
-}
-
-interface GuidedWorkspaceAdmissionResponse {
-  rows: GuidedWorkspaceAdmittedRow[];
-}
-
-const GUIDED_ROW_KEY_COLUMN = "ikadoc_row_key";
-const GUIDED_ROW_STATE_COLUMN = "ikadoc_row_state";
-const GUIDED_ROW_STATE_VALIDATED = "validated";
-const GUIDED_ROW_STATE_APPLIED = "applied";
-const GUIDED_ROW_STATE_CONFLICT = "conflict";
-
-type GuidedWorkspaceRowStateOperation = "validate" | "apply";
-type GuidedWorkspaceRowStateAction = [
-  "BulkUpdateRecord",
-  string,
-  number[],
-  Record<string, string[]>,
-];
-type GuidedWorkspaceAdmissionAction = GuidedWorkspaceRowStateAction;
-type GuidedWorkspaceRowIdsByTable = (tableId: string) => readonly number[];
-
-const t = makeT("IkaDocGuidedWorkspaceRows");
+type GuidedRowsConfig = IkaDocRuntimeConfig &
+  Required<Pick<IkaDocRuntimeConfig, "guidedWorkspace" | "guidedWorkspaceUrls">>;
 
 /** Why a guided-workspace row step failed; kept for tests and logs, never shown. */
 export type IkaDocGuidedWorkspaceRowsFailure =
@@ -61,139 +42,12 @@ export class IkaDocGuidedWorkspaceRowsError extends Error {
     public readonly failure: IkaDocGuidedWorkspaceRowsFailure,
     public readonly detail: string,
   ) {
-    super(guidedRowsErrorMessage(failure));
+    super(failure === "misaligned-paste" ?
+      t("The pasted values do not line up with the rows being added. Paste them again.") :
+      t("IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing."));
 
     this.name = "IkaDocGuidedWorkspaceRowsError";
   }
-}
-
-function guidedRowsErrorMessage(failure: IkaDocGuidedWorkspaceRowsFailure): string {
-  if (failure === "misaligned-paste") {
-    return t("The pasted values do not line up with the rows being added. Paste them again.");
-  }
-
-  return t("IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.");
-}
-
-export function isGuidedWorkspaceTable(tableId: string): boolean {
-  const config = getIkaDocRuntimeConfig();
-  if (!canUseGuidedWorkspaceRows(config)) {
-    return false;
-  }
-  return config.guidedWorkspace.tableBindings.some(
-    binding => binding.tableId === tableId,
-  );
-}
-
-export async function allocateGuidedWorkspaceRows(
-  tableId: string,
-  count: number,
-): Promise<GuidedWorkspaceAllocatedRow[] | null> {
-  const config = getIkaDocRuntimeConfig();
-  if (
-    !canUseGuidedWorkspaceRows(config) ||
-    !isBoundGuidedTable(config, tableId)
-  ) {
-    return null;
-  }
-
-  const response = await requestGuidedWorkspaceRows(
-    config,
-    config.guidedWorkspaceUrls.allocateRowsUrl,
-    { tableId, count },
-  );
-  return response.rows;
-}
-
-export async function admitExistingGuidedWorkspaceRows(
-  gristDoc: GristDoc,
-  descriptor: IkaDocGuidedWorkspaceDescriptor,
-  description: string,
-): Promise<void> {
-  const config = getIkaDocRuntimeConfig();
-  if (!canUseGuidedWorkspaceRows(config)) {
-    return;
-  }
-
-  for (const table of descriptor.tables) {
-    if (!isBoundGuidedTable(config, table.tableId)) {
-      continue;
-    }
-    const tableData = gristDoc.docData.getTable(table.tableId);
-    if (!tableData) {
-      continue;
-    }
-    const rowIds = missingGuidedRowKeyIds(tableData);
-    if (rowIds.length === 0) {
-      continue;
-    }
-    const admission = await requestGuidedWorkspaceAdmission(
-      config,
-      table.tableId,
-      rowIds,
-    );
-    const actions = buildGuidedWorkspaceAdmissionActions(
-      table.tableId,
-      admission.rows,
-    );
-    if (actions.length > 0) {
-      await gristDoc.docData.sendActions(actions, description);
-    }
-  }
-}
-
-export function buildGuidedWorkspaceAdmissionActions(
-  tableId: string,
-  admittedRows: readonly GuidedWorkspaceAdmittedRow[],
-): GuidedWorkspaceAdmissionAction[] {
-  if (admittedRows.length === 0) {
-    return [];
-  }
-  const rowIds = admittedRows.map(row => row.rowId);
-  const values: Record<string, string[]> = {};
-  for (const columnId of protectedColumnIds(admittedRows)) {
-    values[columnId] = admittedRows.map(row => row.protectedValues[columnId]);
-  }
-  return [["BulkUpdateRecord", tableId, rowIds, values]];
-}
-
-export function mergeGuidedWorkspaceProtectedValues(
-  bulkUpdate: BulkColValues,
-  allocatedRows: readonly GuidedWorkspaceAllocatedRow[],
-): BulkColValues {
-  if (allocatedRows.length === 0) {
-    return bulkUpdate;
-  }
-
-  ensureProtectedRowValuesMatchAddedRows(bulkUpdate, allocatedRows.length);
-
-  const merged: BulkColValues = { ...bulkUpdate };
-  for (const columnId of protectedColumnIds(allocatedRows)) {
-    merged[columnId] = allocatedRows.map(
-      row => row.protectedValues[columnId],
-    );
-  }
-  return merged;
-}
-
-export function addGuidedWorkspaceProtectedValues(
-  values: Record<string, unknown>,
-  allocatedRow: GuidedWorkspaceAllocatedRow,
-): Record<string, unknown> {
-  return { ...values, ...allocatedRow.protectedValues };
-}
-
-export function requireGuidedWorkspaceAllocatedRows(
-  rows: readonly GuidedWorkspaceAllocatedRow[] | null,
-  expectedCount: number,
-): readonly GuidedWorkspaceAllocatedRow[] | null {
-  if (rows && rows.length !== expectedCount) {
-    throw new IkaDocGuidedWorkspaceRowsError(
-      "unexpected-row-count",
-      `allocated ${rows.length} rows, expected ${expectedCount}`,
-    );
-  }
-  return rows;
 }
 
 /**
@@ -204,301 +58,193 @@ export async function ikaDocNewRowValues(
   tableId: string,
   values: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const allocatedRows = requireGuidedWorkspaceAllocatedRows(
-    await allocateGuidedWorkspaceRows(tableId, 1),
-    1,
-  );
+  const allocated = await allocateGuidedWorkspaceRows(tableId, 1);
 
-  if (!allocatedRows) {
-    return values;
-  }
-
-  return addGuidedWorkspaceProtectedValues(values, allocatedRows[0]);
-}
-
-/** Adds IkaDoc's protected values to the rows a paste adds to a guided workspace table. */
-export async function ikaDocPastedRowValues(
-  tableId: string,
-  values: BulkColValues,
-  addedRowCount: number,
-): Promise<BulkColValues> {
-  const allocatedRows = requireGuidedWorkspaceAllocatedRows(
-    await allocateGuidedWorkspaceRows(tableId, addedRowCount),
-    addedRowCount,
-  );
-
-  if (!allocatedRows) {
-    return values;
-  }
-
-  return mergeGuidedWorkspaceProtectedValues(values, allocatedRows);
+  return allocated ? { ...values, ...allocated[0].protectedValues } : values;
 }
 
 /**
  * Seam for Grist's paste (GridView).
  * Only `BulkAddRecord` actions change, and only for guided workspace tables.
  */
-export async function ikaDocPasteActions(
-  tableId: string,
-  actions: UserAction[],
-): Promise<UserAction[]> {
+export async function ikaDocPasteActions(tableId: string, actions: UserAction[]): Promise<UserAction[]> {
   return Promise.all(actions.map(async (action) => {
     if (action[0] !== "BulkAddRecord") {
       return action;
     }
 
     const [name, rowIds, values] = action as [string, unknown[], BulkColValues];
-    const valuesWithProtection = await ikaDocPastedRowValues(tableId, values, rowIds.length);
+    const allocated = await allocateGuidedWorkspaceRows(tableId, rowIds.length);
 
-    return [name, rowIds, valuesWithProtection];
+    return allocated ? [name, rowIds, mergeGuidedWorkspaceProtectedValues(values, allocated)] : action;
   }));
 }
 
-export async function updateGuidedWorkspaceRowStates(
+/** Row keys for [count] new rows of a guided table; null when [tableId] is not one. */
+export async function allocateGuidedWorkspaceRows(
+  tableId: string,
+  count: number,
+): Promise<GuidedWorkspaceAllocatedRow[] | null> {
+  const config = guidedRowsConfig();
+  if (!config || !isBoundTable(config, tableId)) {
+    return null;
+  }
+
+  const rows = await requestRows(config, config.guidedWorkspaceUrls.allocateRowsUrl, { tableId, count });
+
+  return requireGuidedWorkspaceAllocatedRows(rows.map(parseAllocatedRow), count);
+}
+
+export function requireGuidedWorkspaceAllocatedRows(
+  rows: GuidedWorkspaceAllocatedRow[],
+  expectedCount: number,
+): GuidedWorkspaceAllocatedRow[] {
+  if (rows.length !== expectedCount) {
+    throw new IkaDocGuidedWorkspaceRowsError(
+      "unexpected-row-count",
+      `allocated ${rows.length} rows, expected ${expectedCount}`,
+    );
+  }
+
+  return rows;
+}
+
+/**
+ * Gives a row key to the rows of the guided tables that have none yet (rows the user typed
+ * before IkaDoc knew the table), one table at a time: a later failure keeps earlier tables' keys.
+ */
+export async function admitExistingGuidedWorkspaceRows(
   gristDoc: GristDoc,
   descriptor: IkaDocGuidedWorkspaceDescriptor,
-  result: IkaDocGuidedWorkspaceResult,
-  operation: GuidedWorkspaceRowStateOperation,
   description: string,
 ): Promise<void> {
-  const actions = buildGuidedWorkspaceRowStateActions(
-    descriptor,
-    result,
-    operation,
-    (tableId) => {
-      const tableData = gristDoc.docData.getTable(tableId);
-      return tableData ? (tableData.getRowIds() as number[]) : [];
-    },
-  );
-  if (actions.length === 0) {
+  const config = guidedRowsConfig();
+  if (!config) {
     return;
   }
-  await gristDoc.docData.sendActions(actions, description);
+
+  for (const { tableId } of descriptor.tables) {
+    const tableData = gristDoc.docData.getTable(tableId);
+    if (!tableData || !isBoundTable(config, tableId)) {
+      continue;
+    }
+
+    const rowIds = tableData.getRowIds().filter((rowId) => {
+      const rowKey = tableData.getValue(rowId, GUIDED_ROW_KEY_COLUMN);
+      return rowId > 0 && !(typeof rowKey === "string" && rowKey.trim());
+    });
+    if (rowIds.length === 0) {
+      continue;
+    }
+
+    const rows = await requestRows(config, config.guidedWorkspaceUrls.admitRowsUrl, { tableId, rowIds });
+    const actions = buildGuidedWorkspaceAdmissionActions(tableId, rows.map(parseAdmittedRow));
+
+    if (actions.length > 0) {
+      await gristDoc.docData.sendActions(actions, description);
+    }
+  }
 }
 
-export function buildGuidedWorkspaceRowStateActions(
-  descriptor: IkaDocGuidedWorkspaceDescriptor,
-  result: IkaDocGuidedWorkspaceResult,
-  operation: GuidedWorkspaceRowStateOperation,
-  rowIdsByTable: GuidedWorkspaceRowIdsByTable,
-): GuidedWorkspaceRowStateAction[] {
-  if (hasUnlocatedGuidedWorkspaceErrors(result)) {
+export function buildGuidedWorkspaceAdmissionActions(
+  tableId: string,
+  admittedRows: readonly GuidedWorkspaceAdmittedRow[],
+): UserAction[] {
+  if (admittedRows.length === 0) {
     return [];
   }
-  const conflictedRows = guidedWorkspaceConflictedRows(result);
-  return descriptor.tables.flatMap((table) => {
-    const rowIds = [...rowIdsByTable(table.tableId)];
-    if (rowIds.length === 0) {
-      return [];
-    }
-    const states = rowIds.map((rowId) => {
-      if (conflictedRows.has(rowStateKey(table.tableId, rowId))) {
-        return GUIDED_ROW_STATE_CONFLICT;
-      }
-      if (operation === "apply" && result.success) {
-        return GUIDED_ROW_STATE_APPLIED;
-      }
-      return GUIDED_ROW_STATE_VALIDATED;
-    });
-    return [
-      [
-        "BulkUpdateRecord",
-        table.tableId,
-        rowIds,
-        { [GUIDED_ROW_STATE_COLUMN]: states },
-      ],
-    ];
-  });
-}
 
-function hasUnlocatedGuidedWorkspaceErrors(
-  result: IkaDocGuidedWorkspaceResult,
-): boolean {
-  return result.errors.some(error => !error.tableId || !error.gristRowId);
-}
+  const rowIds = admittedRows.map(row => row.rowId);
 
-function guidedWorkspaceConflictedRows(
-  result: IkaDocGuidedWorkspaceResult,
-): Set<string> {
-  const conflicted = new Set<string>();
-  for (const issue of [...result.errors, ...result.warnings]) {
-    if (issue.tableId && issue.gristRowId) {
-      conflicted.add(rowStateKey(issue.tableId, issue.gristRowId));
-    }
+  const values: Record<string, string[]> = {};
+  for (const columnId of protectedColumnIds(admittedRows)) {
+    values[columnId] = admittedRows.map(row => row.protectedValues[columnId]);
   }
-  for (const conflict of result.conflicts) {
-    if (conflict.tableId && conflict.gristRowId) {
-      conflicted.add(rowStateKey(conflict.tableId, conflict.gristRowId));
-    }
+
+  return [["BulkUpdateRecord", tableId, rowIds, values]];
+}
+
+/** Adds the protected values to a paste's added rows; the pasted columns must cover every row. */
+export function mergeGuidedWorkspaceProtectedValues(
+  values: BulkColValues,
+  allocatedRows: readonly GuidedWorkspaceAllocatedRow[],
+): BulkColValues {
+  if (allocatedRows.length === 0) {
+    return values;
   }
-  return conflicted;
+
+  if (Object.values(values).some(column => column.length !== allocatedRows.length)) {
+    throw new IkaDocGuidedWorkspaceRowsError("misaligned-paste", "paste values are not aligned");
+  }
+
+  const merged: BulkColValues = { ...values };
+  for (const columnId of protectedColumnIds(allocatedRows)) {
+    merged[columnId] = allocatedRows.map(row => row.protectedValues[columnId]);
+  }
+
+  return merged;
 }
 
-function rowStateKey(tableId: string, rowId: number): string {
-  return `${tableId}\u0000${rowId}`;
-}
+/** The config when this editor session may add guided rows; null otherwise. */
+function guidedRowsConfig(): GuidedRowsConfig | null {
+  // The page config carries the guided workspace fields the owned config type declares.
+  const config: IkaDocRuntimeConfig | null = getIkaDocRuntimeConfig();
 
-function canUseGuidedWorkspaceRows(
-  config: IkaDocRuntimeConfig | null,
-): config is IkaDocRuntimeConfig &
-Required<
-  Pick<IkaDocRuntimeConfig, "guidedWorkspace" | "guidedWorkspaceUrls">
-> {
-  return Boolean(
-    config?.mode === "editor" &&
+  const canAddRows = config?.mode === "editor" &&
     config.capabilities.canEditCells &&
     config.guidedWorkspace &&
-    config.guidedWorkspaceUrls,
-  );
+    config.guidedWorkspaceUrls;
+
+  return canAddRows ? config as GuidedRowsConfig : null;
 }
 
-function isBoundGuidedTable(
-  config: IkaDocRuntimeConfig &
-    Required<Pick<IkaDocRuntimeConfig, "guidedWorkspace">>,
-  tableId: string,
-): boolean {
-  return config.guidedWorkspace.tableBindings.some(
-    binding => binding.tableId === tableId,
-  );
+function isBoundTable(config: GuidedRowsConfig, tableId: string): boolean {
+  return config.guidedWorkspace.tableBindings.some(binding => binding.tableId === tableId);
 }
 
-async function requestGuidedWorkspaceRows(
-  config: IkaDocRuntimeConfig,
-  url: string,
-  body: Record<string, unknown>,
-): Promise<GuidedWorkspaceRowsResponse> {
+/** Posts to an IkaDoc row endpoint; IkaDoc's own error text never reaches the browser. */
+async function requestRows(config: GuidedRowsConfig, url: string, body: Record<string, unknown>): Promise<unknown[]> {
   const payload = await requestIkaDocJson(config, url, { method: "POST", body }).catch((error) => {
     const status = error instanceof IkaDocRequestError ? `HTTP ${error.status}` : String(error);
     throw new IkaDocGuidedWorkspaceRowsError("request-failed", status);
   });
 
-  return parseGuidedWorkspaceRowsResponse(payload);
-}
-
-async function requestGuidedWorkspaceAdmission(
-  config: IkaDocRuntimeConfig &
-    Required<Pick<IkaDocRuntimeConfig, "guidedWorkspaceUrls">>,
-  tableId: string,
-  rowIds: readonly number[],
-): Promise<GuidedWorkspaceAdmissionResponse> {
-  const response = await requestGuidedWorkspaceRows(
-    config,
-    config.guidedWorkspaceUrls.admitRowsUrl,
-    { tableId, rowIds },
-  );
-  return { rows: response.rows.map(parseGuidedWorkspaceAdmittedRow) };
-}
-
-function parseGuidedWorkspaceRowsResponse(
-  payload: unknown,
-): GuidedWorkspaceRowsResponse {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "row response is malformed");
-  }
-  const rows = (payload as Record<string, unknown>).rows;
+  const rows = isObject(payload) ? payload.rows : undefined;
   if (!Array.isArray(rows)) {
     throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "row response is missing rows");
   }
-  return { rows: rows.map(parseGuidedWorkspaceAllocatedRow) };
+
+  return rows;
 }
 
-function parseGuidedWorkspaceAllocatedRow(
-  row: unknown,
-): GuidedWorkspaceAllocatedRow {
-  if (!row || typeof row !== "object" || Array.isArray(row)) {
-    throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "row entry is malformed");
-  }
-  const raw = row as Record<string, unknown>;
-  if (typeof raw.rowKey !== "string" || raw.rowKey.length === 0) {
+function parseAllocatedRow(row: unknown): GuidedWorkspaceAllocatedRow {
+  if (!isObject(row) || typeof row.rowKey !== "string" || !row.rowKey) {
     throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "row entry is missing row key");
   }
-  if (
-    !raw.protectedValues ||
-    typeof raw.protectedValues !== "object" ||
-    Array.isArray(raw.protectedValues)
-  ) {
-    throw new IkaDocGuidedWorkspaceRowsError(
-      "malformed-response",
-      "row entry is missing protected values",
-    );
+
+  const protectedValues = row.protectedValues;
+  if (!isObject(protectedValues) || Object.values(protectedValues).some(value => typeof value !== "string")) {
+    throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "row entry is missing protected values");
   }
-  const protectedValues: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw.protectedValues)) {
-    if (typeof value !== "string") {
-      throw new IkaDocGuidedWorkspaceRowsError(
-        "malformed-response",
-        "protected value is malformed",
-      );
-    }
-    protectedValues[key] = value;
-  }
-  const parsed: GuidedWorkspaceAllocatedRow & { rowId?: number } = {
-    rowKey: raw.rowKey,
-    protectedValues,
-  };
-  if (typeof raw.rowId === "number") {
-    parsed.rowId = raw.rowId;
-  }
-  return parsed;
+
+  return { rowKey: row.rowKey, protectedValues: protectedValues as Record<string, string> };
 }
 
-function parseGuidedWorkspaceAdmittedRow(
-  row: GuidedWorkspaceAllocatedRow,
-): GuidedWorkspaceAdmittedRow {
-  const raw = row as GuidedWorkspaceAllocatedRow & { rowId?: unknown };
-  if (
-    typeof raw.rowId !== "number" ||
-    !Number.isInteger(raw.rowId) ||
-    raw.rowId <= 0
-  ) {
-    throw new IkaDocGuidedWorkspaceRowsError(
-      "malformed-response",
-      "admitted row entry is missing row id",
-    );
+function parseAdmittedRow(row: unknown): GuidedWorkspaceAdmittedRow {
+  const allocated = parseAllocatedRow(row);
+
+  const rowId = (row as Record<string, unknown>).rowId;
+  if (typeof rowId !== "number" || !Number.isInteger(rowId) || rowId <= 0) {
+    throw new IkaDocGuidedWorkspaceRowsError("malformed-response", "admitted row entry is missing row id");
   }
-  return {
-    rowId: raw.rowId,
-    rowKey: row.rowKey,
-    protectedValues: row.protectedValues,
-  };
+
+  return { ...allocated, rowId };
 }
 
-function missingGuidedRowKeyIds(tableData: {
-  getRowIds(): readonly number[];
-  getValue(rowId: number, colId: string): unknown;
-}): number[] {
-  return tableData
-    .getRowIds()
-    .filter(
-      rowId =>
-        rowId > 0 &&
-        !hasGuidedRowKey(tableData.getValue(rowId, GUIDED_ROW_KEY_COLUMN)),
-    );
+function protectedColumnIds(rows: readonly GuidedWorkspaceAllocatedRow[]): string[] {
+  return [...new Set(rows.flatMap(row => Object.keys(row.protectedValues)))];
 }
 
-function hasGuidedRowKey(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function ensureProtectedRowValuesMatchAddedRows(
-  bulkUpdate: BulkColValues,
-  addedRowCount: number,
-): void {
-  for (const values of Object.values(bulkUpdate)) {
-    if (values.length !== addedRowCount) {
-      throw new IkaDocGuidedWorkspaceRowsError("misaligned-paste", "paste values are not aligned");
-    }
-  }
-}
-
-function protectedColumnIds(
-  rows: readonly GuidedWorkspaceAllocatedRow[],
-): string[] {
-  const ids = new Set<string>();
-  for (const row of rows) {
-    for (const columnId of Object.keys(row.protectedValues)) {
-      ids.add(columnId);
-    }
-  }
-  return [...ids];
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -444,7 +444,7 @@ describe("IkaDoc client seams", function() {
   });
 
   it("keeps IkaDoc JSON metadata text-backed and read-only", function() {
-    const widget = readSource("app/client/ui/IkaDocReferenceWidget.ts");
+    const widget = readSource("app/client/ui/IkaDocJsonWidget.ts");
     const userType = readSource("app/client/widgets/UserType.ts");
     const userTypeImpl = readSource("app/client/widgets/UserTypeImpl.ts");
 

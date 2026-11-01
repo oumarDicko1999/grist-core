@@ -1,9 +1,5 @@
-import {
-  IkaDocJsonEditor,
-  IkaDocJsonTextBox,
-  IkaDocReferenceEditor,
-  IkaDocReferenceTextBox,
-} from "app/client/ui/IkaDocReferenceWidget";
+import { IkaDocJsonEditor, IkaDocJsonTextBox } from "app/client/ui/IkaDocJsonWidget";
+import { IkaDocReferenceEditor, IkaDocReferenceTextBox } from "app/client/ui/IkaDocReferenceWidget";
 import { AttachmentsEditor } from "app/client/widgets/AttachmentsEditor";
 import { AttachmentsWidget } from "app/client/widgets/AttachmentsWidget";
 import CheckBoxEditor from "app/client/widgets/CheckBoxEditor";
