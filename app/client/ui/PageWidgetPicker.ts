@@ -10,6 +10,10 @@ import { focusAdjacentFocusable, kbFocusHighlighterClass, trapTabKey } from "app
 import { makeT } from "app/client/lib/localization";
 import { reportError } from "app/client/models/AppModel";
 import { ColumnRec, TableRec, ViewSectionRec } from "app/client/models/DocModel";
+import {
+  canCreateIkaDocRuntimeCharts,
+  canUseIkaDocRuntimeCustomWidgets,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { linkId, NoLink } from "app/client/ui/selectBy";
 import { overflowTooltip, withInfoTooltip } from "app/client/ui/tooltips";
 import { getWidgetTypes } from "app/client/ui/widgetTypesMap";
@@ -131,7 +135,21 @@ function getCompatibleTypes(tableId: TableRef,
     // The type 'chart' makes little sense when creating a new table.
     compatibleTypes = ["record", "single", "detail", "form"];
   }
-  return summarize ? compatibleTypes.filter(el => isSummaryCompatible(el)) : compatibleTypes;
+  const permittedTypes = filterIkaDocWidgetTypes(compatibleTypes);
+  return summarize ? permittedTypes.filter(el => isSummaryCompatible(el)) : permittedTypes;
+}
+
+function filterIkaDocWidgetTypes(types: IWidgetType[]): IWidgetType[] {
+  return types.filter((type) => {
+    if (type === "chart") {
+      return canCreateIkaDocRuntimeCharts();
+    }
+    // A Widget Creator runs its own code, like a custom widget.
+    if (type === "custom" || type.startsWith("custom.") || type === "creator") {
+      return canUseIkaDocRuntimeCustomWidgets();
+    }
+    return true;
+  });
 }
 
 // The Picker disables some choices that do not make much sense.
@@ -434,9 +452,9 @@ export class PageWidgetSelect extends Disposable {
             "aria-describedby": "picker-kb-help",
           },
           header(t("Select widget"), { id: "picker-widgets-header" }),
-          mainSectionTypes.map(value => this._buildTypeEntry(value)),
+          filterIkaDocWidgetTypes(mainSectionTypes).map(value => this._buildTypeEntry(value)),
           cssMoreDivider(t("More")),
-          moreSectionTypes.map(value => this._buildTypeEntry(value)),
+          filterIkaDocWidgetTypes(moreSectionTypes).map(value => this._buildTypeEntry(value)),
         ),
         cssPanel(
           testId("data"),

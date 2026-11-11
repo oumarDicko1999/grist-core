@@ -5,6 +5,10 @@ import { makeT } from "app/client/lib/localization";
 import { reportError } from "app/client/models/AppModel";
 import { DocModel, ViewSectionRec } from "app/client/models/DocModel";
 import { FilterConfig } from "app/client/ui/FilterConfig";
+import {
+  canEditIkaDocRuntimeStructure,
+  canExportFromIkaDocRuntimeBrowser,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { cssLabel, cssSaveButtonsRow } from "app/client/ui/RightPanelStyles";
 import { SortConfig } from "app/client/ui/SortConfig";
 import { hoverTooltip } from "app/client/ui/tooltips";
@@ -46,6 +50,8 @@ export function viewSectionMenu(
   viewSection: ViewSectionRec,
 ) {
   const { docModel, isReadonly } = gristDoc;
+  const canConfigureView = canEditIkaDocRuntimeStructure();
+  const canExportFromBrowser = canExportFromIkaDocRuntimeBrowser();
 
   // If there is any filter (should [Filter Icon] background be filled).
   const anyFilter = Computed.create(owner, use =>  Boolean(use(viewSection.activeFilters).length));
@@ -86,6 +92,8 @@ export function viewSectionMenu(
       cssFilterMenuWrapper.cls("-unsaved", displaySaveObs),
       testId("wrapper"),
       cssMenu(
+        // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+        { "aria-label": t("Sort and filter") },
         testId("sortAndFilter"),
         // [Filter icon]
         cssFilterIconWrapper(
@@ -157,18 +165,22 @@ export function viewSectionMenu(
           ctl.close();
         }),
       ] }),
-      dom.hide(viewSection.isRecordCard),
+      dom.hide(use => use(viewSection.isRecordCard) || use(isReadonly) || !canConfigureView),
     ),
     cssMenu(
-      dom.hide(viewSection.hideViewMenu),
+      dom.hide(use => (
+        use(viewSection.hideViewMenu) ||
+        (!canExportFromBrowser && (use(isReadonly) || !canConfigureView))
+      )),
       testId("viewLayout"),
+      { "aria-label": t("Widget options") },
       cssDotsIconWrapper(cssIcon("Dots")),
       menu(_ctl => makeViewLayoutMenu(viewSection, isReadonly.get()), {
         ...defaultMenuOptions,
         placement: "bottom-end",
       }),
     ),
-    dom.maybe(showExpandIcon, () =>
+    dom.maybe(use => use(showExpandIcon) && !use(isReadonly) && canConfigureView, () =>
       cssExpandIconWrapper(
         cssSmallIcon("Grow"),
         testId("expandSection"),

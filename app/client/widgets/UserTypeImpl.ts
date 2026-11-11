@@ -1,3 +1,5 @@
+import { IkaDocJsonEditor, IkaDocJsonTextBox } from "app/client/ui/IkaDocJsonWidget";
+import { IkaDocReferenceEditor, IkaDocReferenceTextBox } from "app/client/ui/IkaDocReferenceWidget";
 import { AttachmentsEditor } from "app/client/widgets/AttachmentsEditor";
 import { AttachmentsWidget } from "app/client/widgets/AttachmentsWidget";
 import CheckBoxEditor from "app/client/widgets/CheckBoxEditor";
@@ -39,6 +41,10 @@ export const nameToWidget = {
   NumericEditor: NumericEditor,
   HyperLinkTextBox: HyperLinkTextBox,
   HyperLinkEditor: HyperLinkEditor,
+  IkaDocJsonTextBox: IkaDocJsonTextBox,
+  IkaDocJsonEditor: IkaDocJsonEditor,
+  IkaDocReferenceTextBox: IkaDocReferenceTextBox,
+  IkaDocReferenceEditor: IkaDocReferenceEditor,
   MarkdownTextBox: MarkdownTextBox,
   Spinner: Spinner,
   CheckBox: ToggleCheckBox,

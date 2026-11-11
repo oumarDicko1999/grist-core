@@ -3,6 +3,7 @@ import { GristDoc } from "app/client/components/GristDoc";
 import { makeT } from "app/client/lib/localization";
 import { ViewRec, ViewSectionRec } from "app/client/models/DocModel";
 import { filterBar } from "app/client/ui/FilterBar";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { maybeShowNewRecordExperiment } from "app/client/ui/NewRecordButton";
 import { cssIcon } from "app/client/ui/RightPanelStyles";
 import { makeCollapsedLayoutMenu } from "app/client/ui/ViewLayoutMenu";
@@ -46,6 +47,8 @@ export function buildCollapsedSectionDom(options: {
     ),
     cssMenu(
       testId("section-menu-viewLayout"),
+      // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+      { "aria-label": t("Widget options") },
       cssDotsIconWrapper(cssIcon("Dots")),
       menu(_ctl => makeCollapsedLayoutMenu(vs, gristDoc), {
         ...defaultMenuOptions,
@@ -86,6 +89,7 @@ export function buildViewSectionDom(options: {
   // Creating normal section dom
   const vs: ViewSectionRec = gristDoc.docModel.viewSections.getRowModel(sectionRowId);
   const renamable = undef(vs.canRename.peek(), options.renamable, true);
+  const canEditStructure = canEditIkaDocRuntimeStructure();
 
   const selectedBySectionTitle = Computed.create(null, (use) => {
     if (!use(vs.linkSrcSectionRef)) { return null; }
@@ -105,17 +109,17 @@ export function buildViewSectionDom(options: {
     dom.maybe<BaseView | null>(use => use(vs.viewInstance), viewInstance => dom("div.viewsection_title.flexhbox",
       regionFocusSwitcher?.panelAttrs(`section-header-${sectionRowId}`, ""),
       dom.attr("aria-label", use => t(`{{title}} widget header`, { title: use(vs.titleDef) })),
-      cssDragIcon("DragDrop",
+      canEditStructure ? cssDragIcon("DragDrop",
         dom.cls("viewsection_drag_indicator"),
-        // Makes element grabbable only if grist is not readonly.
-        dom.cls("layout_grabbable", use => !use(gristDoc.isReadonlyKo)),
+        // IkaDoc viewer mode must not expose layout drag affordances.
+        dom.cls("layout_grabbable", use => !use(gristDoc.isReadonlyKo) && canEditStructure),
         !draggable ? dom.style("visibility", "hidden") : null,
-      ),
+      ) : null,
       dom.maybe(use => use(use(viewInstance.viewSection.table).summarySourceTable), () =>
         cssSigmaIcon("Pivot", testId("sigma"))),
       buildWidgetTitle(
         vs,
-        { tableNameHidden, widgetNameHidden, disabled: !renamable },
+        { tableNameHidden, widgetNameHidden, disabled: !renamable || !canEditStructure },
         testId("viewsection-title"),
         cssTestClick(testId("viewsection-blank")),
       ),

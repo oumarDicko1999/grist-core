@@ -67,3 +67,31 @@
     transform: rotateY(0deg);
   }
 }
+
+/* IkaDoc runtime loading surface: align the pre-app Grist loader with the host M3 shell. */
+#grist-logo-wrapper {
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+}
+
+.grist-logo {
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  background: transparent url("icons/owarelin-records-icon.svg") center / contain no-repeat;
+}
+
+.grist-logo-grain {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  #grist-logo-wrapper {
+    background: #101417;
+  }
+
+  .grist-logo {
+    background-image: url("icons/owarelin-records-icon-dark.svg");
+  }
+}

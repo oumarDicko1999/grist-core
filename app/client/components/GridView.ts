@@ -42,6 +42,13 @@ import {
   freezeAction,
   IMultiColumnContextMenu,
 } from "app/client/ui/GridViewMenus";
+import { ikaDocGuidedCellIssue } from "app/client/ui/IkaDocGuidedWorkspaceCellIssue";
+import { ikaDocPasteActions } from "app/client/ui/IkaDocGuidedWorkspaceRows";
+import { ikaDocLockedColumnIcon } from "app/client/ui/IkaDocLockedColumns";
+import {
+  canEditIkaDocRuntimeCells,
+  canEditIkaDocRuntimeStructure,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { menuToggle } from "app/client/ui/MenuToggle";
 import { mouseDragMatchElem } from "app/client/ui/mouseDrag";
 import { IRowContextMenu, RowContextMenu } from "app/client/ui/RowContextMenu";
@@ -170,6 +177,7 @@ export default class GridView extends BaseView {
   protected frozenMap: KoArray<ko.Computed<boolean>>;
   protected hoverColumn: ko.Observable<number>;
   private _insertColumnIndex: ko.Observable<number | null>;
+  private _isStructureReadonly: boolean;
   protected changeHover: (index: number) => void;
   protected isColSelected: KoArray<ko.Computed<boolean>>;
   protected header: HTMLElement;
@@ -212,6 +220,11 @@ export default class GridView extends BaseView {
       (() => dom.on("click", () => this.selectAll()));
     this.viewSection = viewSectionModel;
     this.isReadonly = this.gristDoc.isReadonly.get() ||
+      !canEditIkaDocRuntimeCells() ||
+      this.viewSection.isVirtual() ||
+      this.isPreview;
+    this._isStructureReadonly = this.gristDoc.isReadonly.get() ||
+      !canEditIkaDocRuntimeStructure() ||
       this.viewSection.isVirtual() ||
       this.isPreview;
 
@@ -477,8 +490,7 @@ export default class GridView extends BaseView {
       if (!action) { return; }
       // if grist document is in readonly - simply change the value
       // without saving
-      if (this.isReadonly) {
-        this.viewSection.rawNumFrozen(action.numFrozen);
+      if (this._isStructureReadonly) {
         return;
       }
       this.viewSection.rawNumFrozen.setAndSave(action.numFrozen).catch(reportError);
@@ -486,7 +498,7 @@ export default class GridView extends BaseView {
     copy: function() { return this.copy(this.getSelection()); },
     cut: function() { return this.cut(this.getSelection()); },
     paste: async function(pasteObj: PasteData, cutCallback: CutCallback | null) {
-      if (this.gristDoc.isReadonly.get()) { return; }
+      if (this.isReadonly) { return; }
       await this.gristDoc.docData.bundleActions(null, () => this.paste(pasteObj, cutCallback));
       await this.scrollToCursor(false);
     },
@@ -844,7 +856,11 @@ export default class GridView extends BaseView {
     const pasteFields = updateColIndices.map(i => fields[i] || null);
 
     const richData = await parsePasteForView(pasteData, pasteFields, this.gristDoc);
-    const actions = this._createBulkActionsFromPaste(updateRowIds, richData);
+    // IkaDoc: rows a paste adds to a guided workspace table carry IkaDoc's protected values.
+    const actions = await ikaDocPasteActions(
+      this.viewSection.tableId.peek(),
+      this._createBulkActionsFromPaste(updateRowIds, richData),
+    );
 
     if (actions.length > 0) {
       const cursorPos = this.cursor.getCursorPos();
@@ -1100,6 +1116,9 @@ export default class GridView extends BaseView {
   }
 
   public async insertColumn(colId: string | null = null, options: InsertColOptions = {}): Promise<NewColInfo> {
+    if (this._isStructureReadonly) {
+      throw new Error("Column insertion is not allowed in this document mode.");
+    }
     const {
       colInfo = {},
       index = this.viewSection.viewFields().peekLength,
@@ -1120,6 +1139,9 @@ export default class GridView extends BaseView {
   }
 
   protected async makeHeadersFromRow(selection: CopySelection) {
+    if (this._isStructureReadonly) {
+      return;
+    }
     if (this._getRowContextMenuOptions().disableMakeHeadersFromRow) {
       return;
     }
@@ -1152,6 +1174,9 @@ export default class GridView extends BaseView {
   }
 
   protected renameColumn(index: number) {
+    if (this._isStructureReadonly) {
+      return;
+    }
     // If this column is in transformation, renaming is disabled.
     if (this.currentColumn.peek().isTransforming.peek()) {
       console.warn("Renaming is disabled during column transformation.");
@@ -1184,12 +1209,18 @@ export default class GridView extends BaseView {
   public async showColumn(colRef: number,
     index: number = this.viewSection.viewFields().peekLength,
   ): Promise<void> {
+    if (this._isStructureReadonly) {
+      return;
+    }
     await this.viewSection.showColumn(colRef, index);
     this.selectColumn(index);
   }
 
   // TODO: Replace alerts with custom notifications
   protected deleteColumns(selection: CopySelection) {
+    if (this._isStructureReadonly) {
+      return Promise.resolve(false);
+    }
     const fields = selection.fields;
     if (fields.length === this.viewSection.viewFields().peekLength) {
       reportWarning("You can't delete all the columns on the grid.", {
@@ -1210,7 +1241,7 @@ export default class GridView extends BaseView {
   }
 
   protected hideFields(selection: CopySelection) {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this._isStructureReadonly) {
       return;
     }
 
@@ -1221,6 +1252,7 @@ export default class GridView extends BaseView {
   }
 
   protected moveColumns(oldIndices: number[], newIndex: number) {
+    if (this._isStructureReadonly) { return; }
     if (oldIndices.length === 0) { return; }
     if (oldIndices[0] === newIndex || oldIndices[0] + 1 === newIndex) { return; }
 
@@ -1432,6 +1464,8 @@ export default class GridView extends BaseView {
       // Corner and shadows (so it's fixed to the grid viewport)
       this._cornerDom = dom(
         "div.gridview_data_corner_overlay",
+        // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+        { "aria-label": t("Select all") },
         this._cornerRenderer,
         // In Row IDs mode, label the gutter, header-style, to name what the bracketed values are.
         dom.maybe(use => use(v.optionsObj).rowNumbers === "rowId", () =>
@@ -1504,7 +1538,7 @@ export default class GridView extends BaseView {
                   const isEditingLabel = koUtil.withKoUtils(ko.pureComputed({
                     read: () => {
                       const goodIndex = () => editIndex() === field._index();
-                      const isReadonly = () => this.isReadonly || this.isPreview;
+                      const isReadonly = () => this._isStructureReadonly || this.isPreview;
                       return goodIndex() && !isReadonly();
                     },
                     write: (val) => {
@@ -1523,7 +1557,7 @@ export default class GridView extends BaseView {
 
                   let filterTriggerCtl: PopupControl;
                   const isTooltip = ko.pureComputed(() =>
-                    this.gristDoc.docModel.editingFormula() && !this.isReadonly &&
+                    this.gristDoc.docModel.editingFormula() && !this._isStructureReadonly &&
                     ko.unwrap(this.hoverColumn) === field._index(),
                   );
 
@@ -1557,7 +1591,7 @@ export default class GridView extends BaseView {
                     },
                     dom.style("width", field.widthPx),
                     dom.style("borderRightWidth", v.borderWidthPx),
-                    viewCommon.makeResizable(field.width, { shouldSave: !this.isReadonly }),
+                    viewCommon.makeResizable(field.width, { shouldSave: !this._isStructureReadonly }),
                     kd.toggleClass("selected", () => ko.unwrap(this.isColSelected.at(field._index()!)!)),
                     dom.on("contextmenu", (ev) => {
                     // This is a little hack to position the menu the same way as with a click
@@ -1571,6 +1605,8 @@ export default class GridView extends BaseView {
                         field.description,
                         "column",
                       ),
+                      // Owarelin/IkaDoc: a lock marks IkaDoc-owned columns (GW-RFR-03).
+                      ikaDocLockedColumnIcon(this.schemaModel.tableId.peek(), field.colId.peek()),
                       dom.on("mousedown", ev => isEditingLabel() ? ev.stopPropagation() : true),
                       buildRenameColumn({
                         field,
@@ -1580,7 +1616,7 @@ export default class GridView extends BaseView {
                       }),
                     ),
                     this._showTooltipOnHover(field, isTooltip),
-                    (this.isPreview || this.gridOptions?.colMenu === false) ? null : menuToggle(null,
+                    (this._isStructureReadonly || this.gridOptions?.colMenu === false) ? null : menuToggle(null,
                       dom.cls("g-column-main-menu"),
                       dom.cls("g-column-menu-btn"),
                       // Prevent mousedown on the dropdown triangle from initiating column drag.
@@ -1601,13 +1637,14 @@ export default class GridView extends BaseView {
                         );
                       },
                       menu(ctl => this.columnContextMenu(ctl, this.getSelection(), field, filterTriggerCtl)),
+                      { "aria-label": t("Column options") },
                       testId("column-menu-trigger"),
                     ),
                     dom("div.selection"),
                     this._buildInsertColumnMenu({ field }),
                   );
                 }),
-                this.isPreview ? null : (this.isReadonly ? null : () => (
+                this.isPreview ? null : (this._isStructureReadonly ? null : () => (
                   dom("div.column_name.mod-add-column.field",
                     "+",
                     dom.style("width", PLUS_WIDTH + "px"),
@@ -1803,7 +1840,7 @@ export default class GridView extends BaseView {
             });
 
             const isTooltip = ko.pureComputed(() =>
-              this.gristDoc.docModel.editingFormula() && !this.isReadonly &&
+              this.gristDoc.docModel.editingFormula() && !this._isStructureReadonly &&
               ko.unwrap(this.hoverColumn) === field._index(),
             );
 
@@ -1825,6 +1862,8 @@ export default class GridView extends BaseView {
               // a cell in that row becomes larger
               kd.style("borderRightWidth", v.borderWidthPx),
               kd.toggleClass("selected", isSelected),
+              // IkaDoc: marks cells the guided workspace reported a problem on.
+              ikaDocGuidedCellIssue(() => this.schemaModel.tableId(), () => row.id(), () => field.colId()),
               // Optional icon. Currently only use to show formula icon.
               dom("div.field-icon"),
               fieldBuilder.buildDomWithCursor(row, isCellActive, isCellSelected),
@@ -2187,7 +2226,7 @@ export default class GridView extends BaseView {
       numColumns: copySelection.fields.length,
       numFrozen: this.viewSection.numFrozen.peek(),
       disableModify: calcFieldsCondition(copySelection.fields, f => f.disableModify.peek()),
-      isReadonly: this.isReadonly || this.isPreview,
+      isReadonly: this._isStructureReadonly || this.isPreview,
       isRaw: this.viewSection.isRaw(),
       isFiltered: this.isFiltered(),
       isFormula: calcFieldsCondition(copySelection.fields, f => f.column.peek().isRealFormula.peek()),
@@ -2195,6 +2234,7 @@ export default class GridView extends BaseView {
   }
 
   protected _columnFilterMenu(ctl: IOpenController, field: ViewFieldRec, options: IColumnFilterMenuOptions) {
+    if (this._isStructureReadonly) { return dom("div"); }
     this.ctxMenuHolder.autoDispose(ctl);
     const filterInfo = this.viewSection.filters()
       .find(({ fieldOrColumn }) => fieldOrColumn.origCol().origColRef() === field.column().origColRef())!;
@@ -2260,7 +2300,7 @@ export default class GridView extends BaseView {
       disableShowRecordCard: this.isRecordCardDisabled(),
       disableAnchorLink: this.viewSection.isVirtual(),
       disableMakeHeadersFromRow: Boolean(
-        this.isReadonly ||
+        this._isStructureReadonly ||
         this.getSelection().rowIds.length !== 1 ||
         this.getSelection().onlyAddRowSelected() ||
         this.viewSection.table().summarySourceTable() !== 0,
@@ -2287,6 +2327,7 @@ export default class GridView extends BaseView {
 
   protected _getCellContextMenuOptions(): ICellContextMenu {
     return {
+      isReadonly: this.isReadonly,
       disableInsert: Boolean(
         this.isReadonly ||
         this.viewSection.disableAddRemoveRows() ||
@@ -2386,6 +2427,7 @@ export default class GridView extends BaseView {
    * the GridView.
    */
   protected _buildInsertColumnMenu(options: { field?: ViewFieldRec } = {}) {
+    if (this._isStructureReadonly) { return []; }
     const { field } = options;
     const triggers: "click"[] = [];
     if (!field) { triggers.push("click"); }
@@ -2443,7 +2485,7 @@ export default class GridView extends BaseView {
   }
 
   protected _insertField(event: KeyboardEvent | undefined, index: number) {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this._isStructureReadonly) {
       return;
     }
 
@@ -2455,7 +2497,7 @@ export default class GridView extends BaseView {
   }
 
   protected _deleteFields() {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this._isStructureReadonly) {
       return;
     }
 

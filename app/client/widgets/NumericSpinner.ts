@@ -1,9 +1,13 @@
+import { makeT } from "app/client/lib/localization";
 import { theme } from "app/client/ui2018/cssVars";
 import { icon } from "app/client/ui2018/icons";
 import { clamp, numberOrDefault } from "app/common/gutil";
 import { MaybePromise } from "app/plugin/gutil";
 
 import { BindableValue, dom, DomElementArg, IDomArgs, makeTestId, Observable, styled } from "grainjs";
+
+// Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+const t = makeT("NumericSpinner");
 
 const testId = makeTestId("test-numeric-spinner-");
 
@@ -86,11 +90,13 @@ export function numericSpinner(
     ),
     cssSpinner(
       cssSpinnerBtn(
+        { "aria-label": t("Increase") },
         cssSpinnerTop("DropdownUp"),
         dom.on("click", async () => incrementValue({ saveValue: true })),
         testId("increment"),
       ),
       cssSpinnerBtn(
+        { "aria-label": t("Decrease") },
         cssSpinnerBottom("Dropdown"),
         dom.on("click", async () => decrementValue({ saveValue: true })),
         testId("decrement"),

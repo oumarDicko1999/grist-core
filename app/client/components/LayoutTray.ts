@@ -22,6 +22,11 @@ const G = getBrowserGlobals("document", "window", "$");
 
 type JQMouseEvent = JQuery.MouseEventBase | MouseEvent;
 
+// IkaDoc runtime viewer mode renders collapsed sections without tray edit affordances.
+interface LayoutTrayOptions {
+  enabled?: boolean;
+}
+
 /**
  * Adds a tray for minimizing and restoring sections. It is built as a plugin for the ViewLayout component.
  */
@@ -41,16 +46,23 @@ export class LayoutTray extends DisposableWithEvents {
   public layout = CollapsedLayout.create(this, this);
   // Whether we are active (have a dotted border, that indicates we are ready to receive a drop)
   public active = Signal.create(this, false);
+  public readonly enabled: boolean;
 
   private _rootElement: HTMLElement;
 
-  constructor(public viewLayout: ViewLayout) {
+  constructor(public viewLayout: ViewLayout, options: LayoutTrayOptions = {}) {
     super();
+    this.enabled = options.enabled ?? true;
     // Create a proxy for the LayoutEditor. It will mimic the same interface as CollapsedLeaf.
-    const externalLeaf = ExternalLeaf.create(this, this);
 
     // Build layout using saved settings.
     this.layout.buildLayout(this.viewLayout.viewModel.collapsedSections.peek());
+
+    if (!this.enabled) {
+      return;
+    }
+
+    const externalLeaf = ExternalLeaf.create(this, this);
 
     this._registerCommands();
 
@@ -150,9 +162,9 @@ export class LayoutTray extends DisposableWithEvents {
       // If element is over the tray, we should indicate that we are ready by changing a color.
       cssCollapsedTray.cls("-is-target", this.over.state),
       // Synchronize the hovering state with the event.
-      syncHover(this.hovering),
+      this.enabled ? syncHover(this.hovering) : null,
       // Create a drop zone (below actual sections)
-      dom.create(CollapsedDropZone, this),
+      this.enabled ? dom.create(CollapsedDropZone, this) : null,
       // Build the layout.
       this.layout.buildDom(),
       // But show only if there are any sections in the tray (even if those are empty or drop target sections)
@@ -174,6 +186,7 @@ export class LayoutTray extends DisposableWithEvents {
     const commandGroup = {
       // Collapse visible section.
       collapseSection: () => {
+        if (!viewLayout.canEditStructure()) { return; }
         const leafId = viewLayout.viewModel.activeSectionId();
         if (!leafId) { return; }
 
@@ -198,6 +211,7 @@ export class LayoutTray extends DisposableWithEvents {
         viewLayout.saveLayoutSpec().catch(reportError);
       },
       restoreSection: () => {
+        if (!viewLayout.canEditStructure()) { return; }
         // Get the section that is collapsed and clicked (we are setting this value).
         const leafId = viewLayout.viewModel.activeCollapsedSectionId();
         if (!leafId) { return; }
@@ -210,6 +224,7 @@ export class LayoutTray extends DisposableWithEvents {
       },
       // Delete collapsed section.
       deleteCollapsedSection: async () => {
+        if (!viewLayout.canEditStructure()) { return; }
         // This section is still in the view (but not in the layout). So we can just remove it.
         const leafId = viewLayout.viewModel.activeCollapsedSectionId();
         if (!leafId) { return; }
@@ -678,8 +693,9 @@ class CollapsedLeaf extends Leaf implements Draggable, Dropped {
       testId("leaf-box"),
       dom.domComputed(this._content, c => c),
       // Add draggable interface.
-      asDraggable(this),
+      this.model.enabled ? asDraggable(this) : null,
       dom.on("click", (e) => {
+        if (!this.model.enabled) { return; }
         this.model.viewLayout.viewModel.activeCollapsedSectionId(this.id.get());
         // Sanity (and type) check.
         if (!(e.target instanceof HTMLElement)) {
@@ -708,6 +724,7 @@ class CollapsedLeaf extends Leaf implements Draggable, Dropped {
   // Implement the drag interface. All those methods are called by the draggable helper.
 
   public dragStart(ev: DragEvent, floater: MiniFloater) {
+    if (!this.model.enabled) { return null; }
     // Get the element.
     const myElement = this._content.get();
     this._content.set(null);
@@ -723,14 +740,17 @@ class CollapsedLeaf extends Leaf implements Draggable, Dropped {
   }
 
   public dragEnd(ev: DragEvent) {
+    if (!this.model.enabled) { return; }
     this.model.drag.emit(null);
   }
 
   public drag(ev: DragEvent) {
+    if (!this.model.enabled) { return; }
     this.model.dragging.emit(ev);
   }
 
   public drop(ev: DragEvent, floater: MiniFloater) {
+    if (!this.model.enabled) { return; }
     // Take back the element.
     const element = floater.content.get();
     floater.content.set(null);
@@ -743,6 +763,7 @@ class CollapsedLeaf extends Leaf implements Draggable, Dropped {
   }
 
   public removeFromLayout() {
+    if (!this.model.enabled) { return; }
     // Set the id to 0 so that the layout doesn't try to read me back.
     this.id.set(0);
     this.model.layout.destroy(this);

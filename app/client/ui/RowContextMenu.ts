@@ -6,6 +6,7 @@ import { menuDivider, menuIcon, menuItemCmd, menuItemCmdLabel } from "app/client
 const t = makeT("RowContextMenu");
 
 export interface IRowContextMenu {
+  isReadonly: boolean;
   disableInsert: boolean;
   disableDelete: boolean;
   disableMakeHeadersFromRow: boolean;
@@ -16,6 +17,7 @@ export interface IRowContextMenu {
 }
 
 export function RowContextMenu({
+  isReadonly,
   disableInsert,
   disableDelete,
   disableMakeHeadersFromRow,
@@ -34,6 +36,14 @@ export function RowContextMenu({
       ),
       menuDivider(),
     );
+  }
+  // IkaDoc viewer mode keeps the row menu read-only even with editor-capable Grist auth.
+  if (isReadonly) {
+    result.push(
+      menuItemCmd(allCommands.copyLink, t("Copy anchor link"),
+        ariaDisabled(disableAnchorLink ?? false)),
+    );
+    return result;
   }
   if (isViewSorted) {
     // When the view is sorted, any newly added records get shifts instantly at the top or

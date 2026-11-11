@@ -23,6 +23,7 @@ export function getAdminConfig(): AdminPageConfig {
  */
 export function addCurrentOrgToPath(path: string, skipIfInDomain: boolean = false) {
   if (typeof window === "undefined" || !window) { return path; }
+  if (getGristConfig().ikadoc) { return path.replace(/\/$/, ""); }
   return addOrgToPath(path, window.location.href, skipIfInDomain);
 }
 
@@ -34,6 +35,7 @@ export function addCurrentOrgToPath(path: string, skipIfInDomain: boolean = fals
  */
 export function addOrgToPath(path: string, page: string, skipIfInDomain: boolean = false) {
   if (typeof window === "undefined" || !window) { return path; }
+  if (getGristConfig().ikadoc) { return path.replace(/\/$/, ""); }
   if (path.includes("/o/")) { return path; }
   const src = new URL(page);
   const srcParts = extractOrgParts(src.host, src.pathname);

@@ -12,6 +12,8 @@ import {
 } from "app/client/widgets/ChoiceTextBox";
 import { choiceToken } from "app/client/widgets/ChoiceToken";
 import { CellValue } from "app/common/DocActions";
+import { ikaDocChoiceLabel } from "app/common/IkaDocChoiceLabels";
+import { BaseFormatter } from "app/common/ValueFormatter";
 import { decodeObject } from "app/plugin/objtypes";
 
 import { dom, styled } from "grainjs";
@@ -31,19 +33,22 @@ export class ChoiceListCell extends ChoiceTextBox {
         return use(row._isAddRow) ? null :
           [
             use(value), use(this.getChoiceValuesSet()),
-            use(this.getChoiceOptions()),
-          ] as [CellValue, Set<string>, ChoiceOptionsByName];
+            use(this.getChoiceOptions()), use(this.valueFormatter),
+          ] as [CellValue, Set<string>, ChoiceOptionsByName, BaseFormatter];
       }, (input) => {
         if (!input) { return null; }
-        const [rawValue, choiceSet, choiceOptionsByName] = input;
+        const [rawValue, choiceSet, choiceOptionsByName, formatter] = input;
         const val = decodeObject(rawValue);
         if (!val) { return null; }
         // Handle any unexpected values we might get (non-array, or array with non-strings).
         const tokens: unknown[] = Array.isArray(val) ? val : [val];
         return tokens.map((token) => {
           const isBlank = String(token).trim() === "";
+          // Owarelin/IkaDoc: the token shows the choice's label (GW-COL-04).
+          const label = ikaDocChoiceLabel(formatter.widgetOpts, token, formatter.docSettings.locale);
+
           return choiceToken(
-            isBlank ? "[Blank]" : String(token),
+            isBlank ? "[Blank]" : label ?? String(token),
             {
               ...(choiceOptionsByName.get(String(token)) || {}),
               invalid: !choiceSet.has(String(token)),

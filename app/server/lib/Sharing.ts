@@ -14,6 +14,7 @@ import { ActionHistory, asActionGroup, getActionUndoInfo } from "app/server/lib/
 import { ActiveDoc } from "app/server/lib/ActiveDoc";
 import { makeExceptionalDocSession, OptDocSession } from "app/server/lib/DocSession";
 import { GranularAccessForBundle } from "app/server/lib/GranularAccess";
+import { assertIkaDocLockedColumnsKept } from "app/server/lib/IkaDocLockedColumnGuard";
 import { insightLogEntry } from "app/server/lib/InsightLog";
 import log from "app/server/lib/log";
 import { LogMethods } from "app/server/lib/LogMethods";
@@ -253,6 +254,8 @@ export class Sharing {
       // TODO: see if any of the code paths that have no docSession are relevant outside
       // of tests.
       await accessControl.canApplyBundle();
+      // Owarelin/IkaDoc: IkaDoc's columns survive whatever action produced these changes (SEC-2).
+      assertIkaDocLockedColumnsKept(docSession, getEnvContent(applyResult.stored));
       insightLog?.mark("accessRulesCheck");
       return { result: { bundle: applyResult, accessControl } };
     } catch (applyExc) {

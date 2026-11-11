@@ -10,6 +10,7 @@ import { makeT } from "app/client/lib/localization";
 import { ViewSectionRec } from "app/client/models/DocModel";
 import { MutedError, reportError, reportSuccess } from "app/client/models/errors";
 import { IWidgetCreator } from "app/client/ui/IAssistantPanel";
+import { canUseIkaDocRuntimeCustomWidgets } from "app/client/ui/IkaDocRuntimeAccess";
 import { resizeFlexVHandle } from "app/client/ui/resizeHandle";
 import { hoverTooltip, infoTooltip } from "app/client/ui/tooltips";
 import { transition } from "app/client/ui/transitions";
@@ -669,6 +670,12 @@ If you close the editor without saving, they are lost.")),
   }
 
   private _buildWidget(html: string, access: AccessLevel) {
+    // Owarelin/IkaDoc: the code runs from the document itself (srcdoc), not from the untrusted widget
+    // host IkaDoc disables, and can read rows and send them anywhere: only with IkaDoc's grant.
+    if (!canUseIkaDocRuntimeCustomWidgets()) {
+      return cssFrameBox(t("Custom widgets are not available here."), testId("widget-creator-blocked"));
+    }
+
     // A new frame runs the HTML again, so the old error is cleared.
     this._error.set(null);
     const widgetFrame = createCustomWidgetFrame(this, {

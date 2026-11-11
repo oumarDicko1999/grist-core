@@ -29,6 +29,136 @@ type SpecialDocPage = typeof SpecialDocPage.type;
 export type IDocPage = number | SpecialDocPage;
 
 export type ViewDocPage = number | "data";
+
+export interface IkaDocRuntimeConfigWire {
+  enabled: true;
+  sessionId: string;
+  user: IkaDocRuntimeUser;
+  collectionCode: string;
+  sourceType: "document-file" | "search-workspace" | "report-workspace" | "migration-workspace";
+  sourceSummary?: string;
+  mode: "viewer" | "editor";
+  expiresAt: string;
+  documentId: string;
+  documentUrlId: string;
+  workerUrl: string;
+  statusUrl: string;
+  validationUrl: string;
+  saveUrl?: string;
+  discardUrl: string;
+  blockedCapabilityUrl?: string;
+  refreshUrl?: string;
+  proposalUrl?: string;
+  capabilities?: Partial<IkaDocRuntimeCapabilities>;
+  // GW-RFR-03: per table, the columns IkaDoc owns; read-only in the editor.
+  lockedColumns?: Record<string, string[]>;
+  // GW-SRC-10: the IkaDoc sources behind the session (see app/ikadoc/IkaDocSessionSources.ts).
+  sources?: {
+    sourceId: string;
+    tableId: string;
+    label: string;
+    origin: "saved-search" | "query" | "selection" | "document";
+    scope: string;
+    rowCount: number;
+    snapshotAt: string;
+  }[];
+  locale: string;
+  theme?: string;
+  appearance?: "light" | "dark";
+}
+
+/** GW-THM-03 / GW-SHL-02: what a page served without an IkaDoc session needs to look like IkaDoc. */
+export interface IkaDocDeploymentPageConfig {
+  /** The deployment's visual style; Owarelin unless the tenant uses the Material style. */
+  theme: string;
+  /** Where "Retour à IkaDoc" leads, when the deployment sets it. */
+  returnUrl?: string;
+}
+
+export interface IkaDocRuntimeUser {
+  userId: string;
+  username: string;
+  displayName: string;
+  email?: string | null;
+}
+
+export interface IkaDocRuntimeCapabilities {
+  canEditCells: boolean;
+  canEditStructure: boolean;
+  canUseFormulas: boolean;
+  canCreateCharts: boolean;
+  canViewHistory: boolean;
+  canRefreshSource: boolean;
+  canSaveToIkaDoc: boolean;
+  canDiscard: boolean;
+  canUseComments: boolean;
+  canUseAttachments: boolean;
+  canUseExternalData: boolean;
+  canImportLocalFiles: boolean;
+  canUseCustomWidgets: boolean;
+  canInviteCollaborators: boolean;
+  canExportFromBrowser: boolean;
+  canShare: boolean;
+  canFork: boolean;
+  canPublish: boolean;
+  canManageAccess: boolean;
+  canUsePlugins: boolean;
+}
+
+export interface IkaDocRuntimeConfig extends Omit<IkaDocRuntimeConfigWire, "appearance" | "capabilities"> {
+  appearance: "light" | "dark";
+  capabilities: IkaDocRuntimeCapabilities;
+}
+
+const DENIED_IKADOC_RUNTIME_CAPABILITIES: IkaDocRuntimeCapabilities = {
+  canEditCells: false,
+  canEditStructure: false,
+  canUseFormulas: false,
+  canCreateCharts: false,
+  canViewHistory: false,
+  canRefreshSource: false,
+  canSaveToIkaDoc: false,
+  canDiscard: false,
+  canUseComments: false,
+  canUseAttachments: false,
+  canUseExternalData: false,
+  canImportLocalFiles: false,
+  canUseCustomWidgets: false,
+  canInviteCollaborators: false,
+  canExportFromBrowser: false,
+  canShare: false,
+  canFork: false,
+  canPublish: false,
+  canManageAccess: false,
+  canUsePlugins: false,
+};
+
+export type IkaDocRuntimeConfigParseResult =
+  { kind: "disabled" } |
+  {
+    kind: "invalid";
+    reason:
+      "not-an-object" |
+      "invalid-enabled-flag" |
+      "missing-required-string" |
+      "invalid-source-type" |
+      "invalid-editor-mode" |
+      "invalid-user" |
+      "invalid-capabilities";
+  } |
+  { kind: "enabled"; config: IkaDocRuntimeConfig };
+
+const IKA_DOC_SOURCE_TYPES: ReadonlySet<IkaDocRuntimeConfigWire["sourceType"]> = new Set([
+  "document-file",
+  "search-workspace",
+  "report-workspace",
+  "migration-workspace",
+]);
+
+const IKA_DOC_EDITOR_MODES: ReadonlySet<IkaDocRuntimeConfigWire["mode"]> = new Set([
+  "viewer",
+  "editor",
+]);
 /**
  * ViewDocPage is a page that shows table data (either normal or raw data view).
  */
@@ -368,6 +498,28 @@ export function encodeUrl(gristConfig: Partial<GristLoadConfig>,
     tweaks?: UrlTweaks,
   } = {}): string {
   const url = new URL(baseLocation.href);
+  const ikadocRuntime = parseIkaDocRuntimeConfigFromLoadConfig(gristConfig);
+  if (ikadocRuntime.kind === "enabled" && state.doc && !state.api && !state.ws) {
+    const parts = ["/grist/editor/", encodeURIComponent(ikadocRuntime.config.sessionId)];
+    if (state.docPage) {
+      parts.push(`/p/${state.docPage}`);
+      if (state.docSubPage != null) {
+        parts.push(`/${state.docSubPage}`);
+      }
+    }
+    url.pathname = parts.join("");
+    url.search = encodeQueryParams(
+      pickBy(state.params, (_v, k) => k !== "linkParameters") as { [key: string]: string },
+    );
+    url.hash = state.hash?.anchor ? state.hash.anchor : "";
+    options.tweaks?.postEncode?.({
+      url,
+      parts,
+      state,
+      baseLocation,
+    });
+    return url.href;
+  }
   const parts = ["/"];
 
   if (state.org) {
@@ -493,6 +645,22 @@ export function encodeUrl(gristConfig: Partial<GristLoadConfig>,
 export function decodeUrl(gristConfig: Partial<GristLoadConfig>, location: Location | URL, options?: {
   tweaks?: UrlTweaks,
 }): IGristUrlState {
+  const ikadocRuntime = parseIkaDocRuntimeConfigFromLoadConfig(gristConfig);
+  if (ikadocRuntime.kind === "enabled") {
+    location = new URL(location.href);
+    const parts = location.pathname.slice(1).split("/");
+    const state: IGristUrlState = { doc: ikadocRuntime.config.documentUrlId };
+    const pageIndex = parts.indexOf("p");
+    if (pageIndex >= 0 && parts[pageIndex + 1]) {
+      state.docPage = parseDocPage(decodeURIComponent(parts[pageIndex + 1]));
+      const subPage = parseSubPage(state.docPage, parts);
+      if (subPage != null) { state.docSubPage = subPage; }
+    }
+    if (ikadocRuntime.config.mode === "viewer") {
+      state.mode = "view";
+    }
+    return state;
+  }
   location = new URL(location.href);  // Make sure location is a URL.
   options?.tweaks?.preDecode?.({ url: location });
   const parts = location.pathname.slice(1).split("/");
@@ -951,6 +1119,13 @@ export interface GristLoadConfig {
   // Pre-fetched call to getWorkerFull for the doc being loaded.
   getWorkerFull?: { [id: string]: PublicDocWorkerUrlInfo | undefined };
 
+  // IkaDoc runtime config. Present only when Grist is loaded as an IkaDoc spreadsheet runtime.
+  ikadoc?: IkaDocRuntimeConfigWire;
+
+  // IkaDoc deployment settings for pages served without an IkaDoc session (refusals, sign-in).
+  // Present only in IkaDoc deployments.
+  ikadocDeployment?: IkaDocDeploymentPageConfig;
+
   // The timestamp when this gristConfig was generated.
   timestampMs: number;
 
@@ -1079,6 +1254,82 @@ export interface AdminPageConfig extends GristLoadConfig {
 
   /** Whether the admin can download and switch to the full edition at runtime. */
   supportsExtFullEdition?: boolean;
+}
+
+export function parseIkaDocRuntimeConfigFromLoadConfig(
+  config: Partial<GristLoadConfig>,
+): IkaDocRuntimeConfigParseResult {
+  const runtimeConfig = config.ikadoc;
+  if (runtimeConfig === undefined) {
+    return { kind: "disabled" };
+  }
+  if (!runtimeConfig || typeof runtimeConfig !== "object" || Array.isArray(runtimeConfig)) {
+    return { kind: "invalid", reason: "not-an-object" };
+  }
+  if (runtimeConfig.enabled !== true) {
+    return { kind: "invalid", reason: "invalid-enabled-flag" };
+  }
+  const requiredStrings = [
+    runtimeConfig.sessionId,
+    runtimeConfig.collectionCode,
+    runtimeConfig.sourceType,
+    runtimeConfig.mode,
+    runtimeConfig.expiresAt,
+    runtimeConfig.documentId,
+    runtimeConfig.documentUrlId,
+    runtimeConfig.workerUrl,
+    runtimeConfig.statusUrl,
+    runtimeConfig.validationUrl,
+    runtimeConfig.discardUrl,
+    runtimeConfig.locale,
+  ];
+  if (requiredStrings.some(value => typeof value !== "string" || value.length === 0)) {
+    return { kind: "invalid", reason: "missing-required-string" };
+  }
+  if (!IKA_DOC_SOURCE_TYPES.has(runtimeConfig.sourceType)) {
+    return { kind: "invalid", reason: "invalid-source-type" };
+  }
+  if (!IKA_DOC_EDITOR_MODES.has(runtimeConfig.mode)) {
+    return { kind: "invalid", reason: "invalid-editor-mode" };
+  }
+  if (!isIkaDocRuntimeUser(runtimeConfig.user)) {
+    return { kind: "invalid", reason: "invalid-user" };
+  }
+  if (
+    runtimeConfig.capabilities !== undefined &&
+    (
+      !runtimeConfig.capabilities ||
+      typeof runtimeConfig.capabilities !== "object" ||
+      Array.isArray(runtimeConfig.capabilities)
+    )
+  ) {
+    return { kind: "invalid", reason: "invalid-capabilities" };
+  }
+  return {
+    kind: "enabled",
+    config: {
+      ...runtimeConfig,
+      appearance: runtimeConfig.appearance === "dark" ? "dark" : "light",
+      capabilities: {
+        ...DENIED_IKADOC_RUNTIME_CAPABILITIES,
+        ...runtimeConfig.capabilities,
+      },
+    },
+  };
+}
+
+function isIkaDocRuntimeUser(input: unknown): input is IkaDocRuntimeUser {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return false;
+  }
+  const raw = input as Record<string, unknown>;
+  return typeof raw.userId === "string" &&
+    raw.userId.length > 0 &&
+    typeof raw.username === "string" &&
+    raw.username.length > 0 &&
+    typeof raw.displayName === "string" &&
+    raw.displayName.length > 0 &&
+    (raw.email === null || raw.email === undefined || typeof raw.email === "string");
 }
 
 export const Features = StringUnion(

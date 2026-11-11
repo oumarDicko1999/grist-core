@@ -2,6 +2,7 @@ import { getOrCreateStyleElement } from "app/client/lib/getOrCreateStyleElement"
 import { createPausableObs, PausableObservable } from "app/client/lib/pausableObs";
 import { getStorage } from "app/client/lib/storage";
 import { urlState } from "app/client/models/gristUrlState";
+import { ikaDocRuntimeTheme } from "app/client/ui/IkaDocTheme";
 import { isFeatureEnabled } from "app/common/gristUrls";
 import {
   components,
@@ -63,6 +64,10 @@ let _gristThemeObs: Computed<Theme> | undefined;
 export function gristThemeObs() {
   if (!_gristThemeObs) {
     _gristThemeObs = Computed.create(null, (use) => {
+      // Owarelin/IkaDoc: in IkaDoc runtime mode, IkaDoc chooses the theme.
+      const ikadocTheme = ikaDocRuntimeTheme();
+      if (ikadocTheme) { return ikadocTheme; }
+
       // Default to light theme if themes are disabled in config.
       if (!isFeatureEnabled("themes")) { return DEFAULT_LIGHT_THEME; }
 

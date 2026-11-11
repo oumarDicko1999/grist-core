@@ -3,6 +3,7 @@ import { FocusLayer } from "app/client/lib/FocusLayer";
 import { makeT } from "app/client/lib/localization";
 import { ViewSectionRec } from "app/client/models/entities/ViewSectionRec";
 import { autoGrow } from "app/client/ui/forms";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { cssInput, cssLabel, cssRenamePopup, cssTextArea } from "app/client/ui/RenamePopupStyles";
 import { descriptionInfoTooltip } from "app/client/ui/tooltips";
 import { basicButton, cssButton, primaryButton } from "app/client/ui2018/buttons";
@@ -67,6 +68,7 @@ function buildRenamableTitle(
   ...args: DomElementArg[]
 ) {
   const { openOnClick = true, disabled = false, isEditing, ...renameTitleOptions } = options;
+  const isDisabled = disabled || !canEditIkaDocRuntimeStructure();
   let popupControl: PopupControl | undefined;
   return cssTitleContainer(
     cssTitle(
@@ -80,9 +82,9 @@ function buildRenamableTitle(
       // In case titleDef is all blank space, make it visible on hover.
       cssTitle.cls("-empty", use => !use(title)?.trim()),
       cssTitle.cls("-open-on-click", openOnClick),
-      cssTitle.cls("-disabled", disabled),
+      cssTitle.cls("-disabled", isDisabled),
       (elem) => {
-        if (disabled) { return; }
+        if (isDisabled) { return; }
 
         // The widget title popup can be configured to open in up to two ways:
         //   1. When the title is clicked - done by setting `openOnClick` to `true`.

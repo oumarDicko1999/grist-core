@@ -13,6 +13,9 @@ import { DocSession, docSessionFromRequest } from "app/server/lib/DocSession";
 import { filterDocumentInPlace, makeFilterOptions } from "app/server/lib/filterUtils";
 import { GristServer } from "app/server/lib/GristServer";
 import { IDocStorageManager } from "app/server/lib/IDocStorageManager";
+import { assertIkaDocActiveDocMethodAllowed, IkaDocActiveDocMethodPolicy } from "app/server/lib/IkaDocActiveDocMethod";
+import { IkaDocRuntimeSessionValidator } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
   getDocId, getExtraAttachmentOptions, integerParam,
@@ -31,6 +34,8 @@ export interface AttachOptions {
   comm: Comm;                             // Comm object for methods called via websocket
   gristServer: GristServer;
   tracker?: DocApiUsageTracker;           // Shared API usage tracker for rate-limiting
+  ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  ikadocRuntimeSessionValidator?: IkaDocRuntimeSessionValidator;
 }
 
 // If a doc method takes longer than this, log a message, and raise level from debug to info.
@@ -39,9 +44,13 @@ const logIfLongerThanMs: number = 2000;
 export class DocWorker {
   private _comm: Comm;
   private _tracker?: DocApiUsageTracker;
+  private _ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  private _ikadocRuntimeSessionValidator?: IkaDocRuntimeSessionValidator;
   constructor(private _dbManager: HomeDBManager, options: AttachOptions) {
     this._comm = options.comm;
     this._tracker = options.tracker;
+    this._ikadocRuntimeSessionRegistry = options.ikadocRuntimeSessionRegistry;
+    this._ikadocRuntimeSessionValidator = options.ikadocRuntimeSessionValidator;
   }
 
   public async getAttachment(req: express.Request, res: express.Response): Promise<void> {
@@ -119,54 +128,134 @@ export class DocWorker {
   public registerCommCore(): void {
     const comm = this._comm;
     const tracker = this._tracker;
-    const method = activeDocMethod.bind(null, tracker);
+    const method = activeDocMethod.bind(
+      null,
+      tracker,
+      this._ikadocRuntimeSessionRegistry,
+      this._ikadocRuntimeSessionValidator,
+    );
     comm.registerMethods({
       closeDoc: method(null, "closeDoc"),
       fetchTable: method("viewers", "fetchTable"),
       fetchPythonCode: method("viewers", "fetchPythonCode"),
       useQuerySet: method("viewers", "useQuerySet"),
       disposeQuerySet: method("viewers", "disposeQuerySet"),
-      applyUserActions: method("editors", "applyUserActions"),
-      applyUserActionsById: method("editors", "applyUserActionsById"),
+      applyUserActions: method("editors", "applyUserActions", {
+        operation: "apply document edits",
+        classifyUserActions: true,
+        recordsActions: true,
+      }),
+      applyUserActionsById: method("editors", "applyUserActionsById", {
+        capabilities: [
+          "canEditCells",
+          "canEditStructure",
+          "canUseFormulas",
+          "canCreateCharts",
+          "canUseCustomWidgets",
+          "canUseAttachments",
+          "canUseExternalData",
+          "canManageAccess",
+        ],
+        operation: "apply document edits by id",
+        recordsActions: true,
+      }),
       findColFromValues: method("viewers", "findColFromValues"),
       getFormulaError: method("viewers", "getFormulaError"),
-      importFiles: method("editors", "importFiles"),
-      finishImportFiles: method("editors", "finishImportFiles"),
-      cancelImportFiles: method("editors", "cancelImportFiles"),
-      generateImportDiff: method("editors", "generateImportDiff"),
-      addAttachments: method("editors", "addAttachments"),
+      importFiles: method("editors", "importFiles", {
+        capability: "canImportLocalFiles",
+        operation: "import files",
+      }),
+      finishImportFiles: method("editors", "finishImportFiles", {
+        capability: "canImportLocalFiles",
+        operation: "finish file import",
+      }),
+      cancelImportFiles: method("editors", "cancelImportFiles", {
+        capability: "canImportLocalFiles",
+        operation: "cancel file import",
+      }),
+      generateImportDiff: method("editors", "generateImportDiff", {
+        capability: "canImportLocalFiles",
+        operation: "generate import diff",
+      }),
+      addAttachments: method("editors", "addAttachments", {
+        capability: "canUseAttachments",
+        operation: "add attachments",
+      }),
       startBundleUserActions: method("editors", "startBundleUserActions"),
       stopBundleUserActions: method("editors", "stopBundleUserActions"),
       autocomplete: method("viewers", "autocomplete"),
-      fetchURL: method("viewers", "fetchURL"),
-      getActionSummaries: method("viewers", "getActionSummaries"),
+      fetchURL: method("viewers", "fetchURL", {
+        capability: "canUseExternalData",
+        operation: "fetch external URL",
+      }),
+      getActionSummaries: method("viewers", "getActionSummaries", {
+        capability: "canViewHistory",
+        operation: "view document history",
+      }),
       // Reloading changes nothing in the document, so it works while it is held read-only.
       reloadDoc: method("editors", "reloadDoc", { writes: false }),
-      fork: method("viewers", "fork"),
-      checkAclFormula: method("viewers", "checkAclFormula"),
-      getAclResources: method("viewers", "getAclResources"),
+      fork: method("viewers", "fork", { operation: "fork document" }),
+      checkAclFormula: method("viewers", "checkAclFormula", {
+        capability: "canManageAccess",
+        operation: "check access formula",
+      }),
+      getAclResources: method("viewers", "getAclResources", {
+        capability: "canManageAccess",
+        operation: "list access resources",
+      }),
       waitForInitialization: method("viewers", "waitForInitialization"),
-      getUsersForViewAs: method("viewers", "getUsersForViewAs"),
-      getAccessToken: method("viewers", "getAccessToken"),
-      getShare: method("owners", "getShare"),
-      startTiming: method("owners", "startTiming"),
-      stopTiming: method("owners", "stopTiming"),
-      getAssistantState: method("owners", "getAssistantState"),
+      getUsersForViewAs: method("viewers", "getUsersForViewAs", {
+        capability: "canManageAccess",
+        operation: "list users for access simulation",
+      }),
+      getAccessToken: method("viewers", "getAccessToken", {
+        capability: "canManageAccess",
+        operation: "create access token",
+      }),
+      getShare: method("owners", "getShare", {
+        capability: "canShare",
+        operation: "read share link",
+      }),
+      startTiming: method("owners", "startTiming", {
+        operation: "use document timing diagnostics",
+      }),
+      stopTiming: method("owners", "stopTiming", {
+        operation: "use document timing diagnostics",
+      }),
+      getAssistantState: method("owners", "getAssistantState", {
+        operation: "use assistant",
+      }),
       listActiveUserProfiles: method(null, "listActiveUserProfiles"),
-      applyProposal: method("owners", "applyProposal", { writes: true }),
-      getAssistance: method("viewers", "getAssistance"),
+      applyProposal: method("owners", "applyProposal", {
+        writes: true,
+        operation: "use proposals",
+      }),
+      getAssistance: method("viewers", "getAssistance", {
+        operation: "use assistant",
+      }),
     });
   }
 
   // Register methods related to plugins.
   public registerCommPlugin(): void {
-    const method = activeDocMethod.bind(null, this._tracker);
+    const method = activeDocMethod.bind(
+      null,
+      this._tracker,
+      this._ikadocRuntimeSessionRegistry,
+      this._ikadocRuntimeSessionValidator,
+    );
     this._comm.registerMethods({
-      forwardPluginRpc: method("editors", "forwardPluginRpc"),
+      forwardPluginRpc: method("editors", "forwardPluginRpc", {
+        capability: "canUsePlugins",
+        operation: "use plugin RPC",
+      }),
       // TODO: consider not providing reloadPlugins on hosted grist, since it affects the
       // plugin manager shared across docs on a given doc worker, and seems useful only in
       // standalone case.
-      reloadPlugins: method("editors", "reloadPlugins"),
+      reloadPlugins: method("editors", "reloadPlugins", {
+        capability: "canUsePlugins",
+        operation: "reload plugins",
+      }),
     });
   }
 
@@ -217,13 +306,19 @@ export class DocWorker {
  * When a tracker is provided and the client authenticated via API key,
  * enforces the same parallel and daily usage limits as the REST API.
  */
-function activeDocMethod(tracker: DocApiUsageTracker | undefined,
+export function activeDocMethod(tracker: DocApiUsageTracker | undefined,
+  ikadocRegistry: IkaDocRuntimeSessionRegistry | undefined, ikadocValidator: IkaDocRuntimeSessionValidator | undefined,
   role: "viewers" | "editors" | "owners" | null, methodName: string,
-  options: { writes?: boolean } = {}) {
+  options: { writes?: boolean } & Partial<IkaDocActiveDocMethodPolicy> = {}) {
   return async (client: Client, docFD: number, ...args: any[]): Promise<any> => {
     const docSession = client.getDocSession(docFD);
     const activeDoc = docSession.activeDoc;
     if (role) { await docSession.authorizer.assertAccess(role, { writes: options.writes }); }
+    // Owarelin/IkaDoc: IkaDoc's policy for the admitted person, before the method runs (GR-03, GR-07).
+    if (options.operation) {
+      await assertIkaDocActiveDocMethodAllowed({ ...options, operation: options.operation },
+        client, activeDoc.docName, args, ikadocRegistry, ikadocValidator);
+    }
 
     // Log a basic record for each ActiveDoc method call, with its duration and outcome.
     const startTime = Date.now();

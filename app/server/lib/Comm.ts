@@ -37,6 +37,7 @@ import { parseFirstUrlPart } from "app/common/gristUrls";
 import { safeJsonParse } from "app/common/gutil";
 import * as version from "app/common/version";
 import { HomeDBAuth } from "app/gen-server/lib/homedb/Interfaces";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { resolveIdentity } from "app/server/lib/Authorizer";
 import { AuthSession } from "app/server/lib/AuthSession";
 import { ScopedSession } from "app/server/lib/BrowserSession";
@@ -45,6 +46,8 @@ import { Hosts, RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristLoginMiddleware, GristServer } from "app/server/lib/GristServer";
 import { GristServerSocket } from "app/server/lib/GristServerSocket";
 import { GristSocketServer } from "app/server/lib/GristSocketServer";
+import { createIkaDocRuntimeAuthSession, ikaDocRuntimeSessionFromAuthSession } from "app/server/lib/IkaDocRuntimeAuth";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import { IPermitStore } from "app/server/lib/Permit";
 import { trustOrigin } from "app/server/lib/requestUtils";
@@ -67,6 +70,9 @@ export interface CommOptions {
   i18Instance?: i18n;           // The i18next instance to use for translations.
   gristServer?: GristServer;            // The GristServer instance, needed for resolveIdentity.
   permitStore?: IPermitStore;            // Permit store, needed for resolveIdentity.
+  ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry;
+  ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient;
+  ikadocForwardAuthSecret?: string;
 }
 
 /**
@@ -98,6 +104,15 @@ export class Comm extends EventEmitter {
   constructor(private _options: CommOptions) {
     super();
     this._socketServer = this._createSocketServer();
+    // GR-03: a person who leaves the registry (removed, refused, expired) loses their connections.
+    this._options.ikadocRuntimeSessionRegistry?.onUnregistered((session) => {
+      for (const client of Array.from(this._clients.values())) {
+        if (ikaDocRuntimeSessionFromAuthSession(client.authSession) === session) {
+          client.interruptConnection();
+          client.destroy();
+        }
+      }
+    });
   }
 
   /**
@@ -209,7 +224,15 @@ export class Comm extends EventEmitter {
 
     const dbManager = this._options.dbManager;
     let authSession: AuthSession;
-    if (!dbManager || !this._options.gristServer || !this._options.permitStore) {
+    const org = (req as RequestWithOrg).org || "";
+    // Owarelin/IkaDoc: an admitted IkaDoc session authenticates the websocket as that person.
+    const ikadocAuthSession = dbManager && this._options.ikadocRuntimeSessionRegistry ?
+      await createIkaDocRuntimeAuthSession(dbManager, this._options.ikadocRuntimeSessionRegistry, req, org,
+        this._options.ikadocEditorAdmissionClient, this._options.ikadocForwardAuthSecret) :
+      undefined;
+    if (ikadocAuthSession) {
+      authSession = ikadocAuthSession;
+    } else if (!dbManager || !this._options.gristServer || !this._options.permitStore) {
       authSession = AuthSession.unauthenticated();
     } else {
       let scopedSession: ScopedSession | undefined;
@@ -233,7 +256,6 @@ export class Comm extends EventEmitter {
         throw new ApiError("User is disabled", 403);
       }
 
-      const org = (req as RequestWithOrg).org || "";
       const fullUser = dbManager.makeFullUser(identity.user);
       const altSessionId = scopedSession?.getAltSessionId();
       authSession = AuthSession.fromUser(fullUser, org, altSessionId, identity.credential, identity.hasApiKey);

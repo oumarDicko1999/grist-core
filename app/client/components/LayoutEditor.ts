@@ -425,10 +425,12 @@ export class LayoutEditor extends Disposable {
   public boundMouseUp: (ev: JQMouseEvent, el: HTMLElement) => void;
   public initialMouseDown: boolean;
   public lastTriggered: string;
+  public enabled: boolean;
 
-  public create(layout: Layout) {
+  public create(layout: Layout, options: { enabled?: boolean } = {}) {
     this.layout = layout;
     this.rootElem = layout.rootElem;
+    this.enabled = options.enabled ?? true;
 
     this.layout.buildLayout(this.layout.getLayoutSpec(), true);
     this.floater = this.autoDispose(Floater.create(this.layout.fillWindow));
@@ -455,19 +457,21 @@ export class LayoutEditor extends Disposable {
     // with this.originalBox.
     this.targetBox = null;
 
-    // Make all LayoutBoxes resizable. Update whenever the layout changes.
-    this.layout.forEachBox(this.makeResizable, this);
-    this.listenTo(this.layout, "layoutChanged", () => {
+    if (this.enabled) {
+      // IkaDoc viewer mode keeps the layout readable but disables layout write affordances.
       this.layout.forEachBox(this.makeResizable, this);
-    });
+      this.listenTo(this.layout, "layoutChanged", () => {
+        this.layout.forEachBox(this.makeResizable, this);
+      });
 
-    const self = this;
-    this.boundMouseDown = function(this: HTMLElement, ev: JQMouseEvent) {
-      return self.handleMouseDown(ev, this);
-    };
-    this.boundMouseMove = this.handleMouseMove.bind(this);
-    this.boundMouseUp = this.handleMouseUp.bind(this);
-    G.$(this.rootElem).on("mousedown", ".layout_leaf", this.boundMouseDown);
+      const self = this;
+      this.boundMouseDown = function(this: HTMLElement, ev: JQMouseEvent) {
+        return self.handleMouseDown(ev, this);
+      };
+      this.boundMouseMove = this.handleMouseMove.bind(this);
+      this.boundMouseUp = this.handleMouseUp.bind(this);
+      G.$(this.rootElem).on("mousedown", ".layout_leaf", this.boundMouseDown);
+    }
 
     this.initialMouseDown = false;
 
@@ -485,6 +489,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public triggerUserEditStart() {
+    if (!this.enabled) { return; }
     assert(this.lastTriggered === "stop", "UserEditStart triggered twice in succession");
     this.lastTriggered = "start";
     // This attribute allows browser tests to tell when an edit is in progress.
@@ -493,6 +498,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public triggerUserEditStop() {
+    if (!this.enabled) { return; }
     assert(this.lastTriggered === "start", "UserEditStop triggered twice in succession");
     this.lastTriggered = "stop";
     this.layout.trigger("layoutUserEditStop");
@@ -501,6 +507,8 @@ export class LayoutEditor extends Disposable {
   }
 
   public makeResizable(box: LayoutBox) {
+    if (!this.enabled) { return; }
+
     // Do not add resizable if:
     // Box already resizable, box is not vertically resizable, box is last in it`s group.
     if (G.$(box.dom!).resizable("instance") || (box.isHBox() && !this.layout.fillWindow) ||
@@ -525,6 +533,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public onResizeStart(helperObj: HelperBox, isWidth: boolean, event: JQMouseEvent, ui: JqueryUI) {
+    if (!this.enabled) { return; }
     this.triggerUserEditStart();
     const size = isWidth ? ui.originalSize.width : ui.originalSize.height;
     helperObj.scalePerFlexUnit = size / (helperObj.box.flexSize() || 1);
@@ -584,6 +593,8 @@ export class LayoutEditor extends Disposable {
 
   // Exposed for tests
   public dragInNewBox(event: JQMouseEvent, leafId: number) {
+    if (!this.enabled) { return; }
+
     const box = this.layout.buildLayoutBox({ leaf: leafId });
 
     // Place this box into a measuring div.
@@ -593,6 +604,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public startDragBox(event: JQMouseEvent, box: LayoutBox) {
+    if (!this.enabled) { return; }
     this.triggerUserEditStart();
     this.targetBox = box;
     this.floater.onInitialMouseMove(event, box);
@@ -600,6 +612,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public handleMouseUp(event: JQMouseEvent) {
+    if (!this.enabled) { return; }
     G.$(G.window).off("mousemove", this.boundMouseMove);
     G.$(G.window).off("mouseup", this.boundMouseUp);
 
@@ -651,6 +664,7 @@ export class LayoutEditor extends Disposable {
   }
 
   public removeContainingBox(box: LayoutBox) {
+    if (!this.enabled) { return; }
     if (box && !box.isDomDetached()) {
       this.triggerUserEditStart();
       this.targetBox = box;
@@ -669,6 +683,8 @@ export class LayoutEditor extends Disposable {
   }
 
   public handleMouseMove(event: JQMouseEvent) {
+    if (!this.enabled) { return; }
+
     // Make sure the grabbed box still exists
     if (!this.originalBox || this.originalBox?.isDisposed()) {
       return;

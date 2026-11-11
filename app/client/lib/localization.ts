@@ -65,8 +65,9 @@ export async function setupLocale() {
 }
 
 export function detectCurrentLang() {
-  const { userLocale, supportedLngs } = getGristConfig();
-  const detected = userLocale ||
+  const { ikadoc, userLocale, supportedLngs } = getGristConfig();
+  const detected = ikadoc?.locale ||
+    userLocale ||
     document.cookie.match(/grist_user_locale=([^;]+)/)?.[1] ||
     window.navigator.language ||
     "en";

@@ -1102,7 +1102,8 @@
         "SORT": "TRI",
         "FILTER": "FILTRE",
         "Sort and filter": "Trier et filtrer",
-        "Calendar view": "Vue Calendrier"
+        "Calendar view": "Vue Calendrier",
+        "Widget options": "Options de la vue"
     },
     "VisibleFieldsConfig": {
         "Hidden Fields cannot be reordered": "Les champs masqués ne peuvent pas être réordonnés",
@@ -1138,7 +1139,11 @@
     },
     "duplicatePage": {
         "Note that this does not copy data, but creates another view of the same data.": "Notez que cette opération ne duplique pas les données, mais crée une autre page avec les mêmes données.",
-        "Duplicate page {{pageName}}": "Dupliquer la page {{pageName}}"
+        "Duplicate page {{pageName}}": "Dupliquer la page {{pageName}}",
+        "Duplicate page": "Dupliquer la page",
+        "Save": "Enregistrer",
+        "Name": "Nom",
+        "{{name}} (copy)": "{{name}} (copie)"
     },
     "errorPages": {
         "Access denied{{suffix}}": "Accès refusé{{suffix}}",
@@ -1633,7 +1638,9 @@
         "Click to insert": "Cliquer pour insérer",
         "row {{rowNum}} {{colName}}": "ligne {{rowNum}} {{colName}}",
         "row {{rowNum}} {{colName}} (new row)": "ligne {{rowNum}} {{colName}} (nouvelle ligne)",
-        "ID": "ID"
+        "ID": "ID",
+        "Select all": "Tout sélectionner",
+        "Column options": "Options de la colonne"
     },
     "SupportGristPage": {
         "GitHub": "GitHub",
@@ -1662,7 +1669,8 @@
         "No data": "Aucune donnée",
         "No row selected in {{title}}": "Aucune ligne sélectionnée dans {{title}}",
         "Not all data is shown": "Toute la donnée n'est pas visible",
-        "{{title}} widget header": "En-tête de la vue {{title}}"
+        "{{title}} widget header": "En-tête de la vue {{title}}",
+        "Widget options": "Options de la vue"
     },
     "UserManager": {
         "Allow anyone with the link to open.": "Permettre à toute personne possédant le lien de l'ouvrir.",
@@ -3762,6 +3770,114 @@
         "Write html and js code": "Ecrire du code HTML et JavaScript",
         "or": "ou",
         "write it yourself": "Rédigez-le vous-même",
-        "{{ask}}, or {{write}}": "{{ask}}, ou {{write}}"
+        "{{ask}}, or {{write}}": "{{ask}}, ou {{write}}",
+        "Custom widgets are not available here.": "Les widgets personnalisés ne sont pas disponibles ici."
+    },
+    "IkaDocEditorControls": {
+        "Build proposal": "Preparer une proposition",
+        "Building proposal": "Preparation de la proposition",
+        "Checking session": "Verification de la session",
+        "Proposal requested": "Proposition demandee",
+        "Refresh": "Actualiser",
+        "Refresh cancelled": "Actualisation annulée",
+        "Refreshing source": "Actualisation de la source",
+        "Source refreshed": "Source actualisee",
+        "{{sourceSummary}}Session ready": "{{sourceSummary}}Session prete",
+        "{{sourceSummary}}Session: {{status}}": "{{sourceSummary}}Session : {{status}}"
+    },
+    "IkaDocRefusalPage": {
+        "Back to the spreadsheet": "Revenir au tableur",
+        "Back to IkaDoc": "Retour à IkaDoc",
+        "Reference: {{reference}}": "Référence : {{reference}}",
+        "Your session has ended": "Votre session est terminée",
+        "Open the spreadsheet again from IkaDoc to continue with up-to-date data.": "Rouvrez le tableur depuis IkaDoc pour continuer avec des données à jour.",
+        "Your access has changed": "Votre accès a changé",
+        "Your rights on this spreadsheet changed. Ask its owner, or open it again from IkaDoc.": "Vos droits sur ce tableur ont changé. Demandez à son propriétaire, ou rouvrez-le depuis IkaDoc.",
+        "The spreadsheet is unavailable right now": "Le tableur est momentanément indisponible",
+        "IkaDoc could not open the spreadsheet. Try again in a moment.": "IkaDoc n'a pas pu ouvrir le tableur. Réessayez dans un instant.",
+        "This page is not available here": "Cette page n'est pas disponible ici",
+        "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it.": "Le tableur ne s'ouvre que depuis IkaDoc. Les pages d'accueil et de réglages de Grist n'en font pas partie."
+    },
+    "IkaDocRemovedRowsPrompt": {
+        "Keep the rows": "Garder les lignes",
+        "Remove the rows": "Retirer les lignes",
+        "Remove these rows from the table, or keep them as they are?": "Retirer ces lignes du tableau, ou les garder telles quelles ?",
+        "Their records were deleted, no longer match, or you can no longer read them.": "Leurs fiches ont été supprimées, ne correspondent plus, ou vous ne pouvez plus les lire.",
+        "{{count}} rows are no longer in the source_one": "{{count}} ligne n'est plus dans la source",
+        "{{count}} rows are no longer in the source_other": "{{count}} lignes ne sont plus dans la source"
+    },
+    "IkaDocGuidedWorkspaceRows": {
+        "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.": "IkaDoc n'a pas pu préparer les nouvelles lignes. Réessayez, puis rechargez le tableur si le problème persiste.",
+        "The pasted values do not line up with the rows being added. Paste them again.": "Les valeurs collées ne correspondent pas aux lignes ajoutées. Collez-les à nouveau."
+    },
+    "IkaDocGuidedWorkspaceIssues": {
+        "Conflict on {{metadataCode}}": "Conflit sur {{metadataCode}}",
+        "Conflict on {{metadataCode}}: values are restricted": "Conflit sur {{metadataCode}} : valeurs restreintes",
+        "current={{value}}": "actuel={{value}}",
+        "empty": "vide",
+        "original={{value}}": "original={{value}}",
+        "yours={{value}}": "votre valeur={{value}}"
+    },
+    "IkaDocGuidedWorkspaceSetup": {
+        "Guided workspace setup failed.": "La preparation de l'espace guide a echoue.",
+        "Prepare guided workspace pages": "Preparer les pages de l'espace guide",
+        "Prepare guided workspace tables": "Preparer les tables de l'espace guide"
+    },
+    "IkaDocReferenceWidget": {
+        "No matching references": "Aucune reference correspondante"
+    },
+    "IkaDocWidgetTitles": {
+        "totals": "totaux",
+        "by {{columns}}": "par {{columns}}"
+    },
+    "DateTextBox": {
+        "Date Format": "Format de date",
+        "Mixed format": "Format composite",
+        "Custom": "Personnalisé"
+    },
+    "DateTimeTextBox": {
+        "Timezone": "Fuseau horaire",
+        "Time Format": "Format d'heure",
+        "Mixed format": "Format composite",
+        "Custom": "Personnalisé"
+    },
+    "NumericSpinner": {
+        "Increase": "Augmenter",
+        "Decrease": "Diminuer"
+    },
+    "IkaDocLockedColumns": {
+        "IkaDoc data: updated when the source is refreshed": "Données IkaDoc : mises à jour à l'actualisation de la source"
+    },
+    "IkaDocSourcesPanel": {
+        "SOURCES": "SOURCES",
+        "{{formatted}} rows_one": "{{formatted}} ligne",
+        "{{formatted}} rows_other": "{{formatted}} lignes",
+        "snapshot {{time}}": "instantané du {{time}}",
+        "{{count}} records changed since the snapshot_one": "{{count}} fiche a changé depuis l'instantané",
+        "{{count}} records changed since the snapshot_other": "{{count}} fiches ont changé depuis l'instantané",
+        "Refresh": "Actualiser",
+        "Saved search": "Recherche sauvegardée",
+        "Query": "Requête",
+        "Selected records": "Sélection de fiches",
+        "Document": "Document"
+    },
+    "IkaDocEditorControlState": {
+        "Request failed": "La requete a echoue"
+    },
+    "IkaDocGuidedWorkspaceControls": {
+        "Admit guided workspace rows": "Admettre les lignes de l'espace guide",
+        "Apply": "Appliquer",
+        "Applying guided workspace": "Application de l'espace guide",
+        "Guided workspace": "Espace guide",
+        "Guided workspace has {{count}} issue(s)": "L'espace guide contient {{count}} probleme(s)",
+        "Guided workspace ready to apply": "Espace guide pret a appliquer",
+        "Guided workspace response is invalid": "La reponse de l'espace guide est invalide",
+        "Guided workspace unavailable": "Espace guide indisponible",
+        "Guided workspace: {{schema}}": "Espace guide : {{schema}}",
+        "Simulate": "Simuler",
+        "Simulating guided workspace": "Simulation de l'espace guide",
+        "Update guided workspace row states": "Mettre a jour l'etat des lignes de l'espace guide",
+        "row {{row}}": "ligne {{row}}",
+        "{{count}} more issue(s)": "{{count}} autre(s) probleme(s)"
     }
 }

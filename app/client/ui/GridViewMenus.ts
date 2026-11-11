@@ -7,6 +7,7 @@ import { makeT } from "app/client/lib/localization";
 import { ColumnRec } from "app/client/models/entities/ColumnRec";
 import { ViewFieldRec } from "app/client/models/entities/ViewFieldRec";
 import { buildDateHelpersMenuItems } from "app/client/ui/GridViewMenusDateHelpers";
+import { canUseIkaDocRuntimeFormulas } from "app/client/ui/IkaDocRuntimeAccess";
 import { withInfoTooltip } from "app/client/ui/tooltips";
 import { isNarrowScreen, testId, theme, vars } from "app/client/ui2018/cssVars";
 import { IconName } from "app/client/ui2018/IconList";
@@ -150,6 +151,9 @@ function buildAddNewColumMenuSection(gridView: GridView, index?: number): DomEle
   }
 
   function buildNewFunctionColumnMenuItem() {
+    if (!canUseIkaDocRuntimeFormulas()) {
+      return null;
+    }
     return menuItem(
       async () => {
         await gridView.insertColumn(null, { index, skipPopup: true, colInfo: { isFormula: true } });
@@ -220,6 +224,9 @@ function buildHiddenColumnsMenuItems(gridView: GridView, index?: number) {
 }
 
 function buildShortcutsMenuItems(gridView: GridView, index?: number) {
+  if (!canUseIkaDocRuntimeFormulas()) {
+    return null;
+  }
   return [
     menuDivider(),
     menuGroup(

@@ -37,6 +37,7 @@ import { Workspace } from "app/gen-server/entity/Workspace";
 import { forwardDocApiRequest, getDocWorkerInternalUrl } from "app/gen-server/lib/DocApiProxy";
 import { HomeDBManager } from "app/gen-server/lib/homedb/HomeDBManager";
 import { QueryResult } from "app/gen-server/lib/homedb/Interfaces";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import * as Types from "app/plugin/DocApiTypes";
 import DocApiTypesTI from "app/plugin/DocApiTypes-ti";
 import { CellFormatType } from "app/plugin/GristAPI";
@@ -88,6 +89,10 @@ import { GristServer } from "app/server/lib/GristServer";
 import { getAnonPlaygroundEnabled } from "app/server/lib/gristSettings";
 import { HashUtil } from "app/server/lib/HashUtil";
 import { makeForkIds } from "app/server/lib/idUtils";
+import { attachIkaDocDocApiGates } from "app/server/lib/IkaDocDocApiGates";
+import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
+import { assertIkaDocUserActionsAllowedForDocument } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import {
   getDocId,
@@ -147,7 +152,10 @@ export class DocWorkerApi {
   constructor(private _app: Application, private _docWorker: DocWorker,
     private _docWorkerMap: IDocWorkerMap, private _docManager: DocManager,
     private _dbManager: HomeDBManager, private _attachmentStoreProvider: IAttachmentStoreProvider,
-    private _grist: GristServer, tracker?: DocApiUsageTracker) {
+    private _grist: GristServer, tracker: DocApiUsageTracker | undefined,
+    private _ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry,
+    private _ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient,
+    private _ikadocForwardAuthSecret?: string) {
     this._tracker = tracker ?? new DocApiUsageTracker({
       getRedisClient: () => this._docWorkerMap.getRedisClient(),
       telemetry: this._grist.getTelemetry(),
@@ -171,6 +179,20 @@ export class DocWorkerApi {
     // Add middleware that permits OAuth tokens on some endpoints (when OAuth support is present).
     this._grist.create.addOAuthMiddleware(this._app, ["doc"]);
 
+    // Runtime sessions are an IkaDoc-only editor transport credential. The global /api
+    // middleware runs before Grist user resolution, so Grist auth can replace it; install
+    // the same credential again at the DocApi seam before document REST authorization.
+    this._app.use(
+      "/api/docs/:docId",
+      createIkaDocRuntimeAuthMiddleware(
+        this._dbManager,
+        this._ikadocRuntimeSessionRegistry,
+        this._ikadocEditorAdmissionClient,
+        this._ikadocForwardAuthSecret,
+      ),
+    );
+    attachIkaDocDocApiGates(this._app, this._ikadocRuntimeSessionRegistry);
+
     // Some endpoints require the admin
     const requireInstallAdmin = this._grist.getInstallAdmin().getMiddlewareRequireAdmin();
 
@@ -193,6 +215,8 @@ export class DocWorkerApi {
     const decodeGoogleToken = expressWrap(googleAuthTokenMiddleware.bind(null));
 
     const throttled = this._tracker.throttle.bind(this._tracker);
+    const assertIkaDocUserActions = (docId: string, actions: UserAction[], req?: RequestWithLogin) =>
+      assertIkaDocUserActionsAllowedForDocument(this._ikadocRuntimeSessionRegistry, docId, actions, req);
 
     const withDoc = (callback: WithDocHandler) => throttled(this._requireActiveDoc(callback));
 
@@ -581,7 +605,7 @@ export class DocWorkerApi {
       withDoc(async (activeDoc, req, res) => {
         const colValues = req.body as BulkColValues;
         const count = colValues[Object.keys(colValues)[0]].length;
-        const op = await getTableOperations(req, activeDoc);
+        const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const ids = await op.addRecords(count, colValues);
         res.json(ids);
       }),
@@ -610,7 +634,7 @@ export class DocWorkerApi {
           }
         }
         validateCore(RecordsPost, req, body);
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const records = await ops.create(body.records);
         if (req.query.utm_source === "grist-forms") {
           activeDoc.logTelemetryEvent(docSessionFromRequest(req), "submittedForm");
@@ -651,6 +675,7 @@ export class DocWorkerApi {
           // Maybe there should be a query param to control this?
           ["AddVisibleColumn", tableId, colId, fields || {}],
         );
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         const { retValues } = await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -668,6 +693,7 @@ export class DocWorkerApi {
           const colInfos = columns.map(({ fields, id: colId }) => ({ ...fields, id: colId }));
           return ["AddTable", id, colInfos];
         });
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         const { retValues } = await activeDoc.applyUserActions(docSessionFromRequest(req), actions);
         const tables = retValues.map(({ table_id }) => ({ id: table_id }));
         res.json({ tables });
@@ -676,7 +702,7 @@ export class DocWorkerApi {
 
     this._app.post("/api/docs/:docId/tables/:tableId/data/delete", canEdit, withDoc(async (activeDoc, req, res) => {
       const rowIds = req.body;
-      const op = await getTableOperations(req, activeDoc);
+      const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
       await op.destroy(rowIds);
       res.json(null);
     }));
@@ -748,7 +774,7 @@ export class DocWorkerApi {
         const rowIds = columnValues.id;
         // sandbox expects no id column
         delete columnValues.id;
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await ops.updateRecords(columnValues, rowIds);
         res.json(null);
       }),
@@ -758,7 +784,7 @@ export class DocWorkerApi {
     this._app.patch("/api/docs/:docId/tables/:tableId/records", canEdit, validate(RecordsPatch),
       withDoc(async (activeDoc, req, res) => {
         const body = req.body as Types.RecordsPatch;
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await ops.update(body.records);
         res.json(null);
       }),
@@ -768,7 +794,7 @@ export class DocWorkerApi {
     this._app.post("/api/docs/:docId/tables/:tableId/records/delete", canEdit,
       withDoc(async (activeDoc, req, res) => {
         const rowIds = req.body;
-        const op = await getTableOperations(req, activeDoc);
+        const op = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         await op.destroy(rowIds);
         res.json(null);
       }),
@@ -792,7 +818,12 @@ export class DocWorkerApi {
           }
           return { ...col, id };
         });
-        const ops = await getTableOperations(req, activeDoc, "_grist_Tables_column");
+        const ops = await getTableOperations(
+          req,
+          activeDoc,
+          "_grist_Tables_column",
+          this._ikadocRuntimeSessionRegistry,
+        );
         await ops.update(columns);
         res.json(null);
       }),
@@ -810,7 +841,7 @@ export class DocWorkerApi {
           }
           return { ...table, id };
         });
-        const ops = await getTableOperations(req, activeDoc, "_grist_Tables");
+        const ops = await getTableOperations(req, activeDoc, "_grist_Tables", this._ikadocRuntimeSessionRegistry);
         await ops.update(tables);
         res.json(null);
       }),
@@ -819,7 +850,7 @@ export class DocWorkerApi {
     // Add or update records given in records format
     this._app.put("/api/docs/:docId/tables/:tableId/records", canEdit, validate(RecordsPut),
       withDoc(async (activeDoc, req, res) => {
-        const ops = await getTableOperations(req, activeDoc);
+        const ops = await getTableOperations(req, activeDoc, undefined, this._ikadocRuntimeSessionRegistry);
         const body = req.body as Types.RecordsPut;
         const options = {
           add: !isAffirmative(req.query.noadd),
@@ -874,6 +905,7 @@ export class DocWorkerApi {
           ...(!isAffirmative(req.query.noadd) ? addActions : []),
           ...(isAffirmative(req.query.replaceall) ? [await getRemoveAction()] : []),
         ];
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         await handleSandboxError(tableId, [],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -886,6 +918,7 @@ export class DocWorkerApi {
         const { colId } = req.params;
         const tableId = await getRealTableId(req.params.tableId, { activeDoc, req });
         const actions = [["RemoveColumn", tableId, colId]];
+        assertIkaDocUserActions(activeDoc.docName, actions, req);
         await handleSandboxError(tableId, [colId],
           activeDoc.applyUserActions(docSessionFromRequest(req), actions),
         );
@@ -2270,17 +2303,21 @@ export class DocWorkerApi {
 
 export function addDocApiRoutes(
   app: Application, docWorker: DocWorker, docWorkerMap: IDocWorkerMap, docManager: DocManager, dbManager: HomeDBManager,
-  attachmentStoreProvider: IAttachmentStoreProvider, grist: GristServer, tracker?: DocApiUsageTracker,
+  attachmentStoreProvider: IAttachmentStoreProvider, grist: GristServer, tracker: DocApiUsageTracker | undefined,
+  ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry,
+  ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient,
+  ikadocForwardAuthSecret?: string,
 ) {
   const api = new DocWorkerApi(app, docWorker, docWorkerMap, docManager, dbManager, attachmentStoreProvider,
-    grist, tracker);
+    grist, tracker, ikadocRuntimeSessionRegistry, ikadocEditorAdmissionClient, ikadocForwardAuthSecret);
   api.addEndpoints();
 }
 
 async function getTableOperations(
   req: RequestWithLogin,
   activeDoc: ActiveDoc,
-  tableId?: string): Promise<TableOperationsImpl> {
+  tableId: string | undefined,
+  ikadocRuntimeSessionRegistry: IkaDocRuntimeSessionRegistry): Promise<TableOperationsImpl> {
   const options: OpOptions = {
     parseStrings: !isAffirmative(req.query.noparse),
   };
@@ -2289,6 +2326,12 @@ async function getTableOperations(
     ...getErrorPlatform(realTableId),
     applyUserActions(actions, opts) {
       if (!activeDoc) { throw new Error("no document"); }
+      assertIkaDocUserActionsAllowedForDocument(
+        ikadocRuntimeSessionRegistry,
+        activeDoc.docName,
+        actions,
+        req,
+      );
       return activeDoc.applyUserActions(
         docSessionFromRequest(req),
         actions,

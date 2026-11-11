@@ -24,6 +24,7 @@ import { Doom } from "app/gen-server/lib/Doom";
 import { HomeDBManager, UserChange } from "app/gen-server/lib/homedb/HomeDBManager";
 import { Housekeeper } from "app/gen-server/lib/Housekeeper";
 import { Usage } from "app/gen-server/lib/Usage";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { AccessTokens, IAccessTokens } from "app/server/lib/AccessTokens";
 import { attachAppEndpoint } from "app/server/lib/AppEndpoint";
 import { appSettings } from "app/server/lib/AppSettings";
@@ -69,6 +70,21 @@ import { IAuditLogger } from "app/server/lib/IAuditLogger";
 import { IBilling } from "app/server/lib/IBilling";
 import { IDocNotificationManager } from "app/server/lib/IDocNotificationManager";
 import { IDocStorageManager } from "app/server/lib/IDocStorageManager";
+import { readIkaDocAdmissionConfig } from "app/server/lib/IkaDocAdmissionConfig";
+import { createIkaDocBackendAdmissionClient } from "app/server/lib/IkaDocBackendAdmissionClient";
+import { IkaDocBackendSessionValidator } from "app/server/lib/IkaDocBackendSessionValidator";
+import {
+  createIkaDocRuntimeAuthMiddleware,
+  createIkaDocRuntimeProfileHandler,
+  createIkaDocRuntimeSessionAccessHandler,
+} from "app/server/lib/IkaDocRuntimeAuth";
+import { attachIkaDocRuntimeHealthEndpoint } from "app/server/lib/IkaDocRuntimeHealthEndpoint";
+import {
+  denyIkaDocRuntimeOperation,
+  IkaDocRuntimeSessionValidator,
+} from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
+import { IkaDocRuntimeSessionRevalidator } from "app/server/lib/IkaDocRuntimeSessionRevalidator";
 import { EmitNotifier, INotifier } from "app/server/lib/INotifier";
 import { InstallAdmin } from "app/server/lib/InstallAdmin";
 import { IOAuthValidator } from "app/server/lib/IOAuthValidator";
@@ -202,6 +218,11 @@ export class FlexServer implements GristServer {
   private _pubSubManager: IPubSubManager = createPubSubManager(process.env.REDIS_URL);
   private _assistant?: IAssistant;
   private _accessTokens: IAccessTokens;
+  private readonly _ikadocRuntimeSessionRegistry = new IkaDocRuntimeSessionRegistry();
+  private readonly _ikadocEditorAdmissionClient: IkaDocEditorAdmissionClient | undefined;
+  private readonly _ikadocRuntimeSessionValidator: IkaDocRuntimeSessionValidator | undefined;
+  private readonly _ikadocForwardAuthSecret: string | undefined;
+  private _ikadocRuntimeSessionRevalidator: IkaDocRuntimeSessionRevalidator | undefined;
   private _internalPermitStore: IPermitStore;  // store for permits that stay within our servers
   private _externalPermitStore: IPermitStore;  // store for permits that pass through outside servers
   private _disabled: boolean = false;
@@ -274,6 +295,25 @@ export class FlexServer implements GristServer {
     fse.mkdirpSync(docsRoot);
     this.docsRoot = fse.realpathSync(docsRoot);
     this.info.push(["docsRoot", this.docsRoot]);
+
+    const ikadocAdmissionConfig = readIkaDocAdmissionConfig();
+    this._ikadocEditorAdmissionClient = createIkaDocBackendAdmissionClient(
+      ikadocAdmissionConfig,
+    );
+    this._ikadocRuntimeSessionValidator = ikadocAdmissionConfig ?
+      new IkaDocBackendSessionValidator(
+        ikadocAdmissionConfig.timeoutMs,
+        ikadocAdmissionConfig.validationUrl,
+      ) :
+      undefined;
+    this._ikadocForwardAuthSecret = ikadocAdmissionConfig?.forwardAuthSecret;
+    if (this._ikadocRuntimeSessionValidator) {
+      this._ikadocRuntimeSessionRevalidator = new IkaDocRuntimeSessionRevalidator(
+        this._ikadocRuntimeSessionRegistry,
+        this._ikadocRuntimeSessionValidator,
+      );
+      this._ikadocRuntimeSessionRevalidator.start();
+    }
 
     this._deploymentType = this.create.deploymentType();
     if (process.env.GRIST_TEST_SERVER_DEPLOYMENT_TYPE) {
@@ -1080,6 +1120,10 @@ export class FlexServer implements GristServer {
   public addApiMiddleware() {
     if (this._check("api-mw", "middleware")) { return; }
     // API endpoints need req.userId and need to support requests from different subdomains.
+    this.app.use("/api", this._ikadocRuntimeAuth());
+    // Owarelin/IkaDoc: asking a Grist install admin for setup steps is not part of an IkaDoc session.
+    this.app.use("/api/setup-requests",
+      denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "request Grist setup steps"));
     this.app.use("/api", this._userIdMiddleware);
     this.app.use("/api", this._trustOriginsMiddleware);
     this.app.use("/api", disableCache);
@@ -1110,8 +1154,22 @@ export class FlexServer implements GristServer {
   public addHomeApi() {
     if (this._check("api", "homedb", "json", "api-mw")) { return; }
 
+    // Owarelin/IkaDoc: runtime health, IkaDoc's profile and session views, and no Grist home browsing.
+    attachIkaDocRuntimeHealthEndpoint({ app: this.app, getSandboxInfo: () => this.getSandboxInfo() });
+    const ikadocSessionArgs = [
+      this._ikadocRuntimeSessionRegistry, this._ikadocEditorAdmissionClient, this._ikadocForwardAuthSecret,
+    ] as const;
+    this.app.get("/api/profile/user", createIkaDocRuntimeProfileHandler(...ikadocSessionArgs));
+    this.app.get(["/api/session/access/active", "/api/session/access/all"],
+      createIkaDocRuntimeSessionAccessHandler(...ikadocSessionArgs));
+    this.app.use("/api/profile",
+      denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "use Grist profile management"));
+    this.app.use(["/api/orgs", "/api/workspaces", "/api/templates", "/api/widgets"],
+      denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "browse Grist home resources"));
+
     // ApiServer's constructor adds endpoints to the app.
-    new ApiServer(this, this.app, this._dbManager);
+    new ApiServer(this, this.app, this._dbManager,
+      this._ikadocRuntimeSessionRegistry, this._ikadocEditorAdmissionClient, this._ikadocForwardAuthSecret);
   }
 
   public addScimApi() {
@@ -1193,6 +1251,7 @@ export class FlexServer implements GristServer {
 
   public async close() {
     this._processMonitorStop?.();
+    this._ikadocRuntimeSessionRevalidator?.stop();
     await this._updateManager?.clear();
     if (this.usage)  { await this.usage.close(); }
     if (this._hosts) { this._hosts.close(); }
@@ -1409,6 +1468,7 @@ export class FlexServer implements GristServer {
       app: this.app,
       middleware: [
         this._redirectToHostMiddleware,
+        this._ikadocRuntimeAuth(),
         this._userIdMiddleware,
         forcedLoginMiddleware,
         this._redirectToLoginWithExceptionsMiddleware,
@@ -1418,12 +1478,14 @@ export class FlexServer implements GristServer {
       docMiddleware: [
         // Same as middleware, except without login redirect middleware.
         this._redirectToHostMiddleware,
+        this._ikadocRuntimeAuth(),
         this._userIdMiddleware,
         forcedLoginMiddleware,
         this._redirectToOrgMiddleware,
         welcomeNewUser,
       ],
       formMiddleware: [
+        this._ikadocRuntimeAuth(),
         this._userIdMiddleware,
         forcedLoginMiddleware,
       ],
@@ -1433,6 +1495,8 @@ export class FlexServer implements GristServer {
       dbManager: this._dbManager,
       plugins: (await this._addPluginManager()).getPlugins(),
       gristServer: this,
+      ikadocEditorAdmissionClient: this._ikadocEditorAdmissionClient,
+      ikadocRuntimeSessionRegistry: this._ikadocRuntimeSessionRegistry,
     });
   }
 
@@ -1483,6 +1547,9 @@ export class FlexServer implements GristServer {
       dbManager: this.getHomeDBManager(),
       gristServer: this,
       permitStore: this._internalPermitStore,
+      ikadocRuntimeSessionRegistry: this._ikadocRuntimeSessionRegistry,
+      ikadocEditorAdmissionClient: this._ikadocEditorAdmissionClient,
+      ikadocForwardAuthSecret: this._ikadocForwardAuthSecret,
     });
   }
 
@@ -1754,7 +1821,9 @@ export class FlexServer implements GristServer {
     this._docApiUsageTracker = tracker;
 
     // Attach docWorker endpoints and Comm methods.
-    const docWorker = new DocWorker(this._dbManager, { comm: this._comm, gristServer: this, tracker });
+    const docWorker = new DocWorker(this._dbManager, { comm: this._comm, gristServer: this, tracker,
+      ikadocRuntimeSessionRegistry: this._ikadocRuntimeSessionRegistry,
+      ikadocRuntimeSessionValidator: this._ikadocRuntimeSessionValidator });
     this._docWorker = docWorker;
 
     // Register the websocket comm functions associated with the docworker.
@@ -1763,6 +1832,7 @@ export class FlexServer implements GristServer {
 
     // Doc-specific endpoints require authorization; collect the relevant middleware in one list.
     const docAccessMiddleware = [
+      this._ikadocRuntimeAuth(),
       this._userIdMiddleware,
       this._docPermissionsMiddleware,
       this.tagChecker.requireTag,
@@ -1772,7 +1842,8 @@ export class FlexServer implements GristServer {
 
     if (!isSingleUserMode()) {
       addDocApiRoutes(this.app, docWorker, this._docWorkerMap, docManager, this._dbManager,
-        this._attachmentStoreProvider, this, tracker);
+        this._attachmentStoreProvider, this, tracker,
+        this._ikadocRuntimeSessionRegistry, this._ikadocEditorAdmissionClient, this._ikadocForwardAuthSecret);
     }
   }
 
@@ -1781,7 +1852,7 @@ export class FlexServer implements GristServer {
     // Only meaningful on instances that handle documents.
     if (!this._docManager) {
       // "unknown" means this server doesn't handle documents, so we didn't test any sandbox.
-      return this._sandboxInfo = {
+      return {
         flavor: "unknown",
         configured: false,
         functional: false,
@@ -1790,7 +1861,14 @@ export class FlexServer implements GristServer {
       } as SandboxInfo;
     }
     // No flavor argument — uses the deployment's default via getCreate().NSandbox().
-    return this._sandboxInfo = await testSandboxFlavor();
+    let sandboxInfo = await testSandboxFlavor();
+    if (!(sandboxInfo.configured && sandboxInfo.functional && sandboxInfo.effective)) {
+      sandboxInfo = await testSandboxFlavor();
+    }
+    if (sandboxInfo.configured && sandboxInfo.functional && sandboxInfo.effective) {
+      this._sandboxInfo = sandboxInfo;
+    }
+    return sandboxInfo;
   }
 
   public getInfo(key: string): any {
@@ -1820,6 +1898,11 @@ export class FlexServer implements GristServer {
       this._userIdMiddleware,
       this._redirectToLoginWithoutExceptionsMiddleware,
     ];
+    // Owarelin/IkaDoc: Grist's account pages and account closing are not part of an IkaDoc session.
+    const denyIkaDocAccountAccess = denyIkaDocRuntimeOperation(
+      this._ikadocRuntimeSessionRegistry, "use Grist account management");
+    this.app.get("/account(/developer|/authorized-apps)?", denyIkaDocAccountAccess);
+    this.app.delete(["/api/doom/account", "/api/doom/org"], denyIkaDocAccountAccess);
 
     const accountPaths = "/account(/developer|/authorized-apps|/personal-site)?";
     this.app.get(accountPaths, ...middleware, expressWrap(async (req, resp) => {
@@ -2438,6 +2521,12 @@ export class FlexServer implements GristServer {
    */
   public getUserIdMiddleware(): express.RequestHandler {
     return this._userIdMiddleware;
+  }
+
+  /** Owarelin/IkaDoc: attaches the admitted person's IkaDoc runtime credential, if the request has one. */
+  private _ikadocRuntimeAuth(): express.RequestHandler {
+    return createIkaDocRuntimeAuthMiddleware(this._dbManager, this._ikadocRuntimeSessionRegistry,
+      this._ikadocEditorAdmissionClient, this._ikadocForwardAuthSecret);
   }
 
   // Adds endpoints that support imports and exports.

@@ -3,6 +3,7 @@ import { getLoginUrl, getSignupUrl } from "app/client/lib/urlUtils";
 import { AppModel } from "app/client/models/AppModel";
 import { getMainOrgUrl, urlState } from "app/client/models/gristUrlState";
 import { AppHeader } from "app/client/ui/AppHeader";
+import { buildIkaDocRefusalPage } from "app/client/ui/IkaDocRefusalPage";
 import { leftPanelBasic } from "app/client/ui/LeftPanelCommon";
 import { pagePanels } from "app/client/ui/PagePanels";
 import { createTopBarHome } from "app/client/ui/TopBar";
@@ -31,6 +32,11 @@ export function createErrPage(appModel: AppModel) {
     // replace the current URL with the target URL, so that the user can retry their
     // action by simply refreshing the page.
     history.replaceState(null, "", errTargetUrl);
+  }
+  // Owarelin/IkaDoc: IkaDoc deployments show their own refusal page (GW-SHL-02).
+  const ikadocRefusal = buildIkaDocRefusalPage();
+  if (ikadocRefusal) {
+    return ikadocRefusal;
   }
   return errPage === "signed-out" ? createSignedOutPage(appModel) :
     errPage === "not-found" ? createNotFoundPage(appModel, errMessage) :

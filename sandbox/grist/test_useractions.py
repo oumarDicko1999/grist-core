@@ -353,6 +353,32 @@ class TestUserActions(test_engine.EngineTestCase):
 
   #----------------------------------------------------------------------
 
+  def test_summary_chart_prefers_summed_value(self):
+    # Owarelin/IkaDoc: a chart on a summary shows a summed column rather than 'count'.
+    self.apply_user_action(['AddTable', 'Invoices', [
+      {'id': 'status', 'type': 'Text'},
+      {'id': 'amount', 'type': 'Numeric'},
+    ]])
+    self.apply_user_action(['CreateViewSection', 1, 0, 'chart', [2], None])
+
+    summary_table = self.engine.docmodel.tables.lookupOne(tableId='Invoices_summary_status')
+    chart = [s for s in summary_table.viewSections if s.parentKey == 'chart'][0]
+
+    self.assertEqual([f.colRef.colId for f in chart.fields], ['status', 'amount'])
+
+  def test_summary_chart_keeps_count_without_summed_value(self):
+    # Owarelin/IkaDoc: with nothing to sum, 'count' is still the useful series.
+    self.apply_user_action(['AddTable', 'Invoices', [
+      {'id': 'status', 'type': 'Text'},
+      {'id': 'client', 'type': 'Text'},
+    ]])
+    self.apply_user_action(['CreateViewSection', 1, 0, 'chart', [2], None])
+
+    summary_table = self.engine.docmodel.tables.lookupOne(tableId='Invoices_summary_status')
+    chart = [s for s in summary_table.viewSections if s.parentKey == 'chart'][0]
+
+    self.assertEqual([f.colRef.colId for f in chart.fields], ['status', 'count'])
+
   def test_view_remove(self):
     # Add a couple of tables and views, to trigger creation of some related items.
     self.init_views_sample()

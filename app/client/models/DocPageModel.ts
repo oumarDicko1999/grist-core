@@ -12,6 +12,11 @@ import { docUrl, urlState } from "app/client/models/gristUrlState";
 import { addNewButton, cssAddNewButton } from "app/client/ui/AddNewButton";
 import { App } from "app/client/ui/App";
 import { buildDocGristImportMenuItem } from "app/client/ui/GristImportEntryPoints";
+import {
+  canImportIkaDocRuntimeLocalFiles,
+  isIkaDocRuntimeMode,
+  shouldShowIkaDocRuntimeAuthoringSurfaces,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { cssLeftPanel, cssScrollPane } from "app/client/ui/LeftPanelCommon";
 import { buildPagesDom } from "app/client/ui/Pages";
 import { openPageWidgetPicker } from "app/client/ui/PageWidgetPicker";
@@ -322,9 +327,10 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
   }
 
   public createLeftPane(leftPanelOpen: Observable<boolean>) {
+    const showAuthoringSurfaces = shouldShowIkaDocRuntimeAuthoringSurfaces();
     return cssLeftPanel(
       dom.maybe(this.gristDoc, activeDoc => [
-        addNewButton({ isOpen: leftPanelOpen },
+        showAuthoringSurfaces ? addNewButton({ isOpen: leftPanelOpen },
           menu(() => addMenu(this.importSources, activeDoc, this.isReadonly.get()), {
             placement: "bottom-start",
             // "Add New" menu should have the same width as the "Add New" button that opens it.
@@ -332,7 +338,7 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
           }),
           testId("dp-add-new"),
           dom.cls("tour-add-new"),
-        ),
+        ) : null,
         cssScrollPane(
           dom.create(buildPagesDom, activeDoc, leftPanelOpen),
           dom.create(tools, activeDoc, leftPanelOpen),
@@ -596,6 +602,7 @@ contact the document owners to attempt a document recovery. [{{error}}]", { erro
 
 function addMenu(importSources: ImportSource[], gristDoc: GristDoc, isReadonly: boolean): DomElementArg[] {
   const selectBy = gristDoc.selectBy.bind(gristDoc);
+  const canImportLocalFiles = canImportIkaDocRuntimeLocalFiles();
   return [
     menuItem(
       elem => openPageWidgetPicker(elem, gristDoc, val => gristDoc.addNewPage(val).catch(reportError),
@@ -615,8 +622,9 @@ function addMenu(importSources: ImportSource[], gristDoc: GristDoc, isReadonly: 
       ariaDisabled(isReadonly),
     ),
     menuDivider(),
-    buildImportMenu(importSources, isReadonly),
-    buildDocGristImportMenuItem(gristDoc, isReadonly),
+    buildImportMenu(importSources, isReadonly || !canImportLocalFiles),
+    // Owarelin/IkaDoc: an IkaDoc session holds one document; copying from another is not part of it.
+    isIkaDocRuntimeMode() ? null : buildDocGristImportMenuItem(gristDoc, isReadonly),
     isReadonly ? menuText(t("You do not have edit access to this document")) : null,
     testId("dp-add-new-menu"),
   ];

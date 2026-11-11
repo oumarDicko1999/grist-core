@@ -9,6 +9,8 @@ import { urlState } from "app/client/models/gristUrlState";
 import { workspaceName } from "app/client/models/WorkspaceInfo";
 import { AccountWidget } from "app/client/ui/AccountWidget";
 import { buildActiveUserList } from "app/client/ui/ActiveUserList";
+import { buildIkaDocEditorControls } from "app/client/ui/IkaDocEditorControls";
+import { attachIkaDocGuidedWorkspaceSetup } from "app/client/ui/IkaDocGuidedWorkspaceSetup";
 import { buildLanguageMenu } from "app/client/ui/LanguageMenu";
 import { buildNotifyMenuButton } from "app/client/ui/NotifyUI";
 import { manageTeamUsersApp } from "app/client/ui/OpenUserManager";
@@ -21,7 +23,10 @@ import { docBreadcrumbs } from "app/client/ui2018/breadcrumbs";
 import { basicButton } from "app/client/ui2018/buttons";
 import { isNarrowScreenObs, testId, theme } from "app/client/ui2018/cssVars";
 import { IconName } from "app/client/ui2018/IconList";
+import { parseIkaDocRuntimeConfigFromLoadConfig } from "app/common/gristUrls";
 import * as roles from "app/common/roles";
+import { getGristConfig } from "app/common/urlUtils";
+import { postOwarelinRuntimeEvent } from "app/ikadoc/OwarelinRuntimeEvents";
 
 import { Computed, dom, DomElementArg, makeTestId, MultiHolder, Observable, styled } from "grainjs";
 
@@ -56,6 +61,8 @@ export function createTopBarHome(appModel: AppModel, onSave?: (personal: boolean
 
 export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageModel: DocPageModel) {
   const doc = pageModel.currentDoc;
+  const ikadocRuntime = parseIkaDocRuntimeConfigFromLoadConfig(getGristConfig());
+  const ikadocConfig = ikadocRuntime.kind === "enabled" ? ikadocRuntime.config : null;
   const renameDoc = (val: string) => pageModel.renameDoc(val);
   const displayNameWs = Computed.create(owner, pageModel.currentWorkspace,
     (use, ws) => ws ? { ...ws, name: workspaceName(appModel, ws) } : ws);
@@ -92,11 +99,25 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
   });
 
   const isAnonymous = !pageModel.appModel.currentValidUser;
+  if (ikadocConfig) {
+    Computed.create(owner, (use) => {
+      const holder = MultiHolder.create(use.owner);
+      const gristDoc = use(pageModel.gristDoc);
+      if (!gristDoc) {
+        return holder;
+      }
+      holder.autoDispose(gristDoc.docData.sendActionsDoneEmitter.addListener(() => {
+        postOwarelinRuntimeEvent(ikadocConfig, "owarelin:documentDirty");
+      }));
+      attachIkaDocGuidedWorkspaceSetup(holder, ikadocConfig, gristDoc);
+      return holder;
+    });
+  }
 
   return [
     // TODO Before gristDoc is loaded, we could show doc-name without the page. For now, we delay
     // showing of breadcrumbs until gristDoc is loaded.
-    dom.maybe(pageModel.gristDoc, gristDoc =>
+    ikadocConfig ? null : dom.maybe(pageModel.gristDoc, gristDoc =>
       cssBreadcrumbContainer(
         docBreadcrumbs(displayNameWs, pageModel.currentDocTitle, gristDoc.currentPageName, {
           docNameSave: renameDoc,
@@ -127,7 +148,10 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
       ),
     ),
     cssFlexSpace(),
-    dom.maybe(pageModel.gristDoc, gristDoc => buildActiveUserList(owner, gristDoc.userPresenceModel)),
+    ikadocConfig ? null : dom.maybe(
+      pageModel.gristDoc,
+      gristDoc => buildActiveUserList(owner, gristDoc.userPresenceModel),
+    ),
     // Don't show useless undo/redo buttons for sample docs, to leave more space for "Make copy".
     dom.maybe(pageModel.undoState, state => [
       topBarUndoBtn("Undo",
@@ -157,13 +181,16 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
         pageModel.gristDoc.get()?.regionFocusSwitcher,
       );
     }),
-    dom.maybe(use => !(use(pageModel.isTemplate) && isAnonymous), () => [
+    ikadocConfig ? dom.maybe(pageModel.gristDoc, gristDoc =>
+      buildIkaDocEditorControls(owner, ikadocConfig, gristDoc),
+    ) : null,
+    ikadocConfig ? null : dom.maybe(use => !(use(pageModel.isTemplate) && isAnonymous), () => [
       buildShareMenuButton(pageModel),
       dom.maybe(pageModel.gristDoc,
         gristDoc => buildShowDiscussionButton(gristDoc)),
       buildNotifyMenuButton(appModel.notifier, appModel),
     ]),
-    dom("div", dom.create(AccountWidget, appModel, pageModel)),
+    ikadocConfig ? null : dom("div", dom.create(AccountWidget, appModel, pageModel)),
   ];
 }
 

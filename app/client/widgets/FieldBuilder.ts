@@ -18,6 +18,7 @@ import { ColumnRec, DocModel, ViewFieldRec } from "app/client/models/DocModel";
 import { type KoReactive, SaveableObjObservable, setSaveValue } from "app/client/models/modelUtil";
 import { FieldSettingsMenu } from "app/client/ui/FieldMenus";
 import { translateColumnTypeLabel } from "app/client/ui/GridViewMenus";
+import { canUseIkaDocRuntimeComments } from "app/client/ui/IkaDocRuntimeAccess";
 import { cssBlockedCursor, cssLabel, cssRow } from "app/client/ui/RightPanelStyles";
 import { textButton } from "app/client/ui2018/buttons";
 import { buttonSelect, cssButtonSelect } from "app/client/ui2018/buttonSelect";
@@ -568,9 +569,10 @@ export class FieldBuilder extends Disposable {
                       },
                     )),
                   ),
-                  t("Field in {{count}} views", {
-                    count: kd.text(() => this.origColumn.viewFields().all().length),
-                  }),
+                  // Owarelin/IkaDoc: a number, not a DOM node, so the plural form is translated.
+                  kd.text(() => t("Field in {{count}} views", {
+                    count: this.origColumn.viewFields().all().length,
+                  })),
                 ),
               ),
             ),
@@ -705,6 +707,7 @@ export class FieldBuilder extends Disposable {
     const cellFill = ko.pureComputed(() => notTransparent(this.field.fillColor() || ""));
 
     const hasComment = koUtil.withKoUtils(ko.computed(() => {
+      if (!canUseIkaDocRuntimeComments()) { return false; }
       if (this.isDisposed()) { return false; }   // Work around JS errors during field removal.
       const rowId = row.id();
       const discussion = this.field.column().cells().all()
@@ -839,6 +842,9 @@ export class FieldBuilder extends Disposable {
     mainRowModel: DataRowModel,
     text: CommentWithMentions | null,
   ) {
+    if (!canUseIkaDocRuntimeComments()) {
+      return;
+    }
     const holder = this.gristDoc.fieldEditorHolder;
     const cellElem: Element = this._rowMap.get(mainRowModel)!;
     if (this.columnTransform) {

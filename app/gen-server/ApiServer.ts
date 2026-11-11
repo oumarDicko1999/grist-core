@@ -20,6 +20,7 @@ import { BillingOptions, HomeDBManager, Scope } from "app/gen-server/lib/homedb/
 import { DocumentAccessChanges, OrgAccessChanges, PreviousAndCurrent,
   QueryResult, WorkspaceAccessChanges } from "app/gen-server/lib/homedb/Interfaces";
 import { Permissions } from "app/gen-server/lib/Permissions";
+import { IkaDocEditorAdmissionClient } from "app/ikadoc/IkaDocEditorAdmission";
 import { appSettings } from "app/server/lib/AppSettings";
 import { getAuthorizedUserId, getUserId, getUserProfiles, RequestWithLogin } from "app/server/lib/Authorizer";
 import { getSessionUser, linkOrgWithEmail } from "app/server/lib/BrowserSession";
@@ -28,6 +29,9 @@ import { RequestWithOrg } from "app/server/lib/extractOrg";
 import { GristServer } from "app/server/lib/GristServer";
 import { getCookieDomain } from "app/server/lib/gristSessions";
 import { getCanAnyoneCreateOrgs, getPersonalOrgsEnabled, getTemplateOrg } from "app/server/lib/gristSettings";
+import { createIkaDocRuntimeAuthMiddleware } from "app/server/lib/IkaDocRuntimeAuth";
+import { denyIkaDocRuntimeOperation, IKADOC_NATIVE_SHARING_ROUTES } from "app/server/lib/IkaDocRuntimePolicy";
+import { IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 import log from "app/server/lib/log";
 import { clearSessionCacheIfNeeded, getDocScope, getScope, integerParam,
   isParameterOn, optStringParam, sendOkReply, sendReply, stringParam } from "app/server/lib/requestUtils";
@@ -145,6 +149,9 @@ export class ApiServer {
     private _gristServer: GristServer,
     private _app: express.Application,
     private _dbManager: HomeDBManager,
+    private _ikadocRuntimeSessionRegistry?: IkaDocRuntimeSessionRegistry,
+    private _ikadocEditorAdmissionClient?: IkaDocEditorAdmissionClient,
+    private _ikadocForwardAuthSecret?: string,
   ) {
     this._addEndpoints();
   }
@@ -154,6 +161,19 @@ export class ApiServer {
     this._gristServer.create.addOAuthMiddleware(this._app, ["home"]);
 
     const requireInstallAdmin = this._gristServer.getInstallAdmin().getMiddlewareRequireAdmin();
+
+    // IkaDoc runtime documents still need the Home API document metadata route.
+    // Re-attach the IkaDoc credential here because Home API routes are registered before DocApi routes.
+    if (this._ikadocRuntimeSessionRegistry) {
+      this._app.use("/api/docs/:did", createIkaDocRuntimeAuthMiddleware(
+        this._dbManager,
+        this._ikadocRuntimeSessionRegistry,
+        this._ikadocEditorAdmissionClient,
+        this._ikadocForwardAuthSecret,
+      ));
+      this._app.use(IKADOC_NATIVE_SHARING_ROUTES,
+        denyIkaDocRuntimeOperation(this._ikadocRuntimeSessionRegistry, "share document"));
+    }
 
     // GET /api/orgs
     // Get all organizations user may have some access to.

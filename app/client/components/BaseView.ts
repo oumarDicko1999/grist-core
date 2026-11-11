@@ -30,6 +30,11 @@ import { UnionRowSource } from "app/client/models/UnionRowSource";
 import { markAsSeen } from "app/client/models/UserPrefs";
 import { buildReassignModal } from "app/client/ui/buildReassignModal";
 import { createFilterMenu, IColumnFilterMenuOptions } from "app/client/ui/ColumnFilterMenu";
+import { ikaDocNewRowValues } from "app/client/ui/IkaDocGuidedWorkspaceRows";
+import {
+  canEditIkaDocRuntimeCells,
+  canUseIkaDocRuntimeComments,
+} from "app/client/ui/IkaDocRuntimeAccess";
 import { closeRegisteredMenu } from "app/client/ui2018/menus";
 import { BuildEditorOptions, createAllFieldWidgets, FieldBuilder } from "app/client/widgets/FieldBuilder";
 import { DisposableWithEvents } from "app/common/DisposableWithEvents";
@@ -419,7 +424,7 @@ export default class BaseView extends DisposableWithEvents {
   // Commands run via a Mousetrap callback get a KeyboardEvent is the first argument. This is
   // obscure and essentially undocumented.
   protected deleteRecords(source: unknown) {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells()) {
       return;
     }
 
@@ -488,6 +493,10 @@ export default class BaseView extends DisposableWithEvents {
    *    original content of the cell).
    */
   public activateEditorAtCursor(options: BuildEditorOptions = {}): void {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells()) {
+      return;
+    }
+
     const builder = this.activeFieldBuilder();
     if (builder.isEditorActive()) {
       return;
@@ -513,6 +522,9 @@ export default class BaseView extends DisposableWithEvents {
    * Opens discussion panel at the cursor position. Returns true if discussion panel was opened.
    */
   private _openDiscussionAtCursor(text: CommentWithMentions | null) {
+    if (!canUseIkaDocRuntimeComments()) {
+      return false;
+    }
     const builder = this.activeFieldBuilder();
     if (builder.isEditorActive()) {
       return false;
@@ -597,7 +609,7 @@ export default class BaseView extends DisposableWithEvents {
    * insert a new row at the end.
    */
   public insertRow(index?: number): Promise<number> | undefined {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells()) {
       return;
     }
 
@@ -608,7 +620,9 @@ export default class BaseView extends DisposableWithEvents {
     const insertPos = Number.isInteger(rowId) ?
       this.tableModel.tableData.getValue(rowId, "manualSort") : null;
 
-    return this.sendTableAction(["AddRecord", null, { manualSort: insertPos }])!
+    // IkaDoc: rows added to a guided workspace table carry IkaDoc's protected values.
+    return ikaDocNewRowValues(this.schemaModel.tableId(), { manualSort: insertPos })
+      .then(rowValues => this.sendTableAction(["AddRecord", null, rowValues])!)
       .then((rowId) => {
         if (!this.isDisposed()) {
           this._exemptFromFilterRows.addExemptRow(rowId);
@@ -680,7 +694,7 @@ export default class BaseView extends DisposableWithEvents {
    *    for Date columns (assumed false) and for DateTime (assumed true).
    */
   protected insertCurrentDate(withTime: boolean) {
-    if (this.gristDoc.isReadonly.get()) {
+    if (this.gristDoc.isReadonly.get() || !canEditIkaDocRuntimeCells()) {
       return;
     }
 
@@ -966,6 +980,7 @@ export default class BaseView extends DisposableWithEvents {
   protected async _duplicateRows(): Promise<number[] | undefined> {
     if (
       this.gristDoc.isReadonly.get() ||
+      !canEditIkaDocRuntimeCells() ||
       this.viewSection.disableAddRemoveRows() ||
       this.disableEditing()
     ) {

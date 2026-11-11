@@ -5,6 +5,7 @@ import { ACIndexImpl, ACItem, ACResults,
 import { IAutocompleteOptions } from "app/client/lib/autocomplete";
 import { makeT } from "app/client/lib/localization";
 import { IToken, TokenField, tokenFieldStyles } from "app/client/lib/TokenField";
+import { ikaDocChoiceText } from "app/client/ui/IkaDocChoiceText";
 import { colors, testId, theme } from "app/client/ui2018/cssVars";
 import { icon } from "app/client/ui2018/icons";
 import { menuCssClass } from "app/client/ui2018/menus";
@@ -24,12 +25,14 @@ import { dom, styled } from "grainjs";
 const t = makeT("ChoiceListEditor");
 
 export class ChoiceItem implements ACItem, IToken {
-  public cleanText: string = normalizeText(this.label);
+  public cleanText: string = normalizeText(this.displayText ?? this.label);
   constructor(
     public label: string,
     public isInvalid: boolean,  // If set, this token is not one of the valid choices.
     public isBlank: boolean,    // If set, this token is blank.
     public isNew?: boolean,     // If set, this is a choice to be added to the config.
+    // Owarelin/IkaDoc: the text shown and searched when it differs from the stored label (GW-COL-04).
+    public displayText?: string,
   ) {}
 }
 
@@ -61,7 +64,10 @@ export class ChoiceListEditor extends NewBaseEditor {
   constructor(protected options: FieldOptions) {
     super(options);
 
-    let acItems = this._choices.map(c => new ChoiceItem(c, false, false));
+    // Owarelin/IkaDoc: IkaDoc choices show labels and store codes (GW-COL-04).
+    const choiceText = ikaDocChoiceText(options.field);
+
+    let acItems = this._choices.map(c => new ChoiceItem(c, false, false, false, choiceText.label(c)));
     if (this._hasDropdownCondition) {
       try {
         const dropdownConditionFilter = this._buildDropdownConditionFilter();
@@ -78,7 +84,7 @@ export class ChoiceListEditor extends NewBaseEditor {
       buildNoItemsMessage: this._buildNoItemsMessage.bind(this),
       search: async (term: string) => this._maybeShowAddNew(acIndex.search(term), term),
       renderItem: (item, highlightFunc) => this._renderACItem(item, highlightFunc),
-      getItemText: item => item.label,
+      getItemText: item => item.displayText ?? item.label,
     };
 
     this.commandGroup = this.autoDispose(createGroup(options.commands, null, true));
@@ -91,19 +97,24 @@ export class ChoiceListEditor extends NewBaseEditor {
       String(label),
       !this._choicesSet.has(String(label)),
       String(label).trim() === "",
+      false,
+      choiceText.label(String(label)),
     ));
 
     this._tokenField = TokenField.ctor<ChoiceItem>().create(this, {
       initialValue: startTokens,
       renderToken: item => choiceTokenDomArgs(
-        item.isBlank ? "[Blank]" : item.label,
+        item.isBlank ? "[Blank]" : item.displayText ?? item.label,
         {
           ...(this._choiceOptionsByName[item.label] || {}),
           invalid: item.isInvalid,
           blank: item.isBlank,
         },
       ),
-      createToken: label => new ChoiceItem(label, !this._choicesSet.has(label), label.trim() === ""),
+      createToken: (text) => {
+        const label = choiceText.codeOf(text) ?? text;
+        return new ChoiceItem(label, !this._choicesSet.has(label), label.trim() === "", false, choiceText.label(label));
+      },
       acOptions,
       openAutocompleteOnFocus: true,
       readonly: options.readonly,
@@ -139,7 +150,8 @@ export class ChoiceListEditor extends NewBaseEditor {
       dom.on("click", () => this._textInput.focus()),
     );
 
-    this._enableAddNew = !this._hasDropdownCondition;
+    // Owarelin/IkaDoc: IkaDoc's values come from its schema; no new value is offered (GW-COL-04).
+    this._enableAddNew = !this._hasDropdownCondition && !choiceText.ikadocOwned;
   }
 
   public attach(cellElem: Element): void {
@@ -300,7 +312,7 @@ export class ChoiceListEditor extends NewBaseEditor {
         [cssChoiceACItem.cls("-with-new", this._showAddNew)]
       ),
       choiceToken(
-        buildHighlightedDom(item.label, highlightFunc, cssMatchText),
+        buildHighlightedDom(item.displayText ?? item.label, highlightFunc, cssMatchText),
         options || {},
         dom.style("max-width", "100%"),
         testId("choice-list-editor-item-label"),

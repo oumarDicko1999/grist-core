@@ -7,6 +7,7 @@ import { setTestState } from "app/client/lib/testState";
 import { TableRec } from "app/client/models/DocModel";
 import { docListHeader, docMenuTrigger } from "app/client/ui/DocMenuCss";
 import { duplicateTable, DuplicateTableResponse } from "app/client/ui/DuplicateTable";
+import { canEditIkaDocRuntimeStructure } from "app/client/ui/IkaDocRuntimeAccess";
 import { hoverTooltip, showTransientTooltip } from "app/client/ui/tooltips";
 import { buildTableName } from "app/client/ui/WidgetTitle";
 import * as css from "app/client/ui2018/cssVars";
@@ -47,6 +48,7 @@ export class DataTables extends Disposable {
   }
 
   public buildDom() {
+    const canEditStructure = canEditIkaDocRuntimeStructure();
     return container(
       cssTableList(
         /** *************  List section **********/
@@ -103,7 +105,7 @@ export class DataTables extends Disposable {
                       t("Edit record card")),
                     { key: DATA_TABLES_TOOLTIP_KEY, closeOnClick: false },
                   ),
-                  dom.hide(this._gristDoc.isReadonly),
+                  dom.hide(use => use(this._gristDoc.isReadonly) || !canEditStructure),
                   // Make the button invisible to maintain consistent alignment with non-summary tables.
                   dom.style("visibility", u => u(tableRec.summarySourceTable) === 0 ? "visible" : "hidden"),
                   cssRecordCardButton.cls("-disabled", use => use(use(tableRec.recordCardViewSection).disabled)),
@@ -115,6 +117,7 @@ export class DataTables extends Disposable {
                   icon("Dots"),
                   menu(() => this._menuItems(tableRec, isEditingName), { placement: "bottom-start" }),
                   dom.on("click", (ev) => { ev.stopPropagation(); ev.preventDefault(); }),
+                  dom.hide(use => use(this._gristDoc.isReadonly) || !canEditStructure),
                 ),
               ),
               dom.on("click", () => {
@@ -137,7 +140,8 @@ export class DataTables extends Disposable {
       const rawViewSectionRef = use(fromKo(table.rawViewSectionRef));
       const isSummaryTable = use(table.summarySourceTable) !== 0;
       const isReadonly = use(this._gristDoc.isReadonly);
-      if (!rawViewSectionRef || isSummaryTable || isReadonly) {
+      const canEditStructure = canEditIkaDocRuntimeStructure();
+      if (!rawViewSectionRef || isSummaryTable || isReadonly || !canEditStructure) {
         // Some very old documents might not have a rawViewSection, and raw summary
         // tables can't currently be renamed.
         const tableName = [
@@ -164,23 +168,29 @@ export class DataTables extends Disposable {
 
   private _menuItems(table: TableRec, isEditingName: Observable<boolean>) {
     const { isReadonly, docModel } = this._gristDoc;
+    const canEditStructure = canEditIkaDocRuntimeStructure();
     return [
       menuItem(
         () => { isEditingName.set(true); },
         t("Rename table"),
-        ariaDisabled(use => use(isReadonly) || use(table.summarySourceTable) !== 0),
+        ariaDisabled(use => !canEditStructure || use(isReadonly) || use(table.summarySourceTable) !== 0),
         testId("menu-rename-table"),
       ),
       menuItem(
         () => this._duplicateTable(table),
         t("Duplicate table"),
-        ariaDisabled(use => use(isReadonly) || use(table.isHidden) || use(table.summarySourceTable) !== 0),
+        ariaDisabled(use =>
+          !canEditStructure ||
+          use(isReadonly) ||
+          use(table.isHidden) ||
+          use(table.summarySourceTable) !== 0,
+        ),
         testId("menu-duplicate-table"),
       ),
       menuItem(
         () => this._removeTable(table),
         t("Remove table"),
-        ariaDisabled(use => use(isReadonly) || (
+        ariaDisabled(use => !canEditStructure || use(isReadonly) || (
           // Can't delete last visible table, unless it is a hidden table.
           use(docModel.visibleTables.getObservable()).length <= 1 && !use(table.isHidden)
         )),
@@ -192,7 +202,7 @@ export class DataTables extends Disposable {
           () => this._editRecordCard(table),
           cssMenuItemIcon("TypeCard"),
           t("Edit record card"),
-          ariaDisabled(isReadonly),
+          ariaDisabled(use => !canEditStructure || use(isReadonly)),
           testId("menu-edit-record-card"),
         ),
         dom.domComputed(use => use(use(table.recordCardViewSection).disabled), (isDisabled) => {
@@ -205,7 +215,7 @@ export class DataTables extends Disposable {
               }
             },
             t("{{action}} Record Card", { action: isDisabled ? "Enable" : "Disable" }),
-            ariaDisabled(isReadonly),
+            ariaDisabled(use => !canEditStructure || use(isReadonly)),
             testId(`menu-${isDisabled ? "enable" : "disable"}-record-card`),
           );
         }),
@@ -215,6 +225,9 @@ export class DataTables extends Disposable {
   }
 
   private _duplicateTable(r: TableRec) {
+    if (this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     duplicateTable(this._gristDoc, r.tableId(), {
       onSuccess: ({ raw_section_id }: DuplicateTableResponse) =>
         this._gristDoc.viewModel.activeSectionId(raw_section_id),
@@ -222,6 +235,9 @@ export class DataTables extends Disposable {
   }
 
   private _removeTable(r: TableRec) {
+    if (this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     const { docModel } = this._gristDoc;
     function doRemove() {
       return docModel.docData.sendAction(["RemoveTable", r.tableId()]);
@@ -233,6 +249,9 @@ export class DataTables extends Disposable {
   }
 
   private _editRecordCard(r: TableRec) {
+    if (this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     const sectionId = r.recordCardViewSection.peek().getRowId();
     if (!sectionId) {
       throw new Error(`Table ${r.tableId.peek()} doesn't have a record card view section.`);
@@ -243,10 +262,16 @@ export class DataTables extends Disposable {
   }
 
   private async _enableRecordCard(r: TableRec) {
+    if (this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     await r.recordCardViewSection().disabled.setAndSave(false);
   }
 
   private async _disableRecordCard(r: TableRec) {
+    if (this._gristDoc.isReadonly.get() || !canEditIkaDocRuntimeStructure()) {
+      return;
+    }
     await r.recordCardViewSection().disabled.setAndSave(true);
   }
 

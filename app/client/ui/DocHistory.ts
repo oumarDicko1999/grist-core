@@ -4,6 +4,7 @@ import { getTimeFromNow } from "app/client/lib/timeUtils";
 import { DocPageModel } from "app/client/models/DocPageModel";
 import { reportError } from "app/client/models/errors";
 import { urlState } from "app/client/models/gristUrlState";
+import { canExportFromIkaDocRuntimeBrowser } from "app/client/ui/IkaDocRuntimeAccess";
 import { buildConfigContainer } from "app/client/ui/RightPanelUtils";
 import { buttonSelect } from "app/client/ui2018/buttonSelect";
 import { testId, theme, vars } from "app/client/ui2018/cssVars";
@@ -54,6 +55,7 @@ export class DocHistory extends Disposable implements IDomComponent {
     // origUrlId is the snapshot-less URL, which we use to fetch snapshot history, and for
     // snapshot comparisons.
     const origUrlId = buildUrlId({ ...doc.idParts, snapshotId: undefined });
+    const canCompareSnapshots = canExportFromIkaDocRuntimeBrowser();
 
     // If comparing one snapshot to another, get the other ID, so that we can highlight it too.
     const compareUrlId = urlState().state.get().params?.compare;
@@ -112,8 +114,10 @@ export class DocHistory extends Disposable implements IDomComponent {
             cssMenuDots(icon("Dots"),
               menu(() => [
                 menuItemLink(setLink(snapshot), t("Open snapshot")),
-                menuItemLink(setLink(snapshot, origUrlId), t("Compare to current")),
-                prevSnapshot && menuItemLink(setLink(prevSnapshot, snapshot.docId), t("Compare to previous")),
+                canCompareSnapshots ? menuItemLink(setLink(snapshot, origUrlId), t("Compare to current")) : null,
+                canCompareSnapshots && prevSnapshot ?
+                  menuItemLink(setLink(prevSnapshot, snapshot.docId), t("Compare to previous")) :
+                  null,
               ],
               { placement: "bottom-end", parentSelectorToMark: "." + cssSnapshotCard.className },
               ),

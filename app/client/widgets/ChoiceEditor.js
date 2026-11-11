@@ -18,6 +18,7 @@ const {menuCssClass} = require("app/client/ui2018/menus");
 const {testId, theme} = require("app/client/ui2018/cssVars");
 const {choiceToken, cssChoiceACItem} = require("app/client/widgets/ChoiceToken");
 const {dom, styled} = require("grainjs");
+const {ikaDocChoiceText} = require("app/client/ui/IkaDocChoiceText");
 
 const t = makeT("ChoiceEditor");
 
@@ -35,7 +36,14 @@ function ChoiceEditor(options) {
   this.hasDropdownCondition = Boolean(options.field.dropdownCondition.peek()?.text);
   this.dropdownConditionError;
 
-  let acItems = this.choices.map(c => new ChoiceItem(c, false, false));
+  // Owarelin/IkaDoc: IkaDoc choices show labels and store codes (GW-COL-04).
+  this.choiceText = ikaDocChoiceText(options.field);
+  const startLabel = options.editValue === undefined && !options.state ?
+    this.choiceText.label(String(options.cellValue ?? "")) :
+    undefined;
+  if (startLabel) { this.textInput.value = startLabel; }
+
+  let acItems = this.choices.map(c => new ChoiceItem(c, false, false, false, this.choiceText.label(c)));
   if (this.hasDropdownCondition) {
     try {
       const dropdownConditionFilter = this.buildDropdownConditionFilter();
@@ -55,7 +63,7 @@ function ChoiceEditor(options) {
     buildNoItemsMessage: this.buildNoItemsMessage.bind(this),
     search: (term) => this.maybeShowAddNew(acIndex.search(term), term),
     renderItem: (item, highlightFunc) => this.renderACItem(item, highlightFunc),
-    getItemText: (item) => item.label,
+    getItemText: (item) => item.displayText ?? item.label,
     onClick: () => this.options.commands.fieldEditSave(),
   };
 
@@ -66,7 +74,8 @@ function ChoiceEditor(options) {
 
   // Whether to include a button to show a new choice.
   // TODO: Disable when the user cannot change column configuration.
-  this.enableAddNew = !this.hasDropdownCondition;
+  // Owarelin/IkaDoc: IkaDoc's values come from its schema; no new value is offered (GW-COL-04).
+  this.enableAddNew = !this.hasDropdownCondition && !this.choiceText.ikadocOwned;
 }
 
 dispose.makeDisposable(ChoiceEditor);
@@ -79,7 +88,8 @@ ChoiceEditor.prototype.getCellValue = function() {
   } else if (this.textInput.value.trim() === "") {
     return "";
   } else {
-    return TextEditor.prototype.getCellValue.call(this);
+    const text = TextEditor.prototype.getCellValue.call(this);
+    return this.choiceText.codeOf(text) ?? text;
   }
 };
 
@@ -92,7 +102,7 @@ ChoiceEditor.prototype.renderACItem = function(item, highlightFunc) {
       [cssChoiceACItem.cls("-with-new", this.showAddNew)]
     ),
     choiceToken(
-      buildHighlightedDom(item.label, highlightFunc, cssMatchText),
+      buildHighlightedDom(item.displayText ?? item.label, highlightFunc, cssMatchText),
       options || {},
       dom.style("max-width", "100%"),
       testId("choice-editor-item-label")

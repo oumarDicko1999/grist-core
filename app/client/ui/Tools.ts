@@ -9,6 +9,11 @@ import { createAutomationsPageEntry } from "app/client/ui/AutomationsPageEntry";
 import { showExampleCard } from "app/client/ui/ExampleCard";
 import { buildExamples } from "app/client/ui/ExampleInfo";
 import {
+  canViewIkaDocRuntimeHistory,
+  getIkaDocRuntimeConfig,
+} from "app/client/ui/IkaDocRuntimeAccess";
+import { IkaDocSourcesPanel } from "app/client/ui/IkaDocSourcesPanel";
+import {
   createAccessibilityTools,
   createHelpTools,
   cssChangeDot,
@@ -44,6 +49,7 @@ const t = makeT("Tools");
 
 export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Observable<boolean>): Element {
   const docPageModel = gristDoc.docPageModel;
+  const ikadocConfig = getIkaDocRuntimeConfig();
   const isDocOwner = isOwner(docPageModel.currentDoc.get());
   const isOverridden = Boolean(docPageModel.userOverride.get());
   const canMakeProposal = Computed.create(owner, (use) => {
@@ -61,6 +67,20 @@ export function tools(owner: Disposable, gristDoc: GristDoc, leftPanelOpen: Obse
   }
   owner.autoDispose(gristDoc.docModel.rules.tableData.tableActionEmitter.addListener(updateCanViewAccessRules));
   updateCanViewAccessRules();
+  if (ikadocConfig) {
+    return cssTools(
+      { "aria-labelledby": "grist-tools-heading" },
+      cssTools.cls("-collapsed", use => !use(leftPanelOpen)),
+      // Owarelin/IkaDoc: the session's IkaDoc sources (GW-SRC-10, GW-RFR-05).
+      dom.create(IkaDocSourcesPanel, ikadocConfig),
+      cssSectionHeader(cssSectionHeaderText(t("TOOLS"), { id: "grist-tools-heading" })),
+      canViewIkaDocRuntimeHistory(ikadocConfig) ? cssPageEntry(
+        cssPageButton(cssPageIcon("Log"), cssLinkText(t("Document history")), testId("log"),
+          dom.on("click", () => gristDoc.showTool("docHistory"))),
+      ) : null,
+    );
+  }
+
   return cssTools(
     { "aria-labelledby": "grist-tools-heading" },
     kbJumperAnchor,

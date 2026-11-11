@@ -130,6 +130,8 @@ import {
 } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
 
+import type { RequestWithLogin } from "app/server/lib/Authorizer";
+
 // Support transactions in Sqlite in async code.  This is a monkey patch, affecting
 // the prototypes of various TypeORM classes.
 // TODO: remove this patch if the issue is ever accepted as a problem in TypeORM and
@@ -1226,6 +1228,20 @@ export class HomeDBManager implements HomeDBAuth {
   // Calls getDocImpl() and returns the Document from that, caching a fresh DocAuthResult along
   // the way. Note that we only cache the access level, not Document itself.
   public async getDoc(reqOrScope: Request | Scope, transaction?: EntityManager): Promise<Document> {
+    if ("params" in reqOrScope) {
+      // IkaDoc runtime seam: allow admitted runtime credentials to resolve only their exact document.
+      const mreq = reqOrScope as RequestWithLogin;
+      const urlId = getScope(reqOrScope).urlId;
+      if (mreq.authSession?.credential && urlId) {
+        const docAuth = await mreq.authSession.credential.docAuth(mreq, this, urlId);
+        if (docAuth.error) {
+          throw docAuth.error;
+        }
+        if (docAuth.cachedDoc) {
+          return docAuth.cachedDoc;
+        }
+      }
+    }
     const scope = "params" in reqOrScope ? getScope(reqOrScope) : reqOrScope;
     const key = getDocAuthKeyFromScope(scope);
     const promise = this.getDocImpl(key, transaction);

@@ -20,6 +20,7 @@ import { createBottomBarDoc } from "app/client/ui/BottomBar";
 import { createDocMenu } from "app/client/ui/DocMenu";
 import { createForbiddenPage, createNotFoundPage, createOtherErrorPage } from "app/client/ui/errorPages";
 import { createHomeLeftPane } from "app/client/ui/HomeLeftPane";
+import { shouldShowIkaDocRuntimeAuthoringSurfaces } from "app/client/ui/IkaDocRuntimeAccess";
 import { buildSnackbarDom } from "app/client/ui/NotifyUI";
 import { OAuthFlowUI } from "app/client/ui/OAuthFlow";
 import { OnboardingPage, shouldShowOnboardingPage } from "app/client/ui/OnboardingPage";
@@ -28,10 +29,19 @@ import { RightPanel } from "app/client/ui/RightPanel";
 import { createTopBarDoc, createTopBarHome } from "app/client/ui/TopBar";
 import { WelcomePage } from "app/client/ui/WelcomePage";
 import { isNarrowScreenObs, testId } from "app/client/ui2018/cssVars";
-import { getPageTitleSuffix } from "app/common/gristUrls";
+import { getPageTitleSuffix, parseIkaDocRuntimeConfigFromLoadConfig } from "app/common/gristUrls";
 import { getGristConfig } from "app/common/urlUtils";
 
 import { Computed, dom, IDisposable, IDisposableOwner, Observable, replaceContent, subscribe } from "grainjs";
+
+// Grist persists panel widths in session storage. Keep viewer sessions on a
+// separate, narrower default so read-only IkaDoc views do not inherit the wider
+// editor/navigation layout from normal document sessions.
+const DEFAULT_DOC_LEFT_PANEL_WIDTH = 240;
+const IKADOC_VIEWER_LEFT_PANEL_WIDTH = 184;
+
+// Owarelin/IkaDoc: the creator panel fits French labels without scrolling from 320px (GW-SHL-05).
+const IKADOC_RIGHT_PANEL_WIDTH = 320;
 
 // When integrating into the old app, we might in theory switch between new-style and old-style
 // content. This function allows disposing the created content by old-style code.
@@ -149,11 +159,25 @@ function pagePanelsDoc(owner: IDisposableOwner, appModel: AppModel, appObj: App)
   window.gristDocPageModel = pageModel;
   appObj.pageModel = pageModel;
 
+  const runtimeConfig = parseIkaDocRuntimeConfigFromLoadConfig(getGristConfig());
+  const isIkaDocViewerRuntime = runtimeConfig.kind === "enabled" && runtimeConfig.config.mode === "viewer";
   const leftPanelOpen = createSessionObs<boolean>(owner, "leftPanelOpen", true, isBoolean);
   const rightPanelOpen = createSessionObs<boolean>(owner, "rightPanelOpen", false, isBoolean);
-  const leftPanelWidth = createSessionObs<number>(owner, "leftPanelWidth", 240, isNumber);
-  const rightPanelWidth = createSessionObs<number>(owner, "rightPanelWidth", 240, isNumber);
+  const leftPanelWidth = createSessionObs<number>(
+    owner,
+    isIkaDocViewerRuntime ? "ikadocViewerLeftPanelWidth" : "leftPanelWidth",
+    isIkaDocViewerRuntime ? IKADOC_VIEWER_LEFT_PANEL_WIDTH : DEFAULT_DOC_LEFT_PANEL_WIDTH,
+    isNumber,
+  );
+  const isIkaDocRuntime = runtimeConfig.kind === "enabled";
+  const rightPanelWidth = createSessionObs<number>(
+    owner,
+    isIkaDocRuntime ? "ikadocRightPanelWidth" : "rightPanelWidth",
+    isIkaDocRuntime ? IKADOC_RIGHT_PANEL_WIDTH : DEFAULT_DOC_LEFT_PANEL_WIDTH,
+    isNumber,
+  );
   const innerLeftPanelWidth = createSessionObs<number>(owner, "innerLeftPanelWidth", 440, isNumber);
+  const showAuthoringSurfaces = shouldShowIkaDocRuntimeAuthoringSurfaces();
 
   collapseNavWithInnerLeftPanel(owner, pageModel.innerLeftPanelOpen, leftPanelOpen, rightPanelOpen);
 
@@ -162,7 +186,7 @@ function pagePanelsDoc(owner: IDisposableOwner, appModel: AppModel, appObj: App)
   // each time the gristDoc observable changes (and triggers the callback), the previously-created
   // instance of RightPanel will get disposed.
   const rightPanel = Computed.create(owner, pageModel.gristDoc, (use, gristDoc) =>
-    gristDoc ? RightPanel.create(use.owner, gristDoc, rightPanelOpen) : null);
+    showAuthoringSurfaces && gristDoc ? RightPanel.create(use.owner, gristDoc, rightPanelOpen) : null);
 
   const innerLeftPanel = Computed.create(owner, use => use(pageModel.gristDoc)?.innerLeftPanel ?? null);
   const innerLeftPanelOpen = Computed.create(owner, (use) => {
@@ -211,12 +235,12 @@ function pagePanelsDoc(owner: IDisposableOwner, appModel: AppModel, appObj: App)
       panelOpen: innerLeftPanelOpen,
       content: dom.maybe(innerLeftPanelMounted, panel => panel.buildDom()),
     },
-    rightPanel: {
+    rightPanel: showAuthoringSurfaces ? {
       panelWidth: rightPanelWidth,
       panelOpen: rightPanelOpen,
       header: dom.maybe(rightPanel, panel => panel.header),
       content: dom.maybe(rightPanel, panel => panel.content),
-    },
+    } : undefined,
     headerMain: dom.create(createTopBarDoc, appModel, pageModel),
     contentMain: dom.maybe(pageModel.gristDoc, gristDoc => gristDoc.buildDom()),
     onResize,

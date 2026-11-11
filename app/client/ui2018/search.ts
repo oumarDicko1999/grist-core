@@ -200,6 +200,8 @@ export function searchBar(model: SearchModel, testId: TestId = noTestId, regionF
   }, 100);
 
   const buttonElem = cssHoverCircle(
+    // Owarelin/IkaDoc: icon buttons carry an accessible name (GW-SHL-04).
+    { "aria-label": t("Search") },
     dom.on("click", () => toggleMenu(true)),
     cssTopBarBtn("Search",
       testId("icon"),
