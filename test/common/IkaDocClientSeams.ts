@@ -33,7 +33,11 @@ const CLIENT_SEAMS = [
   },
   {
     file: "app/common/ValueFormatter.ts",
-    anchors: ["Choice: ChoiceFormatter,", "ChoiceList: ChoiceListFormatter,"],
+    anchors: [
+      "Choice: ChoiceFormatter,",
+      "ChoiceList: ChoiceListFormatter,",
+      ".locale(ikaDocDateLocale(this.docSettings.locale))",
+    ],
   },
   {
     file: "app/client/widgets/ChoiceTextBox.ts",

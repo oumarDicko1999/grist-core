@@ -6,6 +6,7 @@ import * as gristTypes from "app/common/gristTypes";
 import { getReferencedTableId, isList } from "app/common/gristTypes";
 import * as gutil from "app/common/gutil";
 import { ikaDocChoiceLabel } from "app/common/IkaDocChoiceLabels";
+import { ikaDocDateLocale } from "app/common/IkaDocDateLocale";
 import { isHiddenTable } from "app/common/isHiddenTable";
 import { buildNumberFormat, NumberFormatOptions } from "app/common/NumberFormat";
 import { createParserOrFormatterArguments, ReferenceParsingOptions } from "app/common/ValueParser";
@@ -182,7 +183,8 @@ class DateFormatter extends BaseFormatter {
     }
     // Now `value` is a number
 
-    const time = moment.tz(value * 1000, timezone);
+    // Owarelin/IkaDoc: months are named in the document's language (GW-SHL-03, IkaDocDateLocale).
+    const time = moment.tz(value * 1000, timezone).locale(ikaDocDateLocale(this.docSettings.locale));
     return time.format(this._dateTimeFormat);
   }
 }
