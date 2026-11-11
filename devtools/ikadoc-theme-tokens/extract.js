@@ -102,7 +102,7 @@
 
   const palette = {};
 
-  for (const style of ["owarelin", "material"]) {
+  for (const style of ["owarelin", "material", "paper"]) {
     palette[style] = {};
 
     for (const appearance of ["light", "dark"]) {

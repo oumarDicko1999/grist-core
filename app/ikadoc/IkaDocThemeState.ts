@@ -1,4 +1,4 @@
-export type IkaDocVisualStyle = "material" | "owarelin";
+export type IkaDocVisualStyle = "material" | "owarelin" | "paper";
 
 export interface IkaDocThemeBridgeState {
   appearance: "light" | "dark";
@@ -17,5 +17,8 @@ export function applyIkaDocThemeBridgeState(state: IkaDocThemeBridgeState): void
 }
 
 export function resolveIkaDocVisualStyle(theme: string | undefined): IkaDocVisualStyle {
-  return theme === "material" || theme === "default" || theme === "nexus" ? "material" : "owarelin";
+  if (theme === "material" || theme === "default" || theme === "nexus") {
+    return "material";
+  }
+  return theme === "paper" ? "paper" : "owarelin";
 }

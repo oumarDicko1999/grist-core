@@ -8,7 +8,7 @@ const IKA_DOC_THEME_BRIDGE_STYLE_ID = "ikadoc-theme-bridge";
 
 /**
  * Shapes that differ between IkaDoc's visual styles, as measured in the IkaDoc frontend.
- * Owarelin: pill fields, rounded menus. Material: Material 3 defaults.
+ * Owarelin: pill fields, rounded menus. Material: Material 3 defaults. Paper: 10px fields, 6px sheets.
  * In px: IkaDoc's 1.35rem is 21.6px at its 16px root, and Grist's root font is 13px.
  */
 const STYLE_SHAPES: Record<IkaDocVisualStyleName, Record<string, string>> = {
@@ -17,6 +17,12 @@ const STYLE_SHAPES: Record<IkaDocVisualStyleName, Record<string, string>> = {
     "menu-radius": "21.6px",
     "menu-shadow": "0 20px 60px rgba(16, 40, 59, 0.16)",
     "control-weight": "700",
+  },
+  paper: {
+    "field-radius": "10px",
+    "menu-radius": "6px",
+    "menu-shadow": "0 12px 32px rgba(29, 26, 22, 0.18)",
+    "control-weight": "600",
   },
   material: {
     "field-radius": "4px",
@@ -58,6 +64,7 @@ function attachIkaDocThemeBridgeStyles(): void {
     IKA_DOC_FONT_FACES,
     styleVariables("owarelin"),
     styleVariables("material"),
+    styleVariables("paper"),
     IKA_DOC_SHAPES,
   ].join("\n");
 }

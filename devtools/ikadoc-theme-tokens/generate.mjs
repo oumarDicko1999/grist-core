@@ -17,7 +17,7 @@ const { extractedFrom, extractedAt, palette } = JSON.parse(
   readFileSync(join(HERE, "palette.json"), "utf8"),
 );
 
-const STYLES = ["owarelin", "material"];
+const STYLES = ["owarelin", "material", "paper"];
 const APPEARANCES = ["light", "dark"];
 
 for (const style of STYLES) {

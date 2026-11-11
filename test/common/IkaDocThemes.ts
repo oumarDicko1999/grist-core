@@ -1,7 +1,8 @@
 import { components, ThemeTokens, tokens } from "app/common/ThemePrefs";
 import { IKADOC_PALETTE } from "app/common/themes/ikadocPalette";
 import {
-  ikaDocChartColorway, IkaDocMaterialDark, IkaDocMaterialLight, OwarelinDark, OwarelinLight,
+  ikaDocChartColorway,
+  IkaDocMaterialDark, IkaDocMaterialLight, IkaDocPaperDark, IkaDocPaperLight, OwarelinDark, OwarelinLight,
 } from "app/common/themes/IkaDocThemes";
 
 import { assert } from "chai";
@@ -15,6 +16,8 @@ const THEMES = [
   { name: "OwarelinDark", theme: OwarelinDark, palette: IKADOC_PALETTE.owarelin.dark },
   { name: "IkaDocMaterialLight", theme: IkaDocMaterialLight, palette: IKADOC_PALETTE.material.light },
   { name: "IkaDocMaterialDark", theme: IkaDocMaterialDark, palette: IKADOC_PALETTE.material.dark },
+  { name: "IkaDocPaperLight", theme: IkaDocPaperLight, palette: IKADOC_PALETTE.paper.light },
+  { name: "IkaDocPaperDark", theme: IkaDocPaperDark, palette: IKADOC_PALETTE.paper.dark },
 ] as const;
 
 /** Text color on background color, for every theme. */

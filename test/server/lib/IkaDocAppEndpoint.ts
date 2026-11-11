@@ -125,6 +125,44 @@ describe("IkaDoc app endpoint", function() {
     );
   });
 
+  it("passes the paper visual style through, and an unknown style falls back to Owarelin", async function() {
+    for (const [requested, expected] of [["paper", "paper"], ["parchment", "owarelin"]] as const) {
+      const app = express();
+      const sentPages: ISendAppPageOptions[] = [];
+      const admissionRequests: IkaDocEditorAdmissionRequest[] = [];
+      const admissionClient: IkaDocEditorAdmissionClient = {
+        async admitEditor(request) {
+          admissionRequests.push(request);
+          return {
+            kind: "accepted",
+            admission: {
+              sessionId: "session-1",
+              actorId: "actor-1",
+              tenantId: "tenant-1",
+              deploymentId: "deployment-1",
+              controlAuthority: "saas",
+              sourceType: "document-file",
+              mode: "editor",
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              capabilities: DENIED_IKADOC_CAPABILITIES,
+              runtimeConfig: RUNTIME_CONFIG,
+            },
+          };
+        },
+      };
+      attachTestEditorEndpoint(app, sentPages, admissionClient);
+      attachJsonErrorHandler(app);
+
+      const response = await requestApp(app, `/grist/editor/session-1?theme=${requested}`, {
+        Cookie: "ikadoc-session=session-cookie",
+        Origin: "https://records.owarelin.localhost",
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(admissionRequests[0].theme, expected);
+    }
+  });
+
   for (const admissionDenial of [
     { code: "session-expired", safeMessage: "The spreadsheet session expired.", status: 403 },
     { code: "session-revoked", safeMessage: "The spreadsheet session was revoked.", status: 403 },
