@@ -20,6 +20,7 @@ import express from "express";
 const IKADOC_RUNTIME_PLUGIN_URL = process.env.APP_UNTRUSTED_URL || "http://plugins.invalid";
 const IKADOC_MATERIAL_THEME = "material";
 const IKADOC_OWARELIN_THEME = "owarelin";
+const IKADOC_PAPER_THEME = "paper";
 const IKADOC_DARK_APPEARANCE = "dark";
 const IKADOC_LIGHT_APPEARANCE = "light";
 const IKADOC_LOCALE_PATTERN = /^[a-z]{2}(?:-[a-z]{2})?$/i;
@@ -103,7 +104,10 @@ export function attachIkaDocEditorEndpoint(options: IkaDocEditorEndpointOptions)
 }
 
 function ikaDocTheme(value: unknown): string {
-  return value === IKADOC_MATERIAL_THEME ? IKADOC_MATERIAL_THEME : IKADOC_OWARELIN_THEME;
+  if (value === IKADOC_MATERIAL_THEME || value === IKADOC_PAPER_THEME) {
+    return value;
+  }
+  return IKADOC_OWARELIN_THEME;
 }
 
 function ikaDocLocale(value: unknown): string | undefined {

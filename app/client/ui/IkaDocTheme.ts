@@ -42,6 +42,7 @@ export function ikaDocRuntimeTheme(): Theme | undefined {
 const THEME_NAMES: Record<IkaDocVisualStyle, Record<ThemeAppearance, ThemeName>> = {
   owarelin: { light: "OwarelinLight", dark: "OwarelinDark" },
   material: { light: "IkaDocMaterialLight", dark: "IkaDocMaterialDark" },
+  paper: { light: "IkaDocPaperLight", dark: "IkaDocPaperDark" },
 };
 
 function themeFor(visualStyle: string | undefined, appearance: ThemeAppearance): Theme {

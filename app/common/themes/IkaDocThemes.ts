@@ -32,8 +32,14 @@ const OWARELIN_CHART_COLORWAY = {
   dark: ["#86b99a", "#86b5d3", "#e59a73", "#d8bd6a", "#a8b8b0", "#b49ad0", "#6fc1b9", "#d38a99"],
 } as const;
 
+/** Paper charts: the paper inks (green, blue, clay, gold, plum, orange), 3:1 on their surface. */
+const PAPER_CHART_COLORWAY = {
+  light: ["#1b513a", "#2d4f6c", "#a24a22", "#7a5b12", "#5b2f6e", "#9a4d0e", "#5b5247", "#1d1a16"],
+  dark: ["#8cc3a2", "#9fc1e3", "#eba07a", "#e6c68c", "#d0a8e2", "#f0aa6c", "#cfc3ad", "#efe6d4"],
+} as const;
+
 /**
- * GW-THM-01/07: Grist themes for IkaDoc's two visual styles, light and dark.
+ * GW-THM-01/07: Grist themes for IkaDoc's three visual styles, light and dark.
  * Colors come from the IkaDoc frontend (`ikadocPalette.ts`, generated);
  * Grist's component tokens derive from the semantic ones, so every surface follows.
  */
@@ -43,6 +49,10 @@ export const OwarelinDark = ikaDocTheme(GristDark, "owarelin", "dark");
 export const IkaDocMaterialLight = ikaDocTheme(GristLight, "material", "light");
 export const IkaDocMaterialDark = ikaDocTheme(GristDark, "material", "dark");
 
+/** Paper: brown ink on cream paper, kraft for selection (IkaDoc « Papier » style). */
+export const IkaDocPaperLight = ikaDocTheme(GristLight, "paper", "light");
+export const IkaDocPaperDark = ikaDocTheme(GristDark, "paper", "dark");
+
 /** Seam for Grist's chart colors (ChartView). Material charts keep Grist's default colors. */
 export function ikaDocChartColorway(themeName: string): readonly string[] | undefined {
   if (themeName === "OwarelinLight") {
@@ -51,6 +61,14 @@ export function ikaDocChartColorway(themeName: string): readonly string[] | unde
 
   if (themeName === "OwarelinDark") {
     return OWARELIN_CHART_COLORWAY.dark;
+  }
+
+  if (themeName === "IkaDocPaperLight") {
+    return PAPER_CHART_COLORWAY.light;
+  }
+
+  if (themeName === "IkaDocPaperDark") {
+    return PAPER_CHART_COLORWAY.dark;
   }
 
   return undefined;
@@ -68,8 +86,9 @@ function ikaDocTheme(
   // Material menus sit on a container surface; Owarelin menus on the plain surface.
   const menuBg = style === "material" ? colors.surfaceContainer : colors.surface;
 
-  // Outlined buttons: Material 3 outlines with `outline`, Owarelin with its soft border.
-  const outlinedButtonBorder = style === "material" ? colors.outline : colors.outlineVariant;
+  // Outlined buttons: Material 3 outlines with `outline`, Owarelin with its soft border, Paper in ink.
+  const outlinedButtonBorder =
+    style === "material" ? colors.outline : style === "paper" ? colors.ink : colors.outlineVariant;
 
   // IkaDoc darkens the primary on hover in light mode and lightens it in dark mode.
   const primaryHover = mixHex(colors.primary, isDark ? "#ffffff" : "#000000", 0.15);
