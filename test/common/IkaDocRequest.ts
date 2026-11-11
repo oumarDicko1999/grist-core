@@ -72,6 +72,21 @@ describe("IkaDocRequest", function() {
 
     assert.equal(error.status, 500);
     assert.isUndefined(error.ikadocMessage);
+    assert.isUndefined(error.code);
+    assert.deepEqual(error.params, {});
+  });
+
+  it("keeps IkaDoc's error code and the first violation's parameters", async function() {
+    answer(400, {
+      error: "Refreshing would remove 2 rows",
+      code: "GRIST_SOURCE_REFRESH_REMOVAL_UNDECIDED",
+      violations: [{ code: "GRIST_SOURCE_REFRESH_REMOVAL_UNDECIDED", message: "…", params: { removedRows: "2" } }],
+    });
+
+    const error = await refusalOf(requestIkaDocJson(CONFIG, "/ikadoc/refresh", { method: "POST", body: {} }));
+
+    assert.equal(error.code, "GRIST_SOURCE_REFRESH_REMOVAL_UNDECIDED");
+    assert.deepEqual(error.params, { removedRows: "2" });
   });
 });
 

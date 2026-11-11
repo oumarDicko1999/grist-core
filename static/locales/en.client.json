@@ -3215,6 +3215,7 @@
         "Checking session": "Checking session",
         "Proposal requested": "Proposal requested",
         "Refresh": "Refresh",
+        "Refresh cancelled": "Refresh cancelled",
         "Refreshing source": "Refreshing source",
         "Source refreshed": "Source refreshed",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session ready",
@@ -3232,6 +3233,14 @@
         "IkaDoc could not open the spreadsheet. Try again in a moment.": "IkaDoc could not open the spreadsheet. Try again in a moment.",
         "This page is not available here": "This page is not available here",
         "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it.": "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it."
+    },
+    "IkaDocRemovedRowsPrompt": {
+        "Keep the rows": "Keep the rows",
+        "Remove the rows": "Remove the rows",
+        "Remove these rows from the table, or keep them as they are?": "Remove these rows from the table, or keep them as they are?",
+        "Their records were deleted, no longer match, or you can no longer read them.": "Their records were deleted, no longer match, or you can no longer read them.",
+        "{{count}} rows are no longer in the source_one": "{{count}} row is no longer in the source",
+        "{{count}} rows are no longer in the source_other": "{{count}} rows are no longer in the source"
     },
     "IkaDocGuidedWorkspaceRows": {
         "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.": "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.",

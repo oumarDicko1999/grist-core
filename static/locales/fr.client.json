@@ -3221,6 +3221,7 @@
         "Checking session": "Verification de la session",
         "Proposal requested": "Proposition demandee",
         "Refresh": "Actualiser",
+        "Refresh cancelled": "Actualisation annulée",
         "Refreshing source": "Actualisation de la source",
         "Source refreshed": "Source actualisee",
         "{{sourceSummary}}Session ready": "{{sourceSummary}}Session prete",
@@ -3238,6 +3239,14 @@
         "IkaDoc could not open the spreadsheet. Try again in a moment.": "IkaDoc n'a pas pu ouvrir le tableur. Réessayez dans un instant.",
         "This page is not available here": "Cette page n'est pas disponible ici",
         "The spreadsheet only opens from IkaDoc. Grist's own home and settings pages are not part of it.": "Le tableur ne s'ouvre que depuis IkaDoc. Les pages d'accueil et de réglages de Grist n'en font pas partie."
+    },
+    "IkaDocRemovedRowsPrompt": {
+        "Keep the rows": "Garder les lignes",
+        "Remove the rows": "Retirer les lignes",
+        "Remove these rows from the table, or keep them as they are?": "Retirer ces lignes du tableau, ou les garder telles quelles ?",
+        "Their records were deleted, no longer match, or you can no longer read them.": "Leurs fiches ont été supprimées, ne correspondent plus, ou vous ne pouvez plus les lire.",
+        "{{count}} rows are no longer in the source_one": "{{count}} ligne n'est plus dans la source",
+        "{{count}} rows are no longer in the source_other": "{{count}} lignes ne sont plus dans la source"
     },
     "IkaDocGuidedWorkspaceRows": {
         "IkaDoc could not prepare the new rows. Try again, and reload the spreadsheet if it keeps failing.": "IkaDoc n'a pas pu préparer les nouvelles lignes. Réessayez, puis rechargez le tableur si le problème persiste.",

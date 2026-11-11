@@ -377,6 +377,7 @@ const IKADOC_TRANSLATED_FILES = [
   "app/client/ui/IkaDocEditorControls.ts",
   "app/client/ui/IkaDocEditorControlState.ts",
   "app/client/ui/IkaDocGuidedWorkspaceControls.ts",
+  "app/client/ui/IkaDocRemovedRowsPrompt.ts",
 ];
 
 describe("IkaDoc client seams", function() {

@@ -2,6 +2,7 @@ import { GristDoc } from "app/client/components/GristDoc";
 import { makeT } from "app/client/lib/localization";
 import { IkaDocEditorControlState, reportIkaDocControlFailure } from "app/client/ui/IkaDocEditorControlState";
 import { buildIkaDocGuidedWorkspaceControls } from "app/client/ui/IkaDocGuidedWorkspaceControls";
+import { askIkaDocRemovedRows } from "app/client/ui/IkaDocRemovedRowsPrompt";
 import {
   canBuildIkaDocRuntimeProposal,
   canRefreshIkaDocRuntimeSource,
@@ -10,6 +11,7 @@ import { basicButton } from "app/client/ui2018/buttons";
 import { testId, theme } from "app/client/ui2018/cssVars";
 import { requestIkaDocJson } from "app/ikadoc/IkaDocRequest";
 import { IkaDocRuntimeConfig } from "app/ikadoc/IkaDocRuntimeConfig";
+import { refreshWithRemovalDecision } from "app/ikadoc/IkaDocSourceRefresh";
 import { IKADOC_PARTICIPANTS_CHANGED_EVENT, postOwarelinRuntimeEvent } from "app/ikadoc/OwarelinRuntimeEvents";
 
 import { Computed, dom, MultiHolder, Observable, styled } from "grainjs";
@@ -112,8 +114,19 @@ async function runIkaDocRefresh(
   state.set({ kind: "loading", message: t("Refreshing source") });
   postOwarelinRuntimeEvent(config, "owarelin:refreshRequested");
 
+  const refreshUrl = config.refreshUrl;
+
   try {
-    await requestIkaDocJson(config, config.refreshUrl, { method: "POST" });
+    // GW-RFR-01: rows whose records are gone are only removed or kept once the person decides.
+    const outcome = await refreshWithRemovalDecision(
+      body => requestIkaDocJson(config, refreshUrl, { method: "POST", body }),
+      askIkaDocRemovedRows,
+    );
+
+    if (outcome === "cancelled") {
+      state.set({ kind: "idle", message: t("Refresh cancelled") });
+      return;
+    }
 
     state.set({ kind: "idle", message: t("Source refreshed") });
     postOwarelinRuntimeEvent(config, "owarelin:sourceRefreshed");
