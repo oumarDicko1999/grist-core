@@ -480,13 +480,16 @@ function runtimeOrganization(session: IkaDocRuntimeSession): Organization {
 /**
  * GW-SEC-01: what an IkaDoc-only runtime still serves without an IkaDoc session — the editor
  * entry, which runs admission itself, and server-to-server calls that carry an API key (the
- * IkaDoc backend's service account). Grist rejects an unknown API key with 401, so the header
- * opens nothing on its own.
+ * IkaDoc backend's service account). Boot-key requests may only retrieve or create that API
+ * key. Native Authorizer still validates either credential before any API handler runs.
  */
 function reachableWithoutIkaDocSession(req: Request): boolean {
   const path = req.originalUrl.split("?")[0];
   const isEditorEntry = path.startsWith(IKADOC_EDITOR_ENTRY_PATH_PREFIX);
   const carriesApiKey = Boolean(req.headers.authorization);
+  const isServiceKeyBootstrap = (req.method === "GET" || req.method === "POST") &&
+    req.path.toLowerCase() === "/profile/apikey" &&
+    typeof req.headers["x-boot-key"] === "string" && req.headers["x-boot-key"].length > 0;
 
-  return isEditorEntry || carriesApiKey;
+  return isEditorEntry || carriesApiKey || isServiceKeyBootstrap;
 }

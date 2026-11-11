@@ -4,6 +4,14 @@ This fork treats IkaDoc/Owarelin support as a runtime layer around Grist. Produc
 
 ## Owned IkaDoc Boundary
 
+The IkaDoc-only session gate in `app/server/lib/IkaDocRuntimeAuth.ts` admits
+boot-key provisioning only for GET/POST `/api/profile/apikey`. The subsequent
+native `Authorizer.resolveIdentity` validates the boot key and selects the
+installation administrator; the session gate does not authenticate it.
+`test/server/lib/IkaDocServiceBootstrap.ts` exercises both boundaries together,
+including wrong/missing keys and unrelated route/method refusal. Live local
+API-key synchronization remains required after image deployment.
+
 - `app/ikadoc/*`: IkaDoc capability model, runtime config parser, editor admission contracts, host/editor event bridge, and Owarelin runtime events.
 - `app/server/lib/IkaDoc*`: backend admission, editor endpoint, runtime session registry, active document method classification, and runtime policy.
 - `app/client/ui/IkaDocEditorControls.ts`: IkaDoc status, participants, refresh and proposal controls; the guided workspace controls are in `IkaDocGuidedWorkspaceControls.ts`, and every call to IkaDoc goes through `app/ikadoc/IkaDocRequest.ts`.

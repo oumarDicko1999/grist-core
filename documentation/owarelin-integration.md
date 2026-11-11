@@ -86,7 +86,12 @@ An IkaDoc deployment runs the fork as an IkaDoc-only runtime (GW-SEC-01): when
 IkaDoc admission is configured (`IKADOC_EDITOR_ADMISSION_URL`), browser requests
 without an IkaDoc session or signed forward-auth assertion are refused, except
 the `/grist/editor/:sessionId` entry, which runs admission itself, and API-key
-calls from the IkaDoc service account. `IKADOC_GRIST_RUNTIME_ONLY=false` turns
+calls from the IkaDoc service account. The backend's initial `GET`/`POST`
+`/api/profile/apikey` requests may reach native boot-key authentication without
+an editor session so that the service key can be retrieved or created. An
+invalid boot key still fails native authentication; boot keys do not admit
+other routes or API-key deletion through the IkaDoc-only gate.
+`IKADOC_GRIST_RUNTIME_ONLY=false` turns
 this off for the development harness only (`devtools/ikadoc-runtime-harness`).
 
 Native Grist documents remain native unless a table or column carries an explicit IkaDoc schema binding. Schema-bound tables may use IkaDoc reference, value-list, administrative-unit, enum, and validation editors, but those editors must never change the semantics of unbound Grist `Choice`, `ChoiceList`, `Ref`, or `RefList` columns.
