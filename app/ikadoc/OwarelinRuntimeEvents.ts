@@ -23,7 +23,8 @@ export type OwarelinInboundRuntimeEventName =
   "owarelin:guidedWorkspaceDescriptorChanged" |
   "owarelin:participantsChanged" |
   "owarelin:sourcesChanged" |
-  "owarelin:sourceRecordsChanged";
+  "owarelin:sourceRecordsChanged" |
+  "owarelin:proposalIssues";
 
 export type OwarelinOutboundRuntimeEventName =
   | "owarelin:editorReady" |
@@ -311,4 +312,5 @@ const INBOUND_OWARELIN_RUNTIME_EVENTS: ReadonlySet<OwarelinInboundRuntimeEventNa
     "owarelin:participantsChanged",
     "owarelin:sourcesChanged",
     "owarelin:sourceRecordsChanged",
+    "owarelin:proposalIssues",
   ]);

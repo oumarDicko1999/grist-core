@@ -2,6 +2,7 @@ import { GristDoc } from "app/client/components/GristDoc";
 import { makeT } from "app/client/lib/localization";
 import { IkaDocEditorControlState, reportIkaDocControlFailure } from "app/client/ui/IkaDocEditorControlState";
 import { buildIkaDocGuidedWorkspaceControls } from "app/client/ui/IkaDocGuidedWorkspaceControls";
+import { listenForIkaDocProposalIssues } from "app/client/ui/IkaDocProposalIssueMarkers";
 import { askIkaDocRemovedRows } from "app/client/ui/IkaDocRemovedRowsPrompt";
 import {
   canBuildIkaDocRuntimeProposal,
@@ -34,6 +35,9 @@ export function buildIkaDocEditorControls(
   const busy = Computed.create(owner, state, (_use, current) => current.kind === "loading");
 
   void refreshIkaDocSessionStatus(config, state);
+
+  // GW-COL-05: the cells IkaDoc refused when it applied a proposal.
+  listenForIkaDocProposalIssues(owner);
 
   // UI-09: who joined or left the shared spreadsheet, as the host tells it.
   const participants = Observable.create<string>(owner, "");
