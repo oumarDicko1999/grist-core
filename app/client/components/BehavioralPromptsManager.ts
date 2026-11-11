@@ -3,6 +3,7 @@ import { logTelemetryEvent } from "app/client/lib/telemetry";
 import { AppModel } from "app/client/models/AppModel";
 import { getUserPrefObs } from "app/client/models/UserPrefs";
 import { GristBehavioralPrompts } from "app/client/ui/GristTooltips";
+import { isIkaDocRuntimeMode } from "app/client/ui/IkaDocRuntimeAccess";
 import { isNarrowScreen } from "app/client/ui2018/cssVars";
 import { BehavioralPrompt, BehavioralPromptPrefs } from "app/common/Prefs";
 import { getGristConfig } from "app/common/urlUtils";
@@ -82,6 +83,9 @@ export class BehavioralPromptsManager extends Disposable {
 
   public shouldShowPopup(prompt: BehavioralPrompt): boolean {
     if (this._isDisabled) { return false; }
+
+    // Owarelin/IkaDoc: IkaDoc sessions never show Grist's tips (IkaDoc owns the guidance).
+    if (isIkaDocRuntimeMode()) { return false; }
 
     // For non-SaaS flavors of Grist, don't show popups if the Help Center is explicitly
     // disabled. A separate opt-out feature could be added down the road for more granularity,

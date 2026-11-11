@@ -40,6 +40,10 @@ const CLIENT_SEAMS = [
     ],
   },
   {
+    file: "app/client/components/BehavioralPromptsManager.ts",
+    anchors: ["if (isIkaDocRuntimeMode()) { return false; }"],
+  },
+  {
     file: "app/client/widgets/ChoiceTextBox.ts",
     anchors: ["invalid: !use(this._choiceValuesSet).has(choice),"],
   },
