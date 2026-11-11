@@ -195,6 +195,27 @@ describe("IkaDocRuntimeConfig", function() {
     });
   });
 
+  it("accepts the reference lookups of a session's IkaDoc tables (GW-COL-03)", function() {
+    const urls = {
+      referenceSearchUrl: "/ikadoc/sessions/session-1/reference-lookup/search",
+      referenceResolveUrl: "/ikadoc/sessions/session-1/reference-lookup/resolve",
+    };
+
+    const result = parseIkaDocRuntimeConfig({ ...VALID_IKADOC_CONFIG, referenceLookupUrls: urls });
+
+    assert.equal(result.kind, "enabled");
+    assert.deepEqual(result.kind === "enabled" ? result.config.referenceLookupUrls : undefined, urls);
+  });
+
+  it("rejects reference lookups without both URLs", function() {
+    const result = parseIkaDocRuntimeConfig({
+      ...VALID_IKADOC_CONFIG,
+      referenceLookupUrls: { referenceSearchUrl: "/search" },
+    });
+
+    assert.deepEqual(result, { kind: "invalid", reason: "invalid-reference-lookup-urls" });
+  });
+
   it("rejects malformed guided workspace URL contracts", function() {
     assert.deepEqual(
       parseIkaDocRuntimeConfig({

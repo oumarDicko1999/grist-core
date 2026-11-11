@@ -84,6 +84,7 @@ describe("IkaDoc backend admission client", function() {
           proposalUrl: undefined,
           blockedCapabilityUrl: undefined,
           guidedWorkspaceUrls: undefined,
+          referenceLookupUrls: undefined,
           guidedWorkspace: undefined,
           lockedColumns: undefined,
           sources: undefined,

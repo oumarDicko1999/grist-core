@@ -22,6 +22,8 @@ const t = makeT("IkaDocReferenceWidget");
 
 /** Guided rows carry IkaDoc's key for the row; IkaDoc scopes some references by it. */
 const GUIDED_ROW_KEY_COLUMN = "ikadoc_row_key";
+/** GW-COL-03: in a session table, the row's IkaDoc record, whose schema the lookup follows. */
+const RECORD_ID_COLUMN = "ikadoc_record_id";
 const LOOKUP_PAGE_SIZE = 20;
 
 interface ReferenceItem {
@@ -181,7 +183,10 @@ export class IkaDocReferenceEditor extends NTextEditor {
     const { field, gristDoc, rowId } = this.options;
     const tableId = field.tableId.peek();
 
-    const rowKey = rowKeyValue(gristDoc.docData.getTable(tableId)?.getValue(rowId, GUIDED_ROW_KEY_COLUMN));
+    const table = gristDoc.docData.getTable(tableId);
+    const rowKey =
+      rowKeyValue(table?.getValue(rowId, GUIDED_ROW_KEY_COLUMN)) ??
+      rowKeyValue(table?.getValue(rowId, RECORD_ID_COLUMN));
 
     return lookupContext(tableId, field.widgetOptionsJson.peek(), rowKey);
   }

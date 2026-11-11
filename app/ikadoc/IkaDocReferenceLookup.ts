@@ -50,11 +50,13 @@ export async function resolveIkaDocGuidedReferenceOptions(
   return parseIkaDocReferenceLookupResponse(payload);
 }
 
+/** The guided workspace's lookup, else the session tables' one (GW-COL-03). */
 function requireGuidedReferenceLookupUrls(config: IkaDocRuntimeConfig) {
-  if (!config.guidedWorkspaceUrls) {
-    throw new Error("Guided workspace reference lookup is not configured");
+  const urls = config.guidedWorkspaceUrls ?? config.referenceLookupUrls;
+  if (!urls) {
+    throw new Error("Reference lookup is not configured");
   }
-  return config.guidedWorkspaceUrls;
+  return urls;
 }
 
 /** POST to IkaDoc's reference lookup, with IkaDoc's own message when it refuses. */

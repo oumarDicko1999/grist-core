@@ -78,7 +78,14 @@
       },
       "locale": "{{locale}}",
       "theme": "{{theme}}",
-      "appearance": "{{appearance}}"
+      "appearance": "{{appearance}}",
+      "refreshUrl": null,
+      "proposalUrl": null,
+      "guidedWorkspaceUrls": null,
+      "guidedWorkspace": null,
+      "sources": [],
+      "lockedColumns": {},
+      "referenceLookupUrls": null
     }
   }
 }

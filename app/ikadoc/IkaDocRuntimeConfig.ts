@@ -34,6 +34,12 @@ export interface IkaDocGuidedWorkspaceUrls {
   applyUrl: string;
 }
 
+/** GW-COL-03: where reference cells of a session's IkaDoc tables search and resolve records. */
+export interface IkaDocReferenceLookupUrls {
+  referenceSearchUrl: string;
+  referenceResolveUrl: string;
+}
+
 /**
  * GW-RFR-03: per table, the columns IkaDoc owns (source data).
  * They change only through IkaDoc (materialize, refresh), never from the editor.
@@ -61,6 +67,7 @@ export interface IkaDocRuntimeConfig {
   refreshUrl?: string;
   proposalUrl?: string;
   guidedWorkspaceUrls?: IkaDocGuidedWorkspaceUrls;
+  referenceLookupUrls?: IkaDocReferenceLookupUrls;
   guidedWorkspace?: IkaDocGuidedWorkspaceMarker;
   lockedColumns?: IkaDocLockedColumns;
   sources?: IkaDocSessionSource[];
@@ -98,6 +105,7 @@ export function toIkaDocBrowserRuntimeConfig(
     refreshUrl: config.refreshUrl,
     proposalUrl: config.proposalUrl,
     guidedWorkspaceUrls: config.guidedWorkspaceUrls,
+    referenceLookupUrls: config.referenceLookupUrls,
     guidedWorkspace: config.guidedWorkspace,
     lockedColumns: config.lockedColumns,
     sources: config.sources,
@@ -125,6 +133,7 @@ export type IkaDocRuntimeConfigParseFailure =
   "invalid-capabilities" |
   "invalid-guided-workspace" |
   "invalid-guided-workspace-urls" |
+  "invalid-reference-lookup-urls" |
   "invalid-locked-columns" |
   "invalid-sources";
 
@@ -219,6 +228,11 @@ export function parseIkaDocRuntimeConfig(
     return { kind: "invalid", reason: "invalid-guided-workspace-urls" };
   }
 
+  const referenceLookupUrls = normalizeReferenceLookupUrls(raw.referenceLookupUrls);
+  if (referenceLookupUrls === "invalid") {
+    return { kind: "invalid", reason: "invalid-reference-lookup-urls" };
+  }
+
   const lockedColumns = normalizeLockedColumns(raw.lockedColumns);
   if (lockedColumns === "invalid") {
     return { kind: "invalid", reason: "invalid-locked-columns" };
@@ -259,6 +273,7 @@ export function parseIkaDocRuntimeConfig(
       proposalUrl: optionalText(raw.proposalUrl),
 
       guidedWorkspaceUrls,
+      referenceLookupUrls,
       guidedWorkspace,
       lockedColumns,
       sources,
@@ -302,6 +317,25 @@ function normalizeGuidedWorkspace(
     return undefined;
   }
   return parseIkaDocGuidedWorkspaceMarker(input) ?? "invalid";
+}
+
+function normalizeReferenceLookupUrls(
+  input: unknown,
+): IkaDocReferenceLookupUrls | undefined | "invalid" {
+  if (input === undefined || input === null) {
+    return undefined;
+  }
+  if (typeof input !== "object" || Array.isArray(input)) {
+    return "invalid";
+  }
+
+  const { referenceSearchUrl, referenceResolveUrl } = input as Record<string, unknown>;
+  if (typeof referenceSearchUrl !== "string" || !referenceSearchUrl ||
+    typeof referenceResolveUrl !== "string" || !referenceResolveUrl) {
+    return "invalid";
+  }
+
+  return { referenceSearchUrl, referenceResolveUrl };
 }
 
 function normalizeGuidedWorkspaceUrls(
