@@ -163,9 +163,14 @@ read-only for users: the policy refuses value writes, renames and removals that
 touch them, and the grid marks them with a lock (GW-RFR-03).
 
 IkaDoc's service account materializes and refreshes source data with its API
-key and the session's validation token in `X-IkaDoc-Session-Token`
-(GW-SRC-06). Such a request skips user capabilities but may only add tables and
-add, update or remove rows in user tables. A wrong token is refused; an API call
+key and the session's service token in `X-IkaDoc-Session-Token` (GW-SRC-06).
+Both sides derive that token as HMAC-SHA256 of `grist-session-service:<sessionId>`
+with the admission bearer secret (`IKADOC_EDITOR_ADMISSION_BEARER_TOKEN`), so it
+is never stored nor sent to a browser; without that secret no request acts as the
+service. The browser's validation token is refused there. Such a request skips
+user capabilities but may only add or remove user tables, add, update or remove
+rows in them, and remove fields from a page (to hide IkaDoc's identity columns
+on an added source); every other metadata table stays out of reach. A wrong token is refused; an API call
 without the token is held to the session's user policy; a browser session cookie
 is never treated as the service.
 

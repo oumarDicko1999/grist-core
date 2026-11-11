@@ -64,6 +64,22 @@ export function readIkaDocAdmissionConfig(): IkaDocAdmissionConfig | undefined {
 }
 
 /**
+ * GW-SRC-06: the secret IkaDoc and the fork share (the admission bearer token), from which both
+ * derive each session's service token. Undefined when not configured: no request acts as the service.
+ */
+export function readIkaDocServiceSecret(): string | undefined {
+  const secret = appSettings
+    .section("ikadoc")
+    .section("editor")
+    .flag("admissionBearerToken")
+    .readString({
+      envVar: "IKADOC_EDITOR_ADMISSION_BEARER_TOKEN",
+    });
+
+  return secret || undefined;
+}
+
+/**
  * GW-SEC-01: refuse browser requests that carry no IkaDoc session.
  * On in every IkaDoc deployment; `IKADOC_GRIST_RUNTIME_ONLY=false` is for the dev harness only.
  */

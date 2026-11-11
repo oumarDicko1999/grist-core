@@ -38,7 +38,7 @@ import {
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
-import { IKADOC_SESSION_TOKEN_HEADER } from "app/server/lib/IkaDocServiceAccount";
+import { IKADOC_SESSION_TOKEN_HEADER, ikaDocSessionServiceToken } from "app/server/lib/IkaDocServiceAccount";
 
 import { createHash } from "crypto";
 import * as http from "http";
@@ -1893,9 +1893,41 @@ describe("IkaDoc runtime policy", function() {
     const apiKey = { authorization: "Bearer service-api-key" };
     const addClientRow = ["BulkAddRecord", "Clients", [null], {}];
 
-    it("lets the service add and refresh source data with the session's token", function() {
+    // Both sides derive the service token from the shared admission secret.
+    const serviceToken = ikaDocSessionServiceToken("admission-secret", "session-1");
+    let previousSecret: string | undefined;
+
+    before(function() {
+      previousSecret = process.env.IKADOC_EDITOR_ADMISSION_BEARER_TOKEN;
+      process.env.IKADOC_EDITOR_ADMISSION_BEARER_TOKEN = "admission-secret";
+    });
+
+    after(function() {
+      if (previousSecret === undefined) {
+        delete process.env.IKADOC_EDITOR_ADMISSION_BEARER_TOKEN;
+      } else {
+        process.env.IKADOC_EDITOR_ADMISSION_BEARER_TOKEN = previousSecret;
+      }
+    });
+
+    it("derives the same service token as IkaDoc", function() {
+      // Pinned in IkaDoc's GristSessionServiceTokenTest too.
+      assert.equal(serviceToken, "Pb07UftNiv5FYz9v-v9JRw7jd8Afiyk6lLKX1VPDnm0");
+    });
+
+    it("refuses the browser's validation token as the service token", function() {
       const registry = viewerRegistryWithLockedColumns();
       const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "validation-token" });
+
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
+        /invalid session token/,
+      );
+    });
+
+    it("lets the service add and refresh source data with the session's token", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
 
       assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
         ["AddTable", "Clients", [{ id: "nom" }]],
@@ -1916,18 +1948,29 @@ describe("IkaDoc runtime policy", function() {
 
     it("keeps the service to data actions on user tables", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "validation-token" });
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
 
       for (const action of [
-        ["RemoveTable", "Factures"],
         ["RemoveColumn", "Factures", "montant"],
         ["BulkAddRecord", "_grist_ACLRules", [null], {}],
+        ["BulkRemoveRecord", "_grist_Tables_column", [1]],
+        ["BulkUpdateRecord", "_grist_Views_section_field", [1], { width: [10] }],
       ]) {
         assert.throws(
           () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [action], req),
           /as the IkaDoc service/,
         );
       }
+    });
+
+    it("lets the service remove a source's table and hide fields on its page", function() {
+      const registry = viewerRegistryWithLockedColumns();
+      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
+
+      assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
+        ["BulkRemoveRecord", "_grist_Views_section_field", [7, 8]],
+        ["RemoveTable", "Clients"],
+      ], req);
     });
 
     it("holds API calls without the token to the session's user policy", function() {
@@ -1943,7 +1986,7 @@ describe("IkaDoc runtime policy", function() {
       const registry = viewerRegistryWithLockedColumns();
       const req = serviceRequest({
         ...apiKey,
-        [IKADOC_SESSION_TOKEN_HEADER]: "validation-token",
+        [IKADOC_SESSION_TOKEN_HEADER]: serviceToken,
         cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
       });
 
