@@ -99,6 +99,10 @@ const SERVER_SEAMS = [
     ],
   },
   {
+    file: "app/server/lib/Sharing.ts",
+    anchors: ["assertIkaDocLockedColumnsKept(docSession, getEnvContent(applyResult.stored));"],
+  },
+  {
     file: "app/server/lib/DocWorker.ts",
     anchors: [
       "activeDocMethod.bind(",

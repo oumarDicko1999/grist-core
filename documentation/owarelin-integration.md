@@ -160,7 +160,11 @@ gates are the security boundary.
 
 IkaDoc-owned columns (`lockedColumns` in the runtime config, per table) are
 read-only for users: the policy refuses value writes, renames and removals that
-touch them, and the grid marks them with a lock (GW-RFR-03).
+touch them, and the grid marks them with a lock (GW-RFR-03). Because Grist turns
+other actions into the same changes (a `colId`, `type` or `formula` written into
+`_grist_Tables_column`, removing or renaming the table, copying a column into
+another), the server also checks the changes the engine computed for an admitted
+person and refuses and reverts any that touch a locked column (SEC-2).
 
 IkaDoc's service account fills, extends and refreshes a document's source data
 with its API key and the document's service token in `X-IkaDoc-Service-Token`
