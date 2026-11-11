@@ -162,17 +162,27 @@ IkaDoc-owned columns (`lockedColumns` in the runtime config, per table) are
 read-only for users: the policy refuses value writes, renames and removals that
 touch them, and the grid marks them with a lock (GW-RFR-03).
 
-IkaDoc's service account materializes and refreshes source data with its API
-key and the session's service token in `X-IkaDoc-Session-Token` (GW-SRC-06).
-Both sides derive that token as HMAC-SHA256 of `grist-session-service:<sessionId>`
-with the admission bearer secret (`IKADOC_EDITOR_ADMISSION_BEARER_TOKEN`), so it
-is never stored nor sent to a browser; without that secret no request acts as the
-service. The browser's validation token is refused there. Such a request skips
-user capabilities but may only add or remove user tables, add, update or remove
-rows in them, and remove fields from a page (to hide IkaDoc's identity columns
-on an added source); every other metadata table stays out of reach. A wrong token is refused; an API call
-without the token is held to the session's user policy; a browser session cookie
-is never treated as the service.
+IkaDoc's service account fills, extends and refreshes a document's source data
+with its API key and the document's service token in `X-IkaDoc-Service-Token`
+(GW-SRC-06). Both sides derive that token as HMAC-SHA256 of
+`grist-document-service:<documentId>` with the admission bearer secret
+(`IKADOC_EDITOR_ADMISSION_BEARER_TOKEN`), so it is never stored nor sent to a
+browser, and the fork checks it without any session being registered in its
+process, including the first fill of a new document and after a restart; without
+that secret no request acts as the service. The browser's validation token and
+another document's token are refused. Such a request skips user capabilities but
+may only add or remove user tables, add, update or remove rows in them, and remove
+fields from a page (to hide IkaDoc's identity columns on an added source); every
+other metadata table stays out of reach. A browser session cookie is never
+treated as the service.
+
+On an IkaDoc-only runtime, user actions (REST `apply` and table endpoints,
+websocket `applyUserActions`) need an admitted person or the service token
+(GR-03, SEC-1). An edit for a document without a registered IkaDoc session, for
+example with an API key alone, after a restart or on another process, is refused
+rather than applied unchecked. API-key reads stay with Grist's own
+authentication. With `IKADOC_GRIST_RUNTIME_ONLY=false` plain Grist edits are
+unchanged.
 
 ## Formula Sandbox
 

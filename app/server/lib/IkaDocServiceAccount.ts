@@ -1,24 +1,24 @@
 import { readIkaDocServiceSecret } from "app/server/lib/IkaDocAdmissionConfig";
 import { hasIkaDocRuntimeSessionCookie } from "app/server/lib/IkaDocRuntimeCookies";
 import { deniedIkaDocRuntimeOperation } from "app/server/lib/IkaDocRuntimeDenial";
-import { IkaDocRuntimeSession, IkaDocRuntimeSessionRegistry } from "app/server/lib/IkaDocRuntimeSessionRegistry";
 
 import { createHmac, timingSafeEqual } from "crypto";
 
 import { Request } from "express";
 
-/** GW-SRC-06: the header in which IkaDoc's service account presents the session's service token. */
-export const IKADOC_SESSION_TOKEN_HEADER = "x-ikadoc-session-token";
+/** GW-SRC-06: the header in which IkaDoc's service account presents a document's service token. */
+export const IKADOC_SERVICE_TOKEN_HEADER = "x-ikadoc-service-token";
 
 /**
- * GW-SRC-06: the session's service token. IkaDoc derives the same value from the secret both sides
- * hold, so the token is never sent to a browser nor stored anywhere.
+ * GW-SRC-06: the service token for one document. IkaDoc derives the same value from the secret
+ * both sides hold, so the token is never sent to a browser nor stored anywhere, and it proves the
+ * request comes from IkaDoc without any session being registered in this process (GR-03).
  */
-export function ikaDocSessionServiceToken(secret: string, sessionId: string): string {
-  return createHmac("sha256", secret).update(`grist-session-service:${sessionId}`).digest("base64url");
+export function ikaDocDocumentServiceToken(secret: string, documentId: string): string {
+  return createHmac("sha256", secret).update(`grist-document-service:${documentId}`).digest("base64url");
 }
 
-/** Actions IkaDoc's service account may apply to a session's user tables (add, refresh, remove a source). */
+/** Actions IkaDoc's service account may apply to a document's user tables (fill, add, refresh, remove a source). */
 const SERVICE_ACTIONS = new Set([
   "AddTable",
   "RemoveTable",
@@ -38,43 +38,30 @@ const PAGE_FIELDS_TABLE = "_grist_Views_section_field";
 const PAGE_FIELD_REMOVALS = new Set(["RemoveRecord", "BulkRemoveRecord"]);
 
 /**
- * GW-SRC-06: a request from IkaDoc's service account for a session document.
- * It carries an API key and the session's service token, and no browser session cookie.
- * Undefined for every other request, which goes through the user policy; a wrong token is refused.
+ * GW-SRC-06: whether [req] comes from IkaDoc's service account for [documentId]: an API key, the
+ * document's service token, and no browser session cookie. False when it carries no token, so it
+ * goes through the user policy; a token that does not match [documentId] is refused.
  */
-export function ikaDocServiceSessionForRequest(
-  registry: IkaDocRuntimeSessionRegistry | undefined,
-  req: Request,
-): IkaDocRuntimeSession | undefined {
-  const token = req.get(IKADOC_SESSION_TOKEN_HEADER);
-  const docId = req.params?.docId;
+export function isIkaDocServiceRequest(req: Request, documentId: string | undefined): boolean {
+  const token = req.get(IKADOC_SERVICE_TOKEN_HEADER);
   const secret = readIkaDocServiceSecret();
 
-  if (!registry || !secret || !token || !req.headers.authorization || hasIkaDocRuntimeSessionCookie(req)) {
-    return undefined;
+  if (!secret || !token || !req.headers.authorization || hasIkaDocRuntimeSessionCookie(req)) {
+    return false;
   }
 
-  if (typeof docId !== "string" || docId.length === 0) {
-    return undefined;
+  const expected = documentId ? ikaDocDocumentServiceToken(secret, documentId) : undefined;
+  if (!expected || !constantTimeEqual(token, expected)) {
+    throw deniedIkaDocRuntimeOperation("use an invalid service token");
   }
 
-  const resolution = registry.resolveByDocumentId(docId);
-  if (resolution.kind !== "active") {
-    return undefined;
-  }
-
-  const expected = ikaDocSessionServiceToken(secret, resolution.session.config.sessionId);
-  if (!constantTimeEqual(token, expected)) {
-    throw deniedIkaDocRuntimeOperation("use an invalid session token", resolution.session);
-  }
-
-  return resolution.session;
+  return true;
 }
 
-/** The service account only materializes and refreshes data in user tables. */
-export function assertIkaDocServiceActionsAllowed(session: IkaDocRuntimeSession, actions: unknown): void {
+/** The service account only fills and refreshes data in user tables. */
+export function assertIkaDocServiceActionsAllowed(actions: unknown): void {
   if (!Array.isArray(actions)) {
-    throw deniedIkaDocRuntimeOperation("apply malformed document edits", session);
+    throw deniedIkaDocRuntimeOperation("apply malformed document edits");
   }
 
   for (const action of actions) {
@@ -86,7 +73,7 @@ export function assertIkaDocServiceActionsAllowed(session: IkaDocRuntimeSession,
     const hidesPageFields = tableId === PAGE_FIELDS_TABLE && PAGE_FIELD_REMOVALS.has(String(actionName));
 
     if (!(isDataAction && isUserTable) && !hidesPageFields) {
-      throw deniedIkaDocRuntimeOperation(`apply ${String(actionName)} as the IkaDoc service`, session);
+      throw deniedIkaDocRuntimeOperation(`apply ${String(actionName)} as the IkaDoc service`);
     }
   }
 }

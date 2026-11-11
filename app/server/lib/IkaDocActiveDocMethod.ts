@@ -6,6 +6,7 @@ import {
   denyIkaDocRuntimeOperationForSession,
   IkaDocRuntimeSessionValidator,
   IkaDocValidatedAction,
+  refuseIkaDocEditWithoutAdmission,
   requireIkaDocRuntimeCapabilityForDocument,
   requireIkaDocRuntimeCapabilityForSession,
   validateIkaDocRuntimeSession,
@@ -141,6 +142,10 @@ async function assertIkaDocMethodAllowed(
     }
 
     return;
+  }
+
+  if (policy.recordsActions || policy.classifyUserActions) {
+    refuseIkaDocEditWithoutAdmission(operation);
   }
 
   if (policy.recordsActions) {

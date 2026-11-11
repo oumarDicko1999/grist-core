@@ -33,19 +33,20 @@ import {
   IkaDocValidatedAction,
   requireIkaDocCapability,
   requireIkaDocRuntimeCapabilityForDocument,
+  requireIkaDocUserActionsForRequest,
 } from "app/server/lib/IkaDocRuntimePolicy";
 import {
   IkaDocRuntimeSession,
   IkaDocRuntimeSessionRegistry,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
-import { IKADOC_SESSION_TOKEN_HEADER, ikaDocSessionServiceToken } from "app/server/lib/IkaDocServiceAccount";
+import { IKADOC_SERVICE_TOKEN_HEADER, ikaDocDocumentServiceToken } from "app/server/lib/IkaDocServiceAccount";
 
 import { createHash } from "crypto";
 import * as http from "http";
 
 import axios from "axios";
 import { assert } from "chai";
-import express, { Request } from "express";
+import express, { Request, Response } from "express";
 
 import type { RequestWithLogin } from "app/server/lib/Authorizer";
 
@@ -1893,8 +1894,8 @@ describe("IkaDoc runtime policy", function() {
     const apiKey = { authorization: "Bearer service-api-key" };
     const addClientRow = ["BulkAddRecord", "Clients", [null], {}];
 
-    // Both sides derive the service token from the shared admission secret.
-    const serviceToken = ikaDocSessionServiceToken("admission-secret", "session-1");
+    // Both sides derive the service token from the shared admission secret and the document id.
+    const serviceToken = ikaDocDocumentServiceToken("admission-secret", "doc-1");
     let previousSecret: string | undefined;
 
     before(function() {
@@ -1911,23 +1912,23 @@ describe("IkaDoc runtime policy", function() {
     });
 
     it("derives the same service token as IkaDoc", function() {
-      // Pinned in IkaDoc's GristSessionServiceTokenTest too.
-      assert.equal(serviceToken, "Pb07UftNiv5FYz9v-v9JRw7jd8Afiyk6lLKX1VPDnm0");
+      // Pinned in IkaDoc's GristDocumentServiceTokenTest too.
+      assert.equal(serviceToken, "IBTNEmcwR7DPrBHy161Xeh_kzO_BKffLu9lS7m6fHB4");
     });
 
     it("refuses the browser's validation token as the service token", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "validation-token" });
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: "validation-token" });
 
       assert.throws(
         () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
-        /invalid session token/,
+        /invalid service token/,
       );
     });
 
-    it("lets the service add and refresh source data with the session's token", function() {
+    it("lets the service add and refresh source data with the document's token", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: serviceToken });
 
       assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
         ["AddTable", "Clients", [{ id: "nom" }]],
@@ -1936,19 +1937,30 @@ describe("IkaDoc runtime policy", function() {
       ], req);
     });
 
-    it("refuses a wrong session token", function() {
+    it("lets the service fill a document no session is registered for (GR-03)", function() {
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: serviceToken });
+
+      assertIkaDocUserActionsAllowedForDocument(new IkaDocRuntimeSessionRegistry(), "doc-1", [
+        ["RemoveTable", "Table1"],
+        ["AddTable", "Clients", [{ id: "nom" }]],
+        ["BulkAddRecord", "Clients", [null], { nom: ["Orange Mali"] }],
+      ], req);
+    });
+
+    it("refuses another document's token", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: "another-token" });
+      const otherDocumentToken = ikaDocDocumentServiceToken("admission-secret", "doc-2");
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: otherDocumentToken });
 
       assert.throws(
         () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
-        /invalid session token/,
+        /invalid service token/,
       );
     });
 
     it("keeps the service to data actions on user tables", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: serviceToken });
 
       for (const action of [
         ["RemoveColumn", "Factures", "montant"],
@@ -1965,7 +1977,7 @@ describe("IkaDoc runtime policy", function() {
 
     it("lets the service remove a source's table and hide fields on its page", function() {
       const registry = viewerRegistryWithLockedColumns();
-      const req = serviceRequest({ ...apiKey, [IKADOC_SESSION_TOKEN_HEADER]: serviceToken });
+      const req = serviceRequest({ ...apiKey, [IKADOC_SERVICE_TOKEN_HEADER]: serviceToken });
 
       assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [
         ["BulkRemoveRecord", "_grist_Views_section_field", [7, 8]],
@@ -1986,12 +1998,109 @@ describe("IkaDoc runtime policy", function() {
       const registry = viewerRegistryWithLockedColumns();
       const req = serviceRequest({
         ...apiKey,
-        [IKADOC_SESSION_TOKEN_HEADER]: serviceToken,
+        [IKADOC_SERVICE_TOKEN_HEADER]: serviceToken,
         cookie: `${IKADOC_RUNTIME_SESSION_COOKIE}=session-1`,
       });
 
       assert.throws(
         () => assertIkaDocUserActionsAllowedForDocument(registry, "doc-1", [addClientRow], req),
+      );
+    });
+  });
+
+  describe("edits without an admitted person (SEC-1, GR-03)", function() {
+    const saved: Record<string, string | undefined> = {};
+    const ENV = ["IKADOC_EDITOR_ADMISSION_URL", "IKADOC_GRIST_RUNTIME_ONLY", "IKADOC_EDITOR_ADMISSION_BEARER_TOKEN"];
+
+    beforeEach(function() {
+      for (const name of ENV) {
+        saved[name] = process.env[name];
+      }
+      process.env.IKADOC_EDITOR_ADMISSION_URL = "http://ikadoc.test/api/grist/editor/admission";
+      process.env.IKADOC_EDITOR_ADMISSION_BEARER_TOKEN = "admission-secret";
+      delete process.env.IKADOC_GRIST_RUNTIME_ONLY;
+    });
+
+    afterEach(function() {
+      for (const name of ENV) {
+        if (saved[name] === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = saved[name];
+        }
+      }
+    });
+
+    function apiKeyRequest(): Request {
+      const headers = { authorization: "Bearer leaked-api-key" };
+
+      return {
+        headers,
+        params: { docId: "doc-1" },
+        get: (name: string) => (headers as Record<string, string>)[name.toLowerCase()],
+      } as unknown as Request;
+    }
+
+    it("refuses an API-key edit of a document no session is registered for", function() {
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(
+          new IkaDocRuntimeSessionRegistry(),
+          "doc-1",
+          [["UpdateRecord", "_grist_ACLRules", 1, { permissionsText: "+CRUD" }]],
+          apiKeyRequest(),
+        ),
+        /without an IkaDoc session/,
+      );
+    });
+
+    it("refuses an edit with no request and no registered session", function() {
+      assert.throws(
+        () => assertIkaDocUserActionsAllowedForDocument(
+          new IkaDocRuntimeSessionRegistry(),
+          "doc-1",
+          [["UpdateRecord", "Table1", 1, { Name: "x" }]],
+        ),
+        /without an IkaDoc session/,
+      );
+    });
+
+    it("refuses the apply route without a session or the service token", async function() {
+      const gate = requireIkaDocUserActionsForRequest(new IkaDocRuntimeSessionRegistry());
+      const req = Object.assign(apiKeyRequest(), { body: [["RemoveTable", "Table1"]] });
+
+      const error = await new Promise<unknown>(resolve => gate(req, {} as Response, resolve));
+
+      assert.match(String(error), /without an IkaDoc session/);
+    });
+
+    it("refuses websocket edits from a client IkaDoc did not admit", async function() {
+      let called = false;
+      const method = activeDocMethod(
+        undefined,
+        new IkaDocRuntimeSessionRegistry(),
+        undefined,
+        "editors",
+        "applyUserActions",
+        { operation: "apply document edits", classifyUserActions: true, recordsActions: true },
+      );
+
+      const error = await captureError(() =>
+        method(clientForActiveDoc("doc-1", "applyUserActions", () => { called = true; }), 1,
+          [["UpdateRecord", "Table1", 1, { Name: "x" }]]),
+      );
+
+      assert.equal(error?.message, "This Grist session does not allow apply document edits.");
+      assert.isFalse(called);
+    });
+
+    it("leaves plain Grist edits alone when the runtime is not IkaDoc-only", function() {
+      process.env.IKADOC_GRIST_RUNTIME_ONLY = "false";
+
+      assertIkaDocUserActionsAllowedForDocument(
+        new IkaDocRuntimeSessionRegistry(),
+        "doc-1",
+        [["UpdateRecord", "Table1", 1, { Name: "x" }]],
+        apiKeyRequest(),
       );
     });
   });

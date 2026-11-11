@@ -1,3 +1,4 @@
+import { readIkaDocRuntimeOnly } from "app/server/lib/IkaDocAdmissionConfig";
 import {
   hasIkaDocRuntimeSessionCookie,
   ikaDocRuntimeParticipantCookie,
@@ -11,7 +12,7 @@ import {
   IkaDocRuntimeSessionResolution,
   isIkaDocRuntimeSessionExpired,
 } from "app/server/lib/IkaDocRuntimeSessionRegistry";
-import { assertIkaDocServiceActionsAllowed, ikaDocServiceSessionForRequest } from "app/server/lib/IkaDocServiceAccount";
+import { assertIkaDocServiceActionsAllowed, isIkaDocServiceRequest } from "app/server/lib/IkaDocServiceAccount";
 import {
   assertIkaDocUserActionsAllowedForSession,
   IkaDocCapabilityName,
@@ -54,7 +55,7 @@ export function requireIkaDocCapability(
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
       // The service account is held to its own action list, not to user capabilities.
-      if (ikaDocServiceSessionForRequest(registry, req)) {
+      if (isIkaDocServiceRequest(req, req.params?.docId)) {
         return next();
       }
 
@@ -97,17 +98,18 @@ export function requireIkaDocUserActionsForRequest(
 ): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
-      const serviceSession = ikaDocServiceSessionForRequest(registry, req);
-      if (serviceSession) {
-        assertIkaDocServiceActionsAllowed(serviceSession, req.body);
+      if (isIkaDocServiceRequest(req, req.params?.docId)) {
+        assertIkaDocServiceActionsAllowed(req.body);
         return next();
       }
 
       const session = activeSessionOrRefuse(resolveIkaDocRuntimeSessionForRequest(registry, req));
-      if (session) {
-        assertIkaDocUserActionsAllowedForSession(session, req.body);
+      if (!session) {
+        refuseIkaDocEditWithoutAdmission("change a document without an IkaDoc session");
+        return next();
       }
 
+      assertIkaDocUserActionsAllowedForSession(session, req.body);
       next();
     } catch (error) {
       next(error);
@@ -217,15 +219,28 @@ export function assertIkaDocUserActionsAllowedForDocument(
   actions: unknown,
   req?: Request,
 ): void {
-  const serviceSession = req ? ikaDocServiceSessionForRequest(registry, req) : undefined;
-  if (serviceSession) {
-    assertIkaDocServiceActionsAllowed(serviceSession, actions);
+  if (req && isIkaDocServiceRequest(req, documentId)) {
+    assertIkaDocServiceActionsAllowed(actions);
     return;
   }
 
   const session = activeSessionOrRefuse(resolveIkaDocRuntimeSessionForDocument(registry, documentId));
-  if (session) {
-    assertIkaDocUserActionsAllowedForSession(session, actions);
+  if (!session) {
+    refuseIkaDocEditWithoutAdmission("change a document without an IkaDoc session");
+    return;
+  }
+
+  assertIkaDocUserActionsAllowedForSession(session, actions);
+}
+
+/**
+ * GR-03, SEC-1: an IkaDoc-only runtime changes a document only for a person IkaDoc admitted or for
+ * IkaDoc's service. Without either (no session registered here, after a restart or on another
+ * process) the edit is refused instead of reaching Grist unchecked. Plain Grist is unchanged.
+ */
+export function refuseIkaDocEditWithoutAdmission(operation: string): void {
+  if (readIkaDocRuntimeOnly()) {
+    throw deniedIkaDocRuntimeOperation(operation);
   }
 }
 
